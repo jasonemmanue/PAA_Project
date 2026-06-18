@@ -1,0 +1,7 @@
+# Dossier conservé volontairement vide dans git.
+# Les extraits OpenStreetMap (*.osm.pbf) et les index OSRM (*.osrm.*) sont ignorés
+# car volumineux. Pour préparer les données :
+#   1. Télécharger l'extrait Côte d'Ivoire depuis Geofabrik
+#      (https://download.geofabrik.de/africa/ivory-coast.html)
+#   2. Lancer osrm-extract, osrm-partition, osrm-customize via le service `osrm`
+#      du docker-compose.

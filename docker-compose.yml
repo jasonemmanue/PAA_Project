@@ -1,0 +1,119 @@
+# ============================================================
+# PAA-Traverse — orchestration locale (5 services)
+# ------------------------------------------------------------
+# Démarrage :
+#   1. Préparer une fois l'extrait OSRM (cf. README.md)
+#   2. docker compose up --build
+# ============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  # PostgreSQL 16 — base de données principale
+  # ----------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: paa_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: Africa/Abidjan
+      PGTZ: Africa/Abidjan
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ----------------------------------------------------------
+  # Redis 7 — cache et files d'attente légères
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: paa_redis
+    restart: unless-stopped
+    environment:
+      TZ: Africa/Abidjan
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ----------------------------------------------------------
+  # OSRM — moteur de routage interne, profil voiture
+  # Pré-requis : les fichiers *.osrm.* doivent exister dans osrm-data/
+  # (cf. README.md, étape de préparation OSRM).
+  # ----------------------------------------------------------
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: paa_osrm
+    restart: unless-stopped
+    command: >
+      osrm-routed --algorithm mld
+      --max-table-size 10000
+      /data/ivory-coast-latest.osrm
+    environment:
+      TZ: Africa/Abidjan
+    volumes:
+      - ./osrm-data:/data
+    ports:
+      - "5000:5000"
+
+  # ----------------------------------------------------------
+  # Backend FastAPI
+  # ----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: paa_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      TZ: Africa/Abidjan
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      osrm:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ----------------------------------------------------------
+  # Frontend Next.js (App Router) — squelette en P1
+  # ----------------------------------------------------------
+  frontend:
+    image: node:20-alpine
+    container_name: paa_frontend
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      TZ: Africa/Abidjan
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "3000:3000"
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- -H 0.0.0.0 -p 3000"
+
+volumes:
+  pgdata:
+  frontend_node_modules:
