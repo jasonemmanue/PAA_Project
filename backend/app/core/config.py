@@ -30,9 +30,10 @@ class Settings(BaseSettings):
     # === Moteur de routage interne OSRM ===
     osrm_base_url: str = Field(..., alias="OSRM_BASE_URL")
 
-    # === Clés des sources externes (optionnelles : dégradation gracieuse) ===
+    # === Clé Google Routes (optionnelle : dégradation gracieuse) ===
+    # TomTom a été retiré du projet après tests — aucune couverture à Abidjan
+    # (cf. CLAUDE.md § 2.5).
     google_routes_api_key: str | None = Field(default=None, alias="GOOGLE_ROUTES_API_KEY")
-    tomtom_api_key: str | None = Field(default=None, alias="TOMTOM_API_KEY")
 
     # === Paramètres de collecte (APScheduler) ===
     collect_interval_minutes: int = Field(default=15, alias="COLLECT_INTERVAL_MINUTES")

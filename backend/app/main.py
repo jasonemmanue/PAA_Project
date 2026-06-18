@@ -8,6 +8,7 @@ indicateurs, cartographie) sera ajoutée dans les phases ultérieures.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.diag import router as diag_router
 from app.core.config import get_settings
 
 # Chargement unique de la configuration au démarrage du module
@@ -43,3 +44,7 @@ app.add_middleware(
 async def health() -> dict[str, str]:
     """Retourne un statut simple confirmant que le service répond."""
     return {"status": "ok"}
+
+
+# Routeurs métier
+app.include_router(diag_router)

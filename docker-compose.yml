@@ -15,10 +15,11 @@ services:
     image: postgres:16-alpine
     container_name: paa_db
     restart: unless-stopped
+    # Les variables POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
+    # proviennent intégralement de backend/.env (source unique de vérité).
+    env_file:
+      - ./backend/.env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
       TZ: Africa/Abidjan
       PGTZ: Africa/Abidjan
     volumes:
@@ -26,7 +27,9 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      # Les ${...} sont ici interpolés par le shell DANS le conteneur
+      # à partir des variables injectées via env_file.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -91,7 +94,9 @@ services:
     volumes:
       - ./backend:/app
     ports:
-      - "8000:8000"
+      # 8081 sur l'hôte (Windows réserve la plage 7981-8080 via Hyper-V),
+      # 8000 reste le port interne du conteneur.
+      - "8081:8000"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   # ----------------------------------------------------------

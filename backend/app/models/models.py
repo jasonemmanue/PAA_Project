@@ -1,0 +1,255 @@
+"""Modèles SQLAlchemy pour les 4 tables du projet PAA-Traverse.
+
+Correspondance avec CLAUDE.md § 3 (Modèle de données) :
+  - Troncon         → table `troncons`
+  - Mesure          → table `mesures`
+  - ProfilHoraire   → table `profils_horaires`
+  - RelевеTerrain   → table `releves_terrain`
+
+Conventions :
+  - Toutes les durées sont en secondes (entier).
+  - Les distances sont en mètres (entier).
+  - Les horodatages sont stockés en UTC (timezone=True).
+  - La suppression d'un tronçon est logique (actif=False), jamais physique.
+  - Aucune valeur n'est inventée : les colonnes peuvent être NULL si la mesure est absente.
+"""
+
+import enum
+from datetime import date, datetime
+
+from sqlalchemy import (
+    Boolean,
+    Date,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import DateTime
+
+from app.db.session import Base
+
+
+# ---------------------------------------------------------------------------
+# Énumération des sources de mesure
+# ---------------------------------------------------------------------------
+
+
+class SourceMesure(str, enum.Enum):
+    """Sources acceptées pour une mesure de temps de parcours.
+
+    `tomtom` est conservé dans l'enum PostgreSQL (valeur inerte) mais aucun
+    code ne le produit : TomTom a été retiré du projet faute de couverture à
+    Abidjan (cf. CLAUDE.md § 2.5). La retirer demanderait une migration
+    Postgres risquée pour zéro bénéfice fonctionnel.
+    """
+    google = "google"
+    tomtom = "tomtom"        # désactivée — conservée par compat. schéma
+    terrain = "terrain"
+    interne = "interne"
+
+
+# ---------------------------------------------------------------------------
+# Table : troncons
+# ---------------------------------------------------------------------------
+
+
+class Troncon(Base):
+    """Un tronçon représente un sens de circulation sur un axe officiel.
+
+    Chaque axe physique produit deux lignes (aller + retour) car les temps
+    de parcours peuvent différer significativement selon le sens.
+    Suppression toujours logique : actif=False préserve l'historique.
+    """
+
+    __tablename__ = "troncons"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nom: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    # Coordonnées des extrémités (NULL jusqu'à la résolution OSRM)
+    lat_origine: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon_origine: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lat_destination: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon_destination: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Tracé encodé retourné par OSRM (NULL jusqu'à la résolution OSRM)
+    polyline: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    distance_m: Mapped[int] = mapped_column(Integer, nullable=False)
+    vitesse_ref_kmh: Mapped[float] = mapped_column(Float, nullable=False, default=50.0)
+    couleur: Mapped[str] = mapped_column(String(7), nullable=False, default="#1976D2")
+
+    # Suppression logique : False = tronçon archivé, historique préservé
+    actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Relations
+    mesures: Mapped[list["Mesure"]] = relationship(
+        "Mesure", back_populates="troncon", cascade="all, delete-orphan"
+    )
+    profils_horaires: Mapped[list["ProfilHoraire"]] = relationship(
+        "ProfilHoraire", back_populates="troncon", cascade="all, delete-orphan"
+    )
+    releves_terrain: Mapped[list["ReleveTerrain"]] = relationship(
+        "ReleveTerrain", back_populates="troncon", cascade="all, delete-orphan"
+    )
+
+    def temps_reference_s(self) -> float:
+        """Temps de parcours théorique à vitesse de référence, en secondes."""
+        return (self.distance_m / 1000.0) / self.vitesse_ref_kmh * 3600.0
+
+    def __repr__(self) -> str:
+        return f"<Troncon id={self.id} nom={self.nom!r} actif={self.actif}>"
+
+
+# ---------------------------------------------------------------------------
+# Table : mesures
+# ---------------------------------------------------------------------------
+
+
+class Mesure(Base):
+    """Un échantillon de temps de parcours observé à un instant donné.
+
+    Si toutes les sources échouent, aucune ligne n'est insérée (trou de mesure).
+    On n'invente ni n'interpole jamais de valeur.
+    """
+
+    __tablename__ = "mesures"
+
+    # Index composite prioritaire pour les requêtes analytiques
+    __table_args__ = (
+        Index("ix_mesures_troncon_horodatage", "troncon_id", "horodatage"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    troncon_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("troncons.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Stocké en UTC ; le fuseau Africa/Abidjan est appliqué à l'affichage
+    horodatage: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    # NULL si la source concernée n'a pas renvoyé de valeur exploitable
+    duree_trafic_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duree_sans_trafic_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # postgresql.ENUM avec create_type=False : le type est géré exclusivement
+    # par les migrations Alembic, jamais par SQLAlchemy au démarrage du backend.
+    source: Mapped[SourceMesure] = mapped_column(
+        postgresql.ENUM(SourceMesure, name="source_mesure", create_type=False),
+        nullable=False,
+    )
+
+    vitesse_moyenne_kmh: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Relation
+    troncon: Mapped["Troncon"] = relationship("Troncon", back_populates="mesures")
+
+    def __repr__(self) -> str:
+        return (
+            f"<Mesure id={self.id} troncon_id={self.troncon_id} "
+            f"source={self.source.value} horodatage={self.horodatage}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Table : profils_horaires
+# ---------------------------------------------------------------------------
+
+
+class ProfilHoraire(Base):
+    """Statistiques agrégées par (tronçon, jour_semaine, heure).
+
+    Recalculée chaque nuit par un job APScheduler (P2).
+    Alimente le prédicteur interne (P6).
+    Clé primaire composite : (troncon_id, jour_semaine, heure).
+    """
+
+    __tablename__ = "profils_horaires"
+
+    __table_args__ = (
+        # Unicité garantie par la clé primaire composite ci-dessous ;
+        # l'index composite explicite accélère les jointures analytiques.
+        Index(
+            "ix_profils_horaires_troncon_jour_heure",
+            "troncon_id", "jour_semaine", "heure",
+            unique=True,
+        ),
+    )
+
+    # Clé primaire composite
+    troncon_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("troncons.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # 0 = lundi … 6 = dimanche (convention Python datetime.weekday())
+    jour_semaine: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    # 0–23
+    heure: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+
+    # Statistiques en secondes
+    moyenne: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mediane: Mapped[float | None] = mapped_column(Float, nullable=True)
+    min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    p95: Mapped[float | None] = mapped_column(Float, nullable=True)
+    nb_mesures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Relation
+    troncon: Mapped["Troncon"] = relationship(
+        "Troncon", back_populates="profils_horaires"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ProfilHoraire troncon_id={self.troncon_id} "
+            f"jour={self.jour_semaine} heure={self.heure}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Table : releves_terrain
+# ---------------------------------------------------------------------------
+
+
+class ReleveTerrain(Base):
+    """Trace d'un relevé terrain hebdomadaire (fichier GPX + durée mesurée).
+
+    Sert à valider la dérive éventuelle des sources API (P5).
+    """
+
+    __tablename__ = "releves_terrain"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    troncon_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("troncons.id", ondelete="RESTRICT"), nullable=False
+    )
+    date_session: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # Chemin relatif ou URL vers le fichier GPX (stocké dans un volume dédié)
+    fichier_gpx: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Durée effectivement mesurée sur le terrain, en secondes
+    duree_mesuree_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # (durée_terrain – durée_API) / durée_API — NULL si pas encore calculé
+    ecart_relatif: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Relation
+    troncon: Mapped["Troncon"] = relationship(
+        "Troncon", back_populates="releves_terrain"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ReleveTerrain id={self.id} troncon_id={self.troncon_id} "
+            f"date={self.date_session} ecart={self.ecart_relatif}>"
+        )

@@ -89,16 +89,35 @@ peuvent avoir des temps de parcours très différents selon l'heure et le sens d
   - `backend` — API FastAPI
   - `frontend` — application Next.js
 
-### 2.5 Sources de mesure (dégradation gracieuse)
+### 2.5 Sources de mesure — état confirmé
 
-Ordre de priorité, du plus fiable au repli ultime :
+| Source                  | Rôle                                       | Couverture Abidjan |
+|-------------------------|--------------------------------------------|--------------------|
+| **Google Routes API**   | Source temps réel principale (TRAFFIC_AWARE_OPTIMAL) | ✅ couvert         |
+| **OSRM** (auto-hébergé) | Polyline de référence, distance, durée fluide | ✅ couvert (Côte d'Ivoire complète) |
+| **Prédicteur interne**  | Profils horaires historiques (P6)          | ✅ alimenté par la collecte |
+| **TomTom Traffic Flow** | ~~Source de recoupement~~                  | ❌ **retiré du projet** |
 
-1. **Google Routes API** avec `routingPreference=TRAFFIC_AWARE_OPTIMAL` — source primaire.
-2. **TomTom Routing API** — source de recoupement.
-3. **Prédicteur interne** — estimation à partir des profils horaires historiques.
-4. **Temps de référence 50 km/h** — repli déterministe ultime.
+#### Verdict TomTom (testé le 2026-06-18, retiré du projet)
 
-En cas d'échec total des sources, **on enregistre un trou de mesure** : aucune valeur
+Tests via `/diag/tomtom/{id}` sur les 6 tronçons dirigés (18 points échantillonnés,
+équirépartis à 25 % / 50 % / 75 % du tracé) :
+- 18/18 réponses HTTP 400 « *INVALID_REQUEST : Point too far from nearest existing segment* »
+- 0/18 points couverts par un segment cartographié TomTom
+- Confiance moyenne : **0,0** sur les 6 tronçons
+
+**Conséquence appliquée :** le client `app/sources/tomtom.py`, l'endpoint
+`/diag/tomtom/{id}` et la variable `TOMTOM_API_KEY` ont été **supprimés** du projet.
+La cascade de dégradation gracieuse passe de 4 à 3 niveaux. Réévaluation possible
+plus tard si TomTom étend sa cartographie en Côte d'Ivoire.
+
+#### Cascade de dégradation gracieuse (3 niveaux)
+
+1. **Google Routes API** avec `routingPreference=TRAFFIC_AWARE_OPTIMAL` (temps réel).
+2. **Prédicteur interne** — estimation à partir des profils horaires historiques (P6).
+3. **Temps de référence 50 km/h** via OSRM — repli déterministe ultime.
+
+En cas d'échec total des trois, **on enregistre un trou de mesure** : aucune valeur
 n'est inventée ni interpolée.
 
 ---
