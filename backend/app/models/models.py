@@ -149,6 +149,12 @@ class Mesure(Base):
 
     vitesse_moyenne_kmh: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Flag posé par le job d'agrégation (méthode IQR) — la mesure reste
+    # conservée en base, mais le frontend peut l'écarter de ses graphes.
+    aberrante: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     # Relation
     troncon: Mapped["Troncon"] = relationship("Troncon", back_populates="mesures")
 
@@ -178,13 +184,14 @@ class ProfilHoraire(Base):
         # Unicité garantie par la clé primaire composite ci-dessous ;
         # l'index composite explicite accélère les jointures analytiques.
         Index(
-            "ix_profils_horaires_troncon_jour_heure",
-            "troncon_id", "jour_semaine", "heure",
+            "ix_profils_horaires_troncon_jour_heure_fenetre",
+            "troncon_id", "jour_semaine", "heure", "fenetre_jours",
             unique=True,
         ),
     )
 
-    # Clé primaire composite
+    # Clé primaire composite — fenetre_jours élargit la PK pour permettre
+    # de stocker en parallèle les agrégats sur 30, 60 et 90 jours.
     troncon_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("troncons.id", ondelete="CASCADE"),
@@ -194,6 +201,8 @@ class ProfilHoraire(Base):
     jour_semaine: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
     # 0–23
     heure: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    # Largeur de la fenêtre glissante d'agrégation, en jours : 30, 60 ou 90.
+    fenetre_jours: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
 
     # Statistiques en secondes
     moyenne: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -211,7 +220,8 @@ class ProfilHoraire(Base):
     def __repr__(self) -> str:
         return (
             f"<ProfilHoraire troncon_id={self.troncon_id} "
-            f"jour={self.jour_semaine} heure={self.heure}>"
+            f"jour={self.jour_semaine} heure={self.heure} "
+            f"fenetre={self.fenetre_jours}j>"
         )
 
 
