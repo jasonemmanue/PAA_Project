@@ -12,7 +12,7 @@ from fastapi import APIRouter
 from app.agregation.profils import executer_agregation
 
 
-router = APIRouter(prefix="/agregation", tags=["agregation"])
+router = APIRouter(prefix="/agregation", tags=["agrégation"])
 
 
 @router.post(

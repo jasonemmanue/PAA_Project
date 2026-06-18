@@ -40,7 +40,9 @@ from sqlalchemy import func, select
 from app.agregation.profils import executer_agregation
 from app.core.config import Settings, get_settings
 from app.db.session import SessionLocal
+from app.etat.carte import construire_etat_carte
 from app.models.models import Mesure, SourceMesure, Troncon
+from app.realtime.diffusion import get_diffuseur
 from app.sources import google_routes
 from app.sources.coordonnees import PointGPS
 
@@ -294,6 +296,17 @@ async def cycle_de_collecte() -> dict[str, int]:
         nb_succes,
         nb_trous,
     )
+
+    # 5. Push WebSocket : on diffuse le nouvel état carte à tous les abonnés.
+    #    Une erreur de diffusion ne doit JAMAIS faire échouer le cycle de collecte.
+    try:
+        diffuseur = get_diffuseur()
+        if diffuseur.nb_abonnes > 0:
+            etat = await asyncio.to_thread(construire_etat_carte)
+            nb_envoyes = await diffuseur.diffuser({"type": "maj", "donnees": etat})
+            logger.info("WS — état diffusé à %d abonné(s).", nb_envoyes)
+    except Exception:
+        logger.exception("Échec de la diffusion WebSocket post-cycle.")
 
     return {
         "nb_succes": nb_succes,

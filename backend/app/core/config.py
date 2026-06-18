@@ -44,6 +44,19 @@ class Settings(BaseSettings):
     # === Fuseau horaire de référence du PAA ===
     tz: str = Field(default="Africa/Abidjan", alias="TZ")
 
+    # === Seuils d'analyse (phase P3 — indicateurs de congestion FHWA) ===
+    # Classification par TTI (Travel Time Index = temps_mesuré / temps_référence)
+    #   fluide       : TTI < tti_seuil_dense
+    #   dense        : tti_seuil_dense ≤ TTI ≤ tti_seuil_congestionne
+    #   congestionné : TTI > tti_seuil_congestionne
+    tti_seuil_dense: float = Field(default=1.3, alias="TTI_SEUIL_DENSE")
+    tti_seuil_congestionne: float = Field(default=2.0, alias="TTI_SEUIL_CONGESTIONNE")
+    # Détection d'une heure de pointe : moyenne(heure) / T_ref > seuil
+    tti_seuil_heure_pointe: float = Field(default=1.5, alias="TTI_SEUIL_HEURE_POINTE")
+    # Seuil par défaut pour la fréquence de dépassement (en secondes).
+    # Si non précisé via query param, le code calcule un seuil = 1,5 × T_ref.
+    seuil_depassement_s: int | None = Field(default=None, alias="SEUIL_DEPASSEMENT_S")
+
     # === Sécurité de l'API ===
     api_secret_key: str = Field(..., alias="API_SECRET_KEY")
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")
