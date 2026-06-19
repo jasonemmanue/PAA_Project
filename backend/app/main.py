@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agregation import router as agregation_router
+from app.api.import_data import router as import_router
 from app.api.carte import router as carte_router
 from app.api.carte import router_ws as carte_ws_router
 from app.api.collecte import router as collecte_router
@@ -143,6 +144,14 @@ _TAGS_METADATA = [
         ),
     },
     {
+        "name": "import données historiques",
+        "description": (
+            "Import one-shot des fichiers Excel terrain : "
+            "Base_Nettoyee_PAA_Fev2025 (2016 mesures, source=historique_paa_2025) "
+            "et SYNTHESE COMPAREE FEVRIER_2026 (indicateurs pluriannuels)."
+        ),
+    },
+    {
         "name": "diagnostic",
         "description": "Tests ponctuels des sources de mesure (Google, OSRM).",
     },
@@ -212,4 +221,5 @@ app.include_router(agregation_router)
 app.include_router(export_router)
 app.include_router(carte_router)
 app.include_router(carte_ws_router)
+app.include_router(import_router)
 app.include_router(diag_router)

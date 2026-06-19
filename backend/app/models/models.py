@@ -50,9 +50,10 @@ class SourceMesure(str, enum.Enum):
     Postgres risquée pour zéro bénéfice fonctionnel.
     """
     google = "google"
-    tomtom = "tomtom"        # désactivée — conservée par compat. schéma
+    tomtom = "tomtom"                       # désactivée — conservée par compat. schéma
     terrain = "terrain"
     interne = "interne"
+    historique_paa_2025 = "historique_paa_2025"  # données campagne terrain fév 2025
 
 
 # ---------------------------------------------------------------------------
@@ -262,4 +263,49 @@ class ReleveTerrain(Base):
         return (
             f"<ReleveTerrain id={self.id} troncon_id={self.troncon_id} "
             f"date={self.date_session} ecart={self.ecart_relatif}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Table : evolution_indicateur
+# ---------------------------------------------------------------------------
+
+
+class EvolutionIndicateur(Base):
+    """Statistiques comparatives pluriannuelles par axe, sens, période et type de jour.
+
+    Alimentée par l'import de la feuille 'SYNTHESE COMPAREE' du fichier
+    FEVRIER_2026.xlsx. Permet de visualiser l'évolution des temps de traversée
+    entre les campagnes (oct_2025, fev_2026, etc.).
+
+    Durées stockées en secondes (float) pour cohérence avec `mesures`.
+    """
+
+    __tablename__ = "evolution_indicateur"
+
+    __table_args__ = (
+        UniqueConstraint("axe", "sens", "periode", "type_jour",
+                         name="uq_evolution_axe_sens_periode_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Libellé de l'axe (ex. "CARENA → Pharmacie Palm Beach")
+    axe: Mapped[str] = mapped_column(String(200), nullable=False)
+    # "Aller" ou "Retour"
+    sens: Mapped[str] = mapped_column(String(10), nullable=False)
+    # Code de la campagne, ex. "oct_2025", "fev_2026"
+    periode: Mapped[str] = mapped_column(String(20), nullable=False)
+    # "Jours ouvrables" ou "Week-ends"
+    type_jour: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    # Statistiques en secondes (NULL si donnée absente dans la source)
+    temps_min_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temps_moyen_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temps_max_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    def __repr__(self) -> str:
+        return (
+            f"<EvolutionIndicateur axe={self.axe!r} sens={self.sens!r} "
+            f"periode={self.periode!r} type_jour={self.type_jour!r}>"
         )
