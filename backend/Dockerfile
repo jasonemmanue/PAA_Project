@@ -31,7 +31,12 @@ RUN pip install --upgrade pip \
 # Copie du code applicatif
 COPY . .
 
+# Port d'écoute par défaut. En local (docker-compose) on garde 8000.
+# Sur Railway, la variable $PORT est injectée dynamiquement et écrase la valeur.
+ENV PORT=8000
 EXPOSE 8000
 
-# La commande effective est définie par docker-compose (mode --reload en dev).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Commande de démarrage — utilisée hors docker-compose (Railway, K8s, etc.).
+# La forme `sh -c` permet l'interpolation de $PORT au runtime.
+# docker-compose surcharge cette CMD (mode --reload pour dev).
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips=*"]

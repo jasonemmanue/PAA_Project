@@ -1,0 +1,40 @@
+# =========================================================================
+# PAA-Traverse — configuration Railway du service `backend` (FastAPI).
+# -------------------------------------------------------------------------
+# ⚠️  Setup monorepo : ce fichier suppose que la **Root Directory** du
+#     service Railway est positionnée sur `backend`. À faire une seule fois :
+#       railway dashboard → Service → Settings → Root Directory = "backend"
+#     OU : utiliser le fichier identique `backend/railway.toml` (déjà fourni)
+#     en exécutant `railway up` depuis le dossier `backend/`.
+# -------------------------------------------------------------------------
+# Architecture cible (cf. CLAUDE.md § Déploiement) :
+#   - Service `backend`  : ce service (image Docker construite ici)
+#   - Plugin `Postgres`  : créé via `railway add --plugin postgresql`
+#   - Plugin `Redis`     : créé via `railway add --plugin redis`
+#   - OSRM               : hors-Railway (cf. options A/B dans CLAUDE.md)
+# =========================================================================
+
+[build]
+# On utilise notre Dockerfile (pas Nixpacks) — meilleur contrôle du runtime
+# et compatibilité immédiate avec le setup `docker compose` local.
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Au démarrage : on applique d'abord les migrations Alembic (idempotent),
+# puis on lance Uvicorn sur le port dynamique injecté par Railway.
+# `--proxy-headers` + `--forwarded-allow-ips=*` car Railway met un reverse
+# proxy devant le service (sinon les IP clientes seraient toutes 127.0.0.1).
+startCommand = "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips=*"
+
+# Sonde de disponibilité — voir app/main.py
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+
+# Le scheduler APScheduler vit dans le processus — pas de plusieurs replicas
+# tant qu'on n'a pas migré vers un orchestrateur de jobs externe (Redis pub/sub).
+numReplicas = 1
+
+# Politique de redémarrage : on relance jusqu'à 10 fois en cas de crash dur.
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

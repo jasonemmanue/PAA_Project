@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # ---------------------------------------------------------------------------
 # Import de la Base déclarative et des modèles (obligatoire pour --autogenerate)
 # ---------------------------------------------------------------------------
-from app.db.session import Base  # noqa: E402
+from app.db.session import Base, _normaliser_url  # noqa: E402
 import app.models.models  # noqa: E402, F401 — enregistre les modèles dans Base.metadata
 
 # ---------------------------------------------------------------------------
@@ -41,10 +41,10 @@ def _get_url() -> str:
     """
     url = os.environ.get("DATABASE_URL")
     if url:
-        return url
+        return _normaliser_url(url)
     url = config.get_main_option("sqlalchemy.url")
     if url:
-        return url
+        return _normaliser_url(url)
     raise RuntimeError(
         "DATABASE_URL introuvable. "
         "Définir la variable dans backend/.env ou dans alembic.ini."

@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     redis_url: str = Field(..., alias="REDIS_URL")
 
     # === Moteur de routage interne OSRM ===
-    osrm_base_url: str = Field(..., alias="OSRM_BASE_URL")
+    # Optionnel au démarrage : si absent, les endpoints /diag/osrm et complete_troncons
+    # ne fonctionneront pas, mais le reste de l'application tourne normalement.
+    osrm_base_url: str | None = Field(default=None, alias="OSRM_BASE_URL")
 
     # === Clé Google Routes (optionnelle : dégradation gracieuse) ===
     # TomTom a été retiré du projet après tests — aucune couverture à Abidjan

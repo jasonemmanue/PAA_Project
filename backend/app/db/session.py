@@ -15,6 +15,26 @@ class Base(DeclarativeBase):
     pass
 
 
+def _normaliser_url(url: str) -> str:
+    """Convertit toute URL Postgres en forme `postgresql+psycopg://...` (psycopg v3).
+
+    Les hébergeurs managés (Railway, Heroku, Render, …) exposent généralement
+    `DATABASE_URL` sous l'une de ces formes :
+      - `postgres://user:pwd@host:port/db`        → format historique
+      - `postgresql://user:pwd@host:port/db`      → équivalent moderne
+    SQLAlchemy + psycopg v3 attend `postgresql+psycopg://...`. On insère donc
+    le driver explicite si manquant — opération idempotente côté local
+    (notre `.env` contient déjà la forme complète).
+    """
+    if url.startswith("postgres://"):
+        # Forme legacy → on remet le schéma moderne
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://") and "+psycopg" not in url.split("://", 1)[0]:
+        # Préfixe schéma sans driver → on injecte `+psycopg`
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
 def _get_database_url() -> str:
     """Retourne l'URL de connexion depuis les variables d'environnement.
 
@@ -27,7 +47,7 @@ def _get_database_url() -> str:
             "La variable d'environnement DATABASE_URL n'est pas définie. "
             "Vérifier que backend/.env est bien chargé."
         )
-    return url
+    return _normaliser_url(url)
 
 
 engine = create_engine(

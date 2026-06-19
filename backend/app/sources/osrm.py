@@ -41,7 +41,10 @@ class ReponseOSRMMatch:
 
 def _base_url() -> str:
     """URL de base d'OSRM (lue à chaque appel — facilite les tests)."""
-    return get_settings().osrm_base_url.rstrip("/")
+    url = get_settings().osrm_base_url
+    if not url:
+        raise RuntimeError("OSRM_BASE_URL non configurée — service OSRM indisponible.")
+    return url.rstrip("/")
 
 
 def _coords_str(points: list[PointGPS]) -> str:
