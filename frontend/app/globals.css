@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ========================================================================
+   Variables CSS — palette neutralisée par thème (clair / sombre)
+   ====================================================================== */
+@layer base {
+  :root {
+    /* Couleurs d'application — mode clair */
+    --app-bg: 239 244 250;          /* paa.blue.50  */
+    --app-surface: 255 255 255;
+    --app-surface-2: 248 250 252;
+    --app-text: 11 37 69;           /* paa.navy.900 */
+    --app-text-muted: 100 116 139;
+    --app-border: 217 226 243;      /* paa.blue.100 */
+    --app-accent: 31 78 121;        /* paa.navy.700 */
+  }
+
+  .dark {
+    /* Couleurs d'application — mode sombre */
+    --app-bg: 11 18 32;             /* presque noir teinté bleu */
+    --app-surface: 19 30 50;
+    --app-surface-2: 27 39 60;
+    --app-text: 226 232 240;
+    --app-text-muted: 148 163 184;
+    --app-border: 51 65 85;
+    --app-accent: 94 168 201;       /* paa.blue.400 */
+  }
+
+  /* Base typographique — police universelle, taille fluide */
+  html {
+    font-family:
+      Inter,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      Roboto,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: rgb(var(--app-bg));
+    color: rgb(var(--app-text));
+    min-height: 100dvh;
+  }
+
+  /* Cible de touche minimum sur mobile (Apple HIG = 44px, Material = 48px) */
+  button,
+  a,
+  [role="button"] {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  /* Permettre du contenu non interactif (texte inline) de garder sa taille */
+  p button,
+  p a,
+  span button,
+  span a {
+    min-height: auto;
+  }
+}
+
+/* ========================================================================
+   Composants utilitaires PAA
+   ====================================================================== */
+@layer components {
+  .app-surface {
+    background-color: rgb(var(--app-surface));
+    border-color: rgb(var(--app-border));
+  }
+
+  .app-surface-2 {
+    background-color: rgb(var(--app-surface-2));
+  }
+
+  .app-text-muted {
+    color: rgb(var(--app-text-muted));
+  }
+
+  .app-border {
+    border-color: rgb(var(--app-border));
+  }
+
+  /* Bandeau principal PAA — bleu marine foncé */
+  .paa-banner {
+    @apply bg-paa-navy-900 text-white shadow-paa-md;
+  }
+
+  /* En-tête de tableau — bleu clair sur fond très clair (identité PAA) */
+  .paa-thead {
+    @apply bg-paa-blue-100 text-paa-navy-900 dark:bg-paa-navy-700 dark:text-paa-blue-100;
+  }
+
+  /* Bouton primaire */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md
+           bg-paa-navy-700 px-4 py-2 text-fluid-sm font-medium text-white
+           transition-colors hover:bg-paa-navy-800
+           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 focus:ring-offset-2
+           disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* Bouton secondaire (transparent avec bordure) */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md
+           border border-paa-blue-200 bg-white px-4 py-2 text-fluid-sm font-medium
+           text-paa-navy-700 transition-colors hover:bg-paa-blue-50
+           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 focus:ring-offset-2
+           dark:border-paa-navy-700 dark:bg-paa-navy-800 dark:text-paa-blue-100
+           dark:hover:bg-paa-navy-700;
+  }
+
+  /* Carte / panneau */
+  .paa-card {
+    @apply rounded-lg border app-surface app-border shadow-paa-sm;
+  }
+}

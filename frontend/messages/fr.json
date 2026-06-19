@@ -1,0 +1,75 @@
+{
+  "appName": "PAA-Traverse",
+  "appTagline": "Suivi temps réel des temps de traversée — Port Autonome d'Abidjan",
+  "common": {
+    "loading": "Chargement…",
+    "error": "Erreur",
+    "retry": "Réessayer",
+    "noData": "Pas de donnée disponible",
+    "search": "Rechercher",
+    "close": "Fermer",
+    "menu": "Menu",
+    "language": "Langue",
+    "theme": "Thème",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "themeSystem": "Système"
+  },
+  "nav": {
+    "carte": "Accueil / Carte",
+    "indicateurs": "Indicateurs",
+    "fiabilite": "Fiabilité",
+    "prediction": "Prédiction",
+    "administration": "Administration"
+  },
+  "carte": {
+    "title": "Cartographie temps réel",
+    "subtitle": "État instantané des 6 tronçons surveillés.",
+    "legendTitle": "Niveau de congestion",
+    "legendFluide": "Fluide",
+    "legendDense": "Dense",
+    "legendCongestionne": "Congestionné",
+    "legendIndetermine": "Indéterminé",
+    "referenceLine": "Référence 50 km/h",
+    "placeholder": "La carte Leaflet sera intégrée dans cette zone (étape suivante de P4)."
+  },
+  "indicateurs": {
+    "title": "Indicateurs de performance",
+    "subtitle": "TTI, PTI, BTI — norme FHWA. Comparaison sur fenêtres glissantes 30 / 60 / 90 jours.",
+    "tti": "Travel Time Index",
+    "pti": "Planning Time Index",
+    "bti": "Buffer Time Index",
+    "ttiTooltip": "Ratio entre le temps de parcours moyen et le temps fluide de référence.",
+    "ptiTooltip": "Ratio entre le 95e percentile et le temps fluide — marge à prévoir pour être à l'heure 95 % du temps.",
+    "btiTooltip": "Marge tampon en pourcentage de la moyenne.",
+    "placeholder": "Les graphiques Recharts seront ajoutés ici."
+  },
+  "fiabilite": {
+    "title": "Fiabilité des sources de mesure",
+    "subtitle": "Confrontation hebdomadaire des durées Google Routes avec les relevés terrain GPX.",
+    "lastSession": "Dernière session terrain",
+    "ecartMoyen": "Écart moyen terrain / Google",
+    "tronconsValides": "Tronçons validés",
+    "placeholder": "Le tableau de comparaison avec les fichiers GPX importés sera ajouté ici."
+  },
+  "prediction": {
+    "title": "Prédiction et heure optimale",
+    "subtitle": "Estimation du temps de parcours futur, à partir des profils horaires historiques.",
+    "selectTroncon": "Choisir un tronçon",
+    "selectDate": "Date",
+    "selectTime": "Heure",
+    "estimate": "Estimer",
+    "placeholder": "Les composants de prédiction (P6.2 / P6.3) seront intégrés ici."
+  },
+  "administration": {
+    "title": "Administration",
+    "subtitle": "Gestion du référentiel des tronçons, état du robot de collecte, exports.",
+    "collecteStatus": "État du robot de collecte",
+    "addTroncon": "Ajouter un nouveau tronçon",
+    "exportData": "Exporter les données",
+    "placeholder": "Les formulaires d'administration (P6.4) et les exports seront ajoutés ici."
+  },
+  "footer": {
+    "tagline": "Port Autonome d'Abidjan — projet hackathon PAA-Traverse"
+  }
+}

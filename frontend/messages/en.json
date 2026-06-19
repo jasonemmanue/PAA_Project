@@ -1,0 +1,75 @@
+{
+  "appName": "PAA-Traverse",
+  "appTagline": "Real-time crossing time monitoring — Autonomous Port of Abidjan",
+  "common": {
+    "loading": "Loading…",
+    "error": "Error",
+    "retry": "Retry",
+    "noData": "No data available",
+    "search": "Search",
+    "close": "Close",
+    "menu": "Menu",
+    "language": "Language",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System"
+  },
+  "nav": {
+    "carte": "Home / Map",
+    "indicateurs": "Indicators",
+    "fiabilite": "Reliability",
+    "prediction": "Prediction",
+    "administration": "Administration"
+  },
+  "carte": {
+    "title": "Real-time map",
+    "subtitle": "Live status of the 6 monitored segments.",
+    "legendTitle": "Congestion level",
+    "legendFluide": "Free flow",
+    "legendDense": "Dense",
+    "legendCongestionne": "Congested",
+    "legendIndetermine": "Unknown",
+    "referenceLine": "50 km/h reference",
+    "placeholder": "The Leaflet map will be embedded here (next P4 step)."
+  },
+  "indicateurs": {
+    "title": "Performance indicators",
+    "subtitle": "TTI, PTI, BTI — FHWA standard. Comparison over rolling 30 / 60 / 90 day windows.",
+    "tti": "Travel Time Index",
+    "pti": "Planning Time Index",
+    "bti": "Buffer Time Index",
+    "ttiTooltip": "Ratio between average travel time and free-flow reference time.",
+    "ptiTooltip": "Ratio between 95th percentile and free-flow time — buffer needed to arrive on time 95% of the time.",
+    "btiTooltip": "Buffer margin as a percentage of the average.",
+    "placeholder": "Recharts visualizations will be added here."
+  },
+  "fiabilite": {
+    "title": "Source reliability",
+    "subtitle": "Weekly cross-check of Google Routes durations against GPX field recordings.",
+    "lastSession": "Last field session",
+    "ecartMoyen": "Average gap field / Google",
+    "tronconsValides": "Validated segments",
+    "placeholder": "Comparison table with imported GPX files will be added here."
+  },
+  "prediction": {
+    "title": "Prediction & optimal time",
+    "subtitle": "Future travel time estimation from historical hourly profiles.",
+    "selectTroncon": "Select a segment",
+    "selectDate": "Date",
+    "selectTime": "Time",
+    "estimate": "Estimate",
+    "placeholder": "Prediction components (P6.2 / P6.3) will be embedded here."
+  },
+  "administration": {
+    "title": "Administration",
+    "subtitle": "Segment registry management, collection robot status, exports.",
+    "collecteStatus": "Collection robot status",
+    "addTroncon": "Add a new segment",
+    "exportData": "Export data",
+    "placeholder": "Administration forms (P6.4) and exports will be added here."
+  },
+  "footer": {
+    "tagline": "Autonomous Port of Abidjan — PAA-Traverse hackathon project"
+  }
+}
