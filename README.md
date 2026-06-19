@@ -639,7 +639,7 @@ combine plusieurs visualisations :
 | Bloc | Description | Source API |
 |------|-------------|------------|
 | **Sélecteurs** | Dropdown tronçon + boutons radio 24h / 7j / 30j / 90j | `getTroncons()` |
-| **Barre de pilotage** | Badge « Mode planifié » (pastille verte qui pulse si actif) + boutons **Démarrer / Arrêter la collecte** + boutons **Export CSV** et **Export Excel** | `collecteStatus`, `collecteStart`, `collecteStop`, `urlExportMesures` |
+| **Barre de pilotage** | Badge « Mode planifié » avec **pastille à 3 états** (vert qui pulse en plage active / **bleu calme en veille la nuit** / gris arrêté) + libellé fidèle (« Collecte active / en veille / arrêtée ») + lignes **Plage active : 7h–19h (Africa/Abidjan)** et **Prochain cycle : aujourd'hui 18:40** ou **demain 07:00** + boutons **Démarrer / Arrêter la collecte** + boutons **Export CSV** et **Export Excel** | `collecteStatus`, `collecteStart`, `collecteStop`, `urlExportMesures` |
 | **4 compteurs** | Temps moyen, minimum, maximum, nombre de mesures sur la période | `getIndicateursTroncon` |
 | **3 cartes FHWA** | TTI, PTI, BTI mis en valeur + badge de classe de congestion | idem |
 | **Courbe Recharts** | 3 séries superposées : **temps avec trafic** (rouge), **P95** (vert tirets), **ligne référence 50 km/h en bleu ciel** | `getSerieTemporelle` |
@@ -668,6 +668,20 @@ combine plusieurs visualisations :
 > 📐 **Compteur « Nb mesures »** : il porte sur **un seul tronçon** (celui
 > sélectionné dans le dropdown). Pour le total des 6 tronçons, regarder
 > `compteurs_jour.nb_mesures_total` renvoyé par `GET /collecte/status`.
+
+> 🌙 **Mode veille nocturne automatique.** Le scheduler APScheduler du backend
+> utilise un `CronTrigger` restreint à la **plage horaire** définie par
+> `COLLECT_START_HOUR` et `COLLECT_END_HOUR` (par défaut **7h → 19h**, fuseau
+> `Africa/Abidjan`). Conséquence : **aucune requête Google n'est émise entre
+> 19h00 et 06:59** — la collecte reprend automatiquement le lendemain à 7h00
+> sans aucune action manuelle. Le frontend reflète fidèlement cet état :
+> pastille **verte qui pulse** quand un cycle peut tomber, **bleue calme**
+> quand on est hors plage. Le libellé bascule de « **Collecte active** » à
+> « **Collecte en veille** », et la ligne « Prochain cycle » passe de
+> *aujourd'hui HH:MM* à *demain 07:00*. La détermination est faite côté client
+> en lisant `config.plage_horaire` et l'heure courante convertie en
+> `Africa/Abidjan` via `Intl.DateTimeFormat` — donc aucun nouvel endpoint
+> backend nécessaire.
 
 Tous les graphiques utilisent **`ResponsiveContainer`** : ils s'adaptent
 automatiquement à la largeur de leur conteneur, donc lisibles à toutes les tailles
