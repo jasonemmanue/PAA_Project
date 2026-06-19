@@ -15,12 +15,14 @@
 3. [Ce qui est livré dans la phase P1](#3--ce-qui-est-livré-dans-la-phase-p1)
 4. [Ce qui est livré dans la phase P2](#4--ce-qui-est-livré-dans-la-phase-p2)
 5. [Ce qui est livré dans la phase P3](#5--ce-qui-est-livré-dans-la-phase-p3)
-6. [Démarrer le projet sur ma machine](#6--démarrer-le-projet-sur-ma-machine)
-7. [Vérifier que tout fonctionne (tests)](#7--vérifier-que-tout-fonctionne-tests)
-8. [Comprendre les fichiers du projet](#8--comprendre-les-fichiers-du-projet)
-9. [Petit glossaire technique](#9--petit-glossaire-technique)
-10. [Problèmes fréquents et solutions](#10--problèmes-fréquents-et-solutions)
-11. [La suite du projet](#11--la-suite-du-projet)
+6. [Ce qui est livré dans la phase P6.1](#6--ce-qui-est-livré-dans-la-phase-p61)
+7. [Déploiement Railway (production)](#7--déploiement-railway-production)
+8. [Démarrer le projet sur ma machine](#8--démarrer-le-projet-sur-ma-machine)
+9. [Vérifier que tout fonctionne (tests)](#9--vérifier-que-tout-fonctionne-tests)
+10. [Comprendre les fichiers du projet](#10--comprendre-les-fichiers-du-projet)
+11. [Petit glossaire technique](#11--petit-glossaire-technique)
+12. [Problèmes fréquents et solutions](#12--problèmes-fréquents-et-solutions)
+13. [La suite du projet](#13--la-suite-du-projet)
 
 ---
 
@@ -358,7 +360,129 @@ recharger la page. Concrètement :
 
 ---
 
-## 6 · Démarrer le projet sur ma machine
+## 6 · Ce qui est livré dans la phase P6.1
+
+> **L'idée en une phrase :** la base de données est **alimentée dès le premier jour**
+> avec **plus de 2 000 mesures terrain réelles** et un **comparatif pluriannuel**,
+> au lieu d'attendre une semaine que le robot accumule de la matière.
+
+### ✅ Import de la campagne terrain de Février 2025 (2 016 mesures)
+
+Le fichier `Base_Nettoyee_PAA_Fev2025.xlsx` contient les mesures réelles
+récoltées sur le terrain en février 2025. Elles sont importées dans la table
+`mesures` avec `source = 'historique_paa_2025'` (un nouveau code source
+distinct de `google` pour ne pas mélanger les calculs temps réel).
+
+| Tronçon                                  | Mesures importées |
+|------------------------------------------|------------------:|
+| CARENA → Pharmacie Palm Beach            | 336               |
+| Pharmacie Palm Beach → CARENA            | 336               |
+| Toyota CFAO → Pharmacie Palm Beach       | 336               |
+| Pharmacie Palm Beach → Toyota CFAO       | 336               |
+| Agence SODECI → Pharmacie Palm Beach     | 336               |
+| Pharmacie Palm Beach → Agence SODECI     | 336               |
+| **Total**                                | **2 016**         |
+
+Après l'import, les **profils horaires** sont **recalculés automatiquement** :
+les statistiques (moyenne, médiane, P95) sont donc immédiatement disponibles.
+
+### ✅ Import du comparatif pluriannuel (24 lignes)
+
+Le fichier `FEVRIER_2026.xlsx`, feuille **`SYNTHESE COMPAREE`**, contient un
+comparatif officiel **oct_2025 vs fev_2026** par axe, sens et type de jour
+(jours ouvrables / week-ends). Une nouvelle table **`evolution_indicateur`**
+le stocke :
+
+- **6 axes** × **2 périodes** × **2 types de jour** = **24 lignes**
+- Pour chacune : `temps_min_s`, `temps_moyen_s`, `temps_max_s`
+
+Cette table alimentera plus tard le graphique d'évolution de la performance
+« temps de traversée » demandé par le cahier des charges (article 4.4).
+
+### ✅ Deux nouvelles routes d'import (utilisables depuis Swagger)
+
+| URL                            | Ce qu'elle fait                                                                |
+|--------------------------------|--------------------------------------------------------------------------------|
+| `POST /import/base-nettoyee`   | Upload du fichier 2025 → insère les 2 016 mesures + recalcul des profils       |
+| `POST /import/evolution`       | Upload du fichier 2026 → insère les 24 lignes du comparatif pluriannuel        |
+
+Les imports sont **idempotents** : on peut relancer un upload sans risque,
+les doublons sont ignorés (clé unique par `troncon_id + horodatage + source`
+côté mesures, et `axe + sens + periode + type_jour` côté évolution).
+
+### ⚠️ Règle d'or : ne jamais mélanger les sources
+
+| Pour calculer…                                  | Source à utiliser                     |
+|-------------------------------------------------|---------------------------------------|
+| L'état **temps réel** affiché sur la carte      | `source = 'google'` uniquement        |
+| Le **profil horaire** et le **prédicteur** (P6.2) | `'google'` + `'historique_paa_2025'`  |
+| La **comparaison pluriannuelle**                | Table `evolution_indicateur`          |
+
+---
+
+## 7 · Déploiement Railway (production)
+
+> Le backend est **déployé en ligne** sur Railway depuis le 19 juin 2026 :
+> **https://backend-production-6cbf.up.railway.app**
+
+### Architecture déployée
+
+| Composant       | Hébergement                          | État                              |
+|-----------------|--------------------------------------|-----------------------------------|
+| **Backend FastAPI** | Service Docker Railway          | ✅ En ligne 24h/24                |
+| **PostgreSQL**  | Plugin Railway managé                | ✅ Provisionné, sauvegardes auto  |
+| **Redis**       | Plugin Railway managé                | ✅ Provisionné                    |
+| **OSRM**        | Non déployé (optionnel)              | ⚠️ Repli 50 km/h utilisé          |
+| **Frontend**    | À déployer en P4                     | ⏳ Vercel ou Railway              |
+
+### Ce qui tourne en continu sur Railway
+
+- **Robot de collecte Google Routes** : toutes les **20 minutes**, **de 7h00
+  à 19h00** (Africa/Abidjan), soit **216 mesures / jour** réparties sur les
+  6 tronçons.
+- **Agrégation nocturne** des profils horaires chaque jour à **23h00**.
+- **Endpoints publics** : `/health`, `/carte/etat`, `/docs` (Swagger),
+  `/troncons/{id}/indicateurs`, etc.
+
+### Endpoints clés à vérifier
+
+| URL publique                                                   | Ce qu'on doit voir                     |
+|----------------------------------------------------------------|----------------------------------------|
+| https://backend-production-6cbf.up.railway.app/health          | `{"status":"ok"}`                      |
+| https://backend-production-6cbf.up.railway.app/collecte/status | `actif: true`, 6 tronçons, ~216 req/j  |
+| https://backend-production-6cbf.up.railway.app/carte/etat      | Snapshot temps réel des 6 tronçons     |
+| https://backend-production-6cbf.up.railway.app/docs            | Documentation Swagger interactive      |
+
+### État de la base de données Railway
+
+Au **19 juin 2026** (fin P6.1) :
+
+| Table                      | Lignes  | Provenance                                   |
+|----------------------------|--------:|----------------------------------------------|
+| `troncons`                 | 6       | Seed initial                                 |
+| `mesures` (`google`)       | +216 / jour | Robot APScheduler en continu             |
+| `mesures` (`historique_paa_2025`) | **2 016** | Import campagne terrain Février 2025  |
+| `evolution_indicateur`     | **24**  | Import SYNTHESE COMPAREE (oct_2025 / fev_2026) |
+| `profils_horaires`         | recalculé chaque nuit | Agrégation IQR sur 30 / 60 / 90 jours  |
+
+### Procédures de déploiement
+
+📖 **Toutes les procédures, pièges et bonnes pratiques** sont documentés dans
+[`railwaydeploy.md`](railwaydeploy.md) à la racine. **À lire avant tout
+`railway up`** — notamment :
+
+- Règle critique : **`git add -A` + commit** avant `railway up` (Railway
+  utilise `git archive` et ignore les fichiers non commités).
+- Ne **jamais** mettre `alembic upgrade head` dans le `startCommand`
+  (provoque un `pg_advisory_lock` bloquant). Lancer la migration
+  **manuellement** depuis la **Console Railway** après chaque déploiement
+  qui contient une nouvelle migration.
+- `${PORT}` doit être enveloppé dans `sh -c '...'` pour être interprété.
+- `numReplicas = 1` obligatoire (APScheduler vit en mémoire).
+
+---
+
+## 8 · Démarrer le projet sur ma machine
 
 > ⚠️ Toutes les commandes ci-dessous se lancent dans **PowerShell sur Windows**,
 > à la racine du projet (`C:\Users\…\paa-traverse`), pas dans un sous-dossier.
@@ -441,7 +565,7 @@ jour`), **tout est prêt**.
 
 ---
 
-## 7 · Vérifier que tout fonctionne (tests)
+## 9 · Vérifier que tout fonctionne (tests)
 
 ### Test 1 — Le backend répond
 
@@ -592,7 +716,7 @@ message `{type: "maj", donnees: {...}}` apparaît dans la console.
 
 ---
 
-## 8 · Comprendre les fichiers du projet
+## 10 · Comprendre les fichiers du projet
 
 ```
 paa-traverse/
@@ -641,7 +765,7 @@ paa-traverse/
 
 ---
 
-## 9 · Petit glossaire technique
+## 11 · Petit glossaire technique
 
 | Mot                  | Explication simple                                                                                            |
 |----------------------|---------------------------------------------------------------------------------------------------------------|
@@ -673,7 +797,7 @@ paa-traverse/
 
 ---
 
-## 10 · Problèmes fréquents et solutions
+## 12 · Problèmes fréquents et solutions
 
 ### « Le port 8000 est déjà utilisé / je n'arrive pas à démarrer le backend »
 
@@ -719,18 +843,20 @@ Puis recommencer depuis l'étape 4 du démarrage.
 
 ---
 
-## 11 · La suite du projet
+## 13 · La suite du projet
 
 Sept phases au total (voir [CLAUDE.md § 4](CLAUDE.md#4-feuille-de-route--7-phases)).
 
-| Phase | Objectif                                              | État               |
-|:-----:|-------------------------------------------------------|--------------------|
-| **P1**| **Fondations** (infrastructure, modèle de données)    | ✅ **terminée**    |
-| **P2**| **Robot de collecte + agrégation nocturne + exports** | ✅ **terminée**    |
-| **P3**| **Indicateurs FHWA + API restructurée + WebSocket**   | ✅ **terminée**    |
-| P4    | Tableau de bord avec carte Leaflet et graphiques      | À démarrer         |
-| P5    | Validation hebdomadaire par relevés GPS terrain       | À venir            |
-| P6    | Prédiction du temps optimal d'acheminement            | À venir            |
-| P7    | Tests, déploiement, support de présentation           | À venir            |
+| Phase     | Objectif                                                            | État               |
+|:---------:|---------------------------------------------------------------------|--------------------|
+| **P1**    | **Fondations** (infrastructure, modèle de données)                  | ✅ **terminée**    |
+| **P2**    | **Robot de collecte + agrégation nocturne + exports**               | ✅ **terminée**    |
+| **P3**    | **Indicateurs FHWA + API restructurée + WebSocket**                 | ✅ **terminée**    |
+| **P6.1**  | **Import des 2 016 mesures terrain Fév 2025 + comparatif pluriannuel** | ✅ **terminée** |
+| **Déploiement** | **Backend en ligne sur Railway** (collecte 24h/24 démarrée)   | ✅ **terminé**     |
+| P4        | Tableau de bord avec carte Leaflet et graphiques                    | À démarrer         |
+| P5        | Validation hebdomadaire par relevés GPS terrain                     | À venir            |
+| P6.2-6.4  | Prédicteur, heure optimale, ajout de parcours admin                 | À venir            |
+| P7        | Tests, durcissement, support de présentation                        | À venir            |
 
 À la fin de P7, l'application sera prête pour la démo au jury du hackathon.
