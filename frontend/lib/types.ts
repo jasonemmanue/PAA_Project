@@ -98,3 +98,112 @@ export interface CollecteStatus {
     nb_troncons_actifs: number;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Profil horaire (24 points par jour de la semaine)
+// ---------------------------------------------------------------------------
+export type JourSemaine =
+  | "lundi"
+  | "mardi"
+  | "mercredi"
+  | "jeudi"
+  | "vendredi"
+  | "samedi"
+  | "dimanche";
+
+export interface PointProfilHoraire {
+  heure: number;
+  moyenne_s: number | null;
+  mediane_s: number | null;
+  min_s: number | null;
+  max_s: number | null;
+  p95_s: number | null;
+  nb_mesures: number;
+}
+
+export interface ProfilHoraire {
+  troncon: {
+    id: number;
+    nom: string;
+    distance_m: number;
+    vitesse_ref_kmh: number;
+    temps_reference_s: number;
+  };
+  jour: JourSemaine;
+  jour_index: number;
+  fenetre_jours: number;
+  points: PointProfilHoraire[];
+}
+
+// ---------------------------------------------------------------------------
+// Série temporelle (courbe d'évolution journalière)
+// ---------------------------------------------------------------------------
+export interface PointSerie {
+  instant_local: string;
+  moyenne_s: number | null;
+  p95_s: number | null;
+  tti: number | null;
+  classe_congestion: ClasseCongestion;
+  nb_mesures: number;
+}
+
+export interface SerieTemporelle {
+  troncon_id: number;
+  troncon_nom: string;
+  granularite: "hour" | "day";
+  temps_reference_s: number;
+  nb_points: number;
+  points: PointSerie[];
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot d'indicateurs + détail par jour (pour les KPI cards)
+// ---------------------------------------------------------------------------
+export interface SnapshotIndicateurs {
+  nb_mesures: number;
+  moyenne_s: number | null;
+  mediane_s: number | null;
+  min_s: number | null;
+  max_s: number | null;
+  p95_s: number | null;
+  tti: number | null;
+  pti: number | null;
+  bti: number | null;
+  classe_congestion: ClasseCongestion;
+  temps_reference_s: number;
+  source_temps_reference: string;
+  frequence_depassement: number | null;
+}
+
+export interface IndicateursPeriode {
+  periode: string;
+  fenetre_jours: number;
+  fuseau: string;
+  snapshot: SnapshotIndicateurs;
+  evolution_par_jour: Array<{
+    date_locale: string;
+    moyenne_s: number | null;
+    p95_s: number | null;
+    tti: number | null;
+    nb_mesures: number;
+  }>;
+}
+
+// ---------------------------------------------------------------------------
+// Evolution pluriannuelle (table evolution_indicateur)
+// ---------------------------------------------------------------------------
+export interface LigneEvolution {
+  id: number;
+  axe: string;
+  sens: string;
+  periode: string;
+  type_jour: string;
+  temps_min_s: number | null;
+  temps_moyen_s: number | null;
+  temps_max_s: number | null;
+}
+
+export interface EvolutionResponse {
+  nb_lignes: number;
+  lignes: LigneEvolution[];
+}

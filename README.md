@@ -17,12 +17,13 @@
 5. [Ce qui est livré dans la phase P3](#5--ce-qui-est-livré-dans-la-phase-p3)
 6. [Ce qui est livré dans la phase P6.1](#6--ce-qui-est-livré-dans-la-phase-p61)
 7. [Déploiement Railway (production)](#7--déploiement-railway-production)
-8. [Démarrer le projet sur ma machine](#8--démarrer-le-projet-sur-ma-machine)
-9. [Vérifier que tout fonctionne (tests)](#9--vérifier-que-tout-fonctionne-tests)
-10. [Comprendre les fichiers du projet](#10--comprendre-les-fichiers-du-projet)
-11. [Petit glossaire technique](#11--petit-glossaire-technique)
-12. [Problèmes fréquents et solutions](#12--problèmes-fréquents-et-solutions)
-13. [La suite du projet](#13--la-suite-du-projet)
+8. [Ce qui est livré dans la phase P4 (frontend)](#8--ce-qui-est-livré-dans-la-phase-p4-frontend)
+9. [Démarrer le projet sur ma machine](#9--démarrer-le-projet-sur-ma-machine)
+10. [Vérifier que tout fonctionne (tests)](#10--vérifier-que-tout-fonctionne-tests)
+11. [Comprendre les fichiers du projet](#11--comprendre-les-fichiers-du-projet)
+12. [Petit glossaire technique](#12--petit-glossaire-technique)
+13. [Problèmes fréquents et solutions](#13--problèmes-fréquents-et-solutions)
+14. [La suite du projet](#14--la-suite-du-projet)
 
 ---
 
@@ -482,7 +483,232 @@ Au **19 juin 2026** (fin P6.1) :
 
 ---
 
-## 8 · Démarrer le projet sur ma machine
+## 8 · Ce qui est livré dans la phase P4 (frontend)
+
+> **L'idée en une phrase :** une application web **Next.js + React + TypeScript**
+> entièrement responsive (PC, tablette, mobile), bilingue FR/EN, en thème clair ou
+> sombre, qui consomme l'API du backend et affiche en temps réel la carte des
+> tronçons, les indicateurs FHWA et toute l'analyse historique.
+
+### ✅ Identité visuelle PAA + design system
+
+Une **palette dérivée du bleu marine institutionnel** du Port Autonome d'Abidjan :
+
+| Rôle | Couleur | Code | Utilisation |
+|------|---------|------|-------------|
+| Bandeau principal | Bleu marine | `#0B2545` | Topbar, splash screen, accents |
+| Surfaces secondaires | Bleus clairs | `#D9E2F3`, `#EFF4FA` | En-têtes de tableaux, lignes alternées |
+| Boutons / accents | Navy soutenu | `#1F4E79` | Boutons primaires, focus, sélection |
+| **Référence 50 km/h** | **Bleu ciel** | **`#4CC9F0`** | **Réservé EXCLUSIVEMENT à la ligne de référence sur les graphes** (norme du cahier des charges) |
+| Fluide | Vert | `#2ECC71` | Tronçon sans bouchon |
+| Dense | Orange | `#F39C12` | Trafic ralenti |
+| Congestionné | Rouge | `#E74C3C` | Bouchon sévère |
+| Indéterminé | Gris | `#95A5A6` | Pas de mesure |
+
+Définie dans [`frontend/tailwind.config.ts`](frontend/tailwind.config.ts), réutilisée
+**partout** : tronçons sur la carte, badges, courbes Recharts, heatmaps.
+
+### ✅ 100 % responsive — trois points de rupture explicites
+
+| Breakpoint | Largeur | Effet |
+|------------|---------|-------|
+| `sm` | **375 px** (mobile) | Sidebar cachée, menu burger qui ouvre un drawer ; tout empilé en colonne ; tailles fluides via `clamp()` |
+| `md` | **768 px** (tablette) | Layout 2-3 colonnes sur les grilles, drawer toujours actif (pas encore de sidebar) |
+| `lg` | **1024 px** (desktop) | Sidebar latérale repliable, carte sur 2/3 de la largeur, panneaux en 3-4 colonnes |
+
+**Aucune valeur fixe en pixels** dans la mise en page critique : on utilise des
+**tailles fluides** (`fluid-sm`, `fluid-base`, `fluid-2xl`, etc.) qui s'adaptent
+automatiquement à la largeur de l'écran.
+
+### ✅ Bilingue FR / EN, bascule INSTANTANÉE
+
+- Dictionnaires plats dans [`frontend/messages/fr.json`](frontend/messages/fr.json)
+  et [`frontend/messages/en.json`](frontend/messages/en.json).
+- Provider React custom (`lib/i18n.tsx`) qui permute le dictionnaire **en mémoire**
+  → bascule FR ↔ EN **sans aucun rechargement de page**.
+- Choix persisté dans `localStorage` (clé `paa-locale`), restauré au prochain démarrage.
+- Bouton de bascule visible en haut à droite, à côté du sélecteur de thème.
+
+### ✅ Thème clair / sombre persistant
+
+- Géré par [`next-themes`](https://github.com/pacocoursey/next-themes).
+- Détecte automatiquement la préférence système, mais peut être forcé via le bouton.
+- Persistance `localStorage` (clé `paa-theme`).
+- Toutes les couleurs PAA ont leur variante sombre (variables CSS définies dans
+  `globals.css`).
+
+### ✅ Écran de démarrage HACKATONIA (splash screen animé)
+
+À chaque ouverture du site, un **écran de démarrage de 4 secondes** s'affiche
+avec le logo de la team HACKATONIA et un **effet d'animation laser printing** en
+bleu ciel :
+
+| Temps | Événement |
+|-------|-----------|
+| 0 s | Fond bleu marine, logo HACKATONIA apparaît (fade-in 300 ms) |
+| 0,3 s | « **Hackathon** » se grave de gauche à droite avec un effet de **rayon laser** bleu ciel + lueur (`drop-shadow` + barre verticale glissante) |
+| 1,5 s | « **Réalisé par l'équipe HACKATONIA** » s'écrit en dessous, même effet laser |
+| 2,2 s | Les deux textes restent affichés ensemble en lueur stable |
+| 3,5 s | Fondu de sortie (opacity 1 → 0) |
+| 4 s | Carte révélée |
+
+Caractéristiques :
+- L'animation **ne bloque PAS** le chargement de l'application en arrière-plan
+  (`position: fixed` au-dessus de l'app qui continue d'hydrater).
+- Respecte la préférence `prefers-reduced-motion` (animations désactivées).
+- Styles inline défensifs : le splash reste visible même si Tailwind n'a pas
+  encore appliqué ses classes au tout premier rendu.
+- Code source : [`frontend/components/SplashScreen.tsx`](frontend/components/SplashScreen.tsx),
+  keyframes dans [`frontend/app/globals.css`](frontend/app/globals.css).
+
+### ✅ Favicon multi-tailles à partir du logo
+
+Un script Python ([`frontend/scripts/generer_favicons.py`](frontend/scripts/generer_favicons.py))
+utilise **Pillow** pour générer toutes les déclinaisons :
+- `app/favicon.ico` — 16×16 + 32×32 + 48×48 (un seul fichier multi-tailles)
+- `public/apple-touch-icon.png` — 180×180 pour iOS/Safari
+- `public/icon-192.png` + `public/icon-512.png` — pour PWA Android
+
+Le `<head>` HTML est enrichi via les `metadata` Next.js (`title`, `description`,
+`openGraph`, `keywords`).
+
+### ✅ Coquille d'application navigable — 5 pages
+
+| Page | URL | Statut P4 |
+|------|-----|-----------|
+| Accueil / Carte | `/` | ✅ Complète |
+| Indicateurs | `/indicateurs` | ✅ Complète |
+| Fiabilité | `/fiabilite` | ⏳ Coquille (P5) |
+| Prédiction | `/prediction` | ⏳ Coquille (P6.2/6.3) |
+| Administration | `/administration` | ⏳ Coquille (P6.4) |
+
+Navigation accessible via :
+- **Sidebar** desktop (≥ 1024 px) avec bouton de réduction icône-seulement
+- **Drawer** sur tablette et mobile, déclenché par le bouton burger du topbar
+- Marquage **`aria-pressed`** + `aria-label` traduits pour l'accessibilité
+
+### ✅ Client API typé (`lib/api.ts`)
+
+Client `fetch` minimal, typé en TypeScript strict, qui mirorise tous les endpoints
+du backend :
+
+```ts
+import { api } from "@/lib/api";
+
+const troncons = await api.troncons();
+const etat = await api.carteEtat();
+const indicateurs = await api.indicateurs(3, "7j");
+const serie = await api.serieTemporelle(3, { granularite: "hour" });
+const profil = await api.profilHoraire(3, "mardi", 90);
+const evolution = await api.evolution();
+const status = await api.collecteStatus();
+await api.collecteStart();
+await api.collecteStop();
+const urlCsv = api.urlExportMesures({ troncon_id: 3, format: "csv" });
+```
+
+- Lit `NEXT_PUBLIC_API_BASE_URL` depuis l'environnement.
+- Erreurs propagées via une classe `ApiError` dédiée (`statut`, `corps`).
+- Utilisable côté serveur **et** côté client (Server Components, Route Handlers,
+  composants `"use client"`).
+
+### ✅ Page Accueil / Carte — cartographie temps réel
+
+[`frontend/components/carte/PageCarte.tsx`](frontend/components/carte/PageCarte.tsx)
+embarque **Leaflet** + **OpenStreetMap** centré sur la zone portuaire d'Abidjan :
+
+| Fonctionnalité | Détail |
+|----------------|--------|
+| **6 tronçons polylines** colorés selon la classe de congestion (vert/orange/rouge) | Décodage du format Google Polyline (OSRM) côté client, repli sur segment droit origine → destination si polyline absente |
+| **WebSocket `/ws/etat`** | Connexion automatique avec reconnexion exponentielle (1 s → 30 s) ; chaque mise à jour rafraîchit les couleurs des polylines sans recréer la carte |
+| **Heatmap géographique** des congestions | Plugin `leaflet.heat` ; gradient orange → rouge ; échantillonnage des points le long des polylines pondéré par le niveau de congestion |
+| **Popup détaillé** au clic | Tronçon, classe, temps actuel, temps fluide, TTI, heure de mesure, source (Google / interne / référence), lien vers la fiche détaillée |
+| **Zoom intelligent** au clic sur la liste | `map.flyToBounds()` animé avec `fitBounds` autour du tronçon sélectionné |
+| **Panneau liste** (droite desktop, sous la carte mobile) | Les 6 tronçons avec couleur, nom, temps actuel, TTI, source et horodatage |
+| **Légende** | Codes couleur + ligne référence 50 km/h en bleu ciel |
+| **Indicateur WebSocket** | Petit badge en haut à droite de la carte (`● temps réel` / `○ connexion…`) |
+
+La carte reste **fluide au doigt** sur mobile (pinch-to-zoom et drag tactile
+gérés nativement par Leaflet).
+
+### ✅ Page Indicateurs — analyse complète (Recharts)
+
+[`frontend/components/indicateurs/PageIndicateurs.tsx`](frontend/components/indicateurs/PageIndicateurs.tsx)
+combine plusieurs visualisations :
+
+| Bloc | Description | Source API |
+|------|-------------|------------|
+| **Sélecteurs** | Dropdown tronçon + boutons radio 24h / 7j / 30j / 90j | `getTroncons()` |
+| **Barre de pilotage** | Badge « Mode planifié » (pastille verte qui pulse si actif) + boutons **Démarrer / Arrêter la collecte** + boutons **Export CSV** et **Export Excel** | `collecteStatus`, `collecteStart`, `collecteStop`, `urlExportMesures` |
+| **4 compteurs** | Temps moyen, minimum, maximum, nombre de mesures sur la période | `getIndicateursTroncon` |
+| **3 cartes FHWA** | TTI, PTI, BTI mis en valeur + badge de classe de congestion | idem |
+| **Courbe Recharts** | 3 séries superposées : **temps avec trafic** (rouge), **P95** (vert tirets), **ligne référence 50 km/h en bleu ciel** | `getSerieTemporelle` |
+| **Heatmap horaire jour × heure** | Grille 7 × 24 colorée du vert (fluide) au rouge (congestionné) selon le ratio temps observé / temps fluide ; survol → valeur précise | 7 appels parallèles à `getProfilHoraire(jour, fenetre=90j)` |
+| **Évolution pluriannuelle** | Diagramme à barres comparant les temps min / moyen / max entre les campagnes officielles (`oct_2025` vs `fev_2026`) avec toggle **Jours ouvrables / Week-ends** | `getEvolution()` (table `evolution_indicateur` issue de P6.1) |
+
+> **L'évolution pluriannuelle est la réponse directe au résultat n°4 de l'article 4
+> du cahier des charges** (« Évolution de l'indicateur de performance temps de
+> traversée »), explicitement mentionné dans le sous-titre du bloc.
+
+> 💡 **Sélecteur de période — comment ça marche.** Les quatre boutons
+> **24 h / 7 j / 30 j / 90 j** sont tous fonctionnels. Pour rester compatible
+> avec le contrat backend qui attend un format `Nj` (`1j`, `7j`, `30j`, `90j`),
+> le client API ([`frontend/lib/api.ts`](frontend/lib/api.ts)) traduit
+> automatiquement « **24 h** » en `1j` avant d'appeler
+> `/troncons/{id}/indicateurs`. **Tant que la collecte Google n'a pas accumulé
+> plusieurs jours d'historique** (collecte démarrée le 19/06/2026), les quatre
+> sélecteurs renvoient donc **le même contenu** : uniquement les mesures de la
+> journée en cours. Les 2 016 mesures historiques de février 2025 (importées en
+> P6.1) ne sont **pas** mélangées au TTI temps réel — règle d'or du
+> [CLAUDE.md § 2.5](CLAUDE.md) — mais elles alimentent en revanche la **heatmap
+> horaire** et le **graphique d'évolution pluriannuelle** ci-dessus,
+> indépendamment du sélecteur. Les écarts entre 7 j / 30 j / 90 j deviendront
+> visibles au bout de quelques jours de collecte Google.
+
+> 📐 **Compteur « Nb mesures »** : il porte sur **un seul tronçon** (celui
+> sélectionné dans le dropdown). Pour le total des 6 tronçons, regarder
+> `compteurs_jour.nb_mesures_total` renvoyé par `GET /collecte/status`.
+
+Tous les graphiques utilisent **`ResponsiveContainer`** : ils s'adaptent
+automatiquement à la largeur de leur conteneur, donc lisibles à toutes les tailles
+d'écran. La heatmap devient scrollable horizontalement sur mobile pour préserver
+la lisibilité des cases.
+
+### Comment vérifier le responsive
+
+Dans le navigateur, ouvrir **DevTools** (F12) puis activer la **barre d'outils
+appareils** :
+
+- Chrome / Edge : `Ctrl + Shift + M`
+- Firefox : `Ctrl + Shift + M`
+
+Sélectionner ensuite :
+- **iPhone SE (375 × 667)** — vérifier que le burger apparaît, sidebar cachée,
+  carte ≤ hauteur écran, panneau dessous
+- **iPad (768 × 1024)** — vérifier l'apparition des grilles 2-colonnes
+- **Desktop ≥ 1024** — vérifier la sidebar et la carte sur 2/3 de la largeur
+
+Pour tester la bascule FR/EN : cliquer sur **FR** ou **EN** dans le topbar →
+toute l'interface bascule **instantanément**, sans rechargement.
+
+Pour tester le thème : cliquer sur l'icône **🌙 / ☀️** → bascule clair / sombre,
+persiste après un F5.
+
+Pour rejouer le splash screen : il se rejoue à **chaque ouverture de fenêtre**
+(nouvelle ouverture, F5, nouvel onglet).
+
+### Ce qui n'est **pas encore** fait à la fin de P4
+
+- ❌ Page **Fiabilité** : tableau de comparaison GPX vs Google *(arrive en P5)*
+- ❌ Page **Prédiction** : sélecteur date/heure + temps estimé *(arrive en P6.2 / P6.3)*
+- ❌ Page **Administration** : ajout/édition de tronçons *(arrive en P6.4)*
+- ❌ **Polylines exactes** des 6 tronçons sur la carte : nécessite OSRM exposé
+  (cf. CLAUDE.md § 8.3) — pour l'instant des **segments droits** entre origine
+  et destination sont utilisés, ce qui reste lisible mais moins précis.
+
+---
+
+## 9 · Démarrer le projet sur ma machine
 
 > ⚠️ Toutes les commandes ci-dessous se lancent dans **PowerShell sur Windows**,
 > à la racine du projet (`C:\Users\…\paa-traverse`), pas dans un sous-dossier.
@@ -565,7 +791,7 @@ jour`), **tout est prêt**.
 
 ---
 
-## 9 · Vérifier que tout fonctionne (tests)
+## 10 · Vérifier que tout fonctionne (tests)
 
 ### Test 1 — Le backend répond
 
@@ -716,7 +942,7 @@ message `{type: "maj", donnees: {...}}` apparaît dans la console.
 
 ---
 
-## 10 · Comprendre les fichiers du projet
+## 11 · Comprendre les fichiers du projet
 
 ```
 paa-traverse/
@@ -765,7 +991,7 @@ paa-traverse/
 
 ---
 
-## 11 · Petit glossaire technique
+## 12 · Petit glossaire technique
 
 | Mot                  | Explication simple                                                                                            |
 |----------------------|---------------------------------------------------------------------------------------------------------------|
@@ -797,7 +1023,7 @@ paa-traverse/
 
 ---
 
-## 12 · Problèmes fréquents et solutions
+## 13 · Problèmes fréquents et solutions
 
 ### « Le port 8000 est déjà utilisé / je n'arrive pas à démarrer le backend »
 
@@ -843,7 +1069,7 @@ Puis recommencer depuis l'étape 4 du démarrage.
 
 ---
 
-## 13 · La suite du projet
+## 14 · La suite du projet
 
 Sept phases au total (voir [CLAUDE.md § 4](CLAUDE.md#4-feuille-de-route--7-phases)).
 
@@ -854,7 +1080,7 @@ Sept phases au total (voir [CLAUDE.md § 4](CLAUDE.md#4-feuille-de-route--7-phas
 | **P3**    | **Indicateurs FHWA + API restructurée + WebSocket**                 | ✅ **terminée**    |
 | **P6.1**  | **Import des 2 016 mesures terrain Fév 2025 + comparatif pluriannuel** | ✅ **terminée** |
 | **Déploiement** | **Backend en ligne sur Railway** (collecte 24h/24 démarrée)   | ✅ **terminé**     |
-| P4        | Tableau de bord avec carte Leaflet et graphiques                    | À démarrer         |
+| **P4**    | **Frontend Next.js complet : carte Leaflet, Indicateurs Recharts, splash HACKATONIA, i18n FR/EN, thème clair/sombre** | ✅ **terminée**    |
 | P5        | Validation hebdomadaire par relevés GPS terrain                     | À venir            |
 | P6.2-6.4  | Prédicteur, heure optimale, ajout de parcours admin                 | À venir            |
 | P7        | Tests, durcissement, support de présentation                        | À venir            |

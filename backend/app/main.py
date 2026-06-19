@@ -29,6 +29,7 @@ from app.api.carte import router as carte_router
 from app.api.carte import router_ws as carte_ws_router
 from app.api.collecte import router as collecte_router
 from app.api.diag import router as diag_router
+from app.api.evolution import router as evolution_router
 from app.api.export import router as export_router
 from app.api.indicateurs import router as indicateurs_router
 from app.api.mesures import router as mesures_router
@@ -222,4 +223,5 @@ app.include_router(export_router)
 app.include_router(carte_router)
 app.include_router(carte_ws_router)
 app.include_router(import_router)
+app.include_router(evolution_router)
 app.include_router(diag_router)
