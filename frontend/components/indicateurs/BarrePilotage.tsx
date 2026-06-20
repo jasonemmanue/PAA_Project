@@ -44,9 +44,19 @@ function dateKeyAbidjan(d: Date): string {
   }).format(d);
 }
 
-/** Parse `"7h-19h"` → `{ debut: 7, fin: 19 }`. Renvoie null si format inattendu. */
+/**
+ * Parse la plage horaire renvoyée par le backend :
+ *   - `"7h-19h (Africa/Abidjan)"` → `{ debut: 7, fin: 19 }`
+ *   - `"24h/24 (Africa/Abidjan)"` → `{ debut: 0, fin: 24 }`
+ *
+ * Renvoie null si le format est inattendu.
+ */
 function parserPlage(plage: string | undefined): { debut: number; fin: number } | null {
   if (!plage) return null;
+  // Cas spécial : collecte continue 24h/24
+  if (/24h\s*\/\s*24/.test(plage)) {
+    return { debut: 0, fin: 24 };
+  }
   const m = /(\d{1,2})h-(\d{1,2})h/.exec(plage);
   if (!m) return null;
   return { debut: parseInt(m[1], 10), fin: parseInt(m[2], 10) };
@@ -215,7 +225,10 @@ export function BarrePilotage({
             </span>
             {plage && (
               <span className="text-fluid-xs app-text-muted">
-                {t("indicateurs.plageActive")} : {plage.debut}h–{plage.fin}h (Africa/Abidjan)
+                {t("indicateurs.plageActive")} :{" "}
+                {plage.debut === 0 && plage.fin === 24
+                  ? "24h/24 (Africa/Abidjan)"
+                  : `${plage.debut}h–${plage.fin}h (Africa/Abidjan)`}
               </span>
             )}
             {statut.prochaine_execution && (

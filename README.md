@@ -10,6 +10,7 @@
 
 ## Sommaire
 
+- [Carnet d'exécution du hackathon](#-carnet-dexécution-du-hackathon)
 0. [Audit de conformité aux 5 étapes du brief jury](#0--audit-de-conformité-aux-5-étapes-du-brief-jury)
    - [0bis. Polylines des tronçons : 2 niveaux de rendu](#0bis--polylines-des-tronçons--2-niveaux-de-rendu)
 1. [À quoi ça sert ?](#1--à-quoi-ça-sert-)
@@ -27,6 +28,24 @@
 12. [Petit glossaire technique](#12--petit-glossaire-technique)
 13. [Problèmes fréquents et solutions](#13--problèmes-fréquents-et-solutions)
 14. [La suite du projet](#14--la-suite-du-projet)
+
+---
+
+## 🗺️ Carnet d'exécution du hackathon
+
+Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-21 :
+
+| Phase | Statut | Description rapide |
+|-------|--------|--------------------|
+| P1 → P5 | ✅ Livrées | Fondations, collecte, indicateurs FHWA, frontend, P5 (terrain) |
+| P6.1 | ✅ Livrée | Import historique fév 2025 + comparatif pluriannuel |
+| **§ 4.5 DEESP** | ✅ Livré | **Méthodologie DEESP/DEEF appliquée** (collecte horaire, page Rapport, 17 tableaux + 12 BarCharts) |
+| P6.2 → P7.3 | ⏳ À faire | **7 prompts restants** dans [PROMPTS_RESTANTS_DEESP.md](PROMPTS_RESTANTS_DEESP.md) |
+
+> Les 7 prompts restants sont **entièrement réalignés** avec le rapport
+> DEESP/DEEF d'octobre 2025 — distinction jour-ouvrable/week-end, durées
+> en minutes, sous-tronçons codifiés (T1A, T1B…), cascade de dégradation,
+> tests des règles 3/4-jour-indicatif, et déploiement Vercel.
 
 ---
 
@@ -83,7 +102,7 @@
 | Récupération **distances** | ✅ | Stockées en base via `seed_troncons` (officielles) + OSRM (réelles routière) |
 | Récupération **niveaux de congestion** | ✅ | TTI calculé à chaque cycle → classification fluide/dense/congestionné |
 | Récupération **itinéraires** | 🟡 | Polylines OSRM stockées dans `troncons.polyline` quand OSRM est accessible. Sur Railway (où OSRM n'est pas exposé), **fallback** via `python -m app.complete_sans_osrm` : segments droits encodés, pas de routage réel mais visualisation possible. **Procédure complète de déploiement OSRM permanent sur Oracle Cloud Free Tier** documentée dans [CLAUDE.md § 8.7](CLAUDE.md) (45-60 min de setup, 0 € récurrent). |
-| Récupération **données de circulation** | ✅ | 180+ mesures/jour à 20 min d'intervalle, persistées et accessibles via `/mesures`, `/troncons/{id}/mesures`, etc. |
+| Récupération **données de circulation** | ✅ | **Collecte 24h/24 toutes les heures** (144 req/jour ≪ 250 quota Google), persistée et accessible via `/mesures`, `/troncons/{id}/mesures`, etc. Le filtre DEESP officiel (7h-19h) est appliqué côté analyse pour les Tableaux 3-15 et le Tableau 16. |
 | Zoom dynamique | ✅ | `flyToBounds` animé, niveau adaptatif `maxZoom 15` |
 | Recentrage automatique | ✅ | `fitBounds` global au chargement si tout est fluide, sinon centré sur le point chaud |
 | Visualisation réelle de la zone sélectionnée | 🟡 | Polylines en pointillés droits sur Railway (polyline NULL avant `complete_sans_osrm`). Polylines OSRM réelles seulement en local. **Limitation documentée** dans [CLAUDE.md § 8.5.1](CLAUDE.md). Mitigation : script `complete_sans_osrm.py` à jouer sur Railway → segments droits visibles. |
@@ -105,15 +124,19 @@
 
 ### Ce qui n'est PAS encore livré
 
-- ❌ **Page Prédiction** (P6.2 / P6.3) — endpoint `/predire` + `/optimal` à écrire, page UI à construire
-- ❌ **Page Administration** (P6.4) — ajout/édition de tronçons via UI
-- ❌ **Frontend déployé sur Vercel ou Railway** — actuellement servi par `npm start` local
-- ❌ **OSRM exposé en production** — nécessaire pour `confiance_matching` (P5) et vraies polylines (Étape 4 ↑)
+> **Carnet d'exécution restant** : [PROMPTS_RESTANTS_DEESP.md](PROMPTS_RESTANTS_DEESP.md)
+> contient les 7 prompts restants (6.2 → 7.3) entièrement réalignés avec la
+> méthodologie DEESP/DEEF du rapport octobre 2025.
+
+- ❌ **Page Prédiction** (P6.2 / P6.3) — endpoints `/predire` + `/heure-optimale` à écrire, page UI à construire avec format DEESP (min/moyen/max en minutes, jour ouvrable vs week-end)
+- ❌ **Page Administration** (P6.4) — ajout/édition de tronçons via UI + **sous-tronçons codifiés** (T1A, T1B, T1C…) comme dans le rapport DEESP
+- ❌ **ML niveau 3** (P6.5, optionnel) — Random Forest avec évaluation honnête vs prédicteur niveau 2
+- ❌ **Frontend déployé sur Vercel** — actuellement servi par `npm start` local
+- ❌ **OSRM exposé en production** — nécessaire pour `confiance_matching` (P5) et vraies polylines (procédure complète CLAUDE.md § 8.7 Oracle Cloud)
 - ❌ **Vrais GPX terrain** — la démo P5 tourne sur GPX synthétiques (cf. CLAUDE.md § 4.3.1)
-- ❌ **Suite de tests automatisés** — pytest backend, Playwright frontend (P7)
-- ❌ **Monitoring/alerting** — Grafana/Sentry ou équivalent (P7)
-- ❌ **Note méthodologique formelle** (livrable du brief) — la méthode est documentée dans CLAUDE.md mais pas en PDF séparé pour le jury
-- ❌ **Recommandations opérationnelles dédiées** (livrable du brief) — la heatmap et heures de pointe permettent déjà des suggestions, mais une page « Recommandations » explicite reste à construire en P6.3
+- ❌ **Suite de tests automatisés** — pytest backend pour `rapport_paa` + endpoints critiques (P7.1)
+- ❌ **Cache Redis** — wrapper avec TTL pour `/carte/etat`, `/rapport/*`, `/predire` (P7.1)
+- ❌ **Rapport final article 4 + Pitch** (P7.3) — document docs/rapport-final.md + docs/pitch.md à produire
 
 ### Synthèse pour le pitch jury
 

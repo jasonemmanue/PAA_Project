@@ -45,7 +45,19 @@ RATIO_FLUIDE_MAX = 1.2          # vert
 RATIO_ORANGE_COURT_MAX = 1.5    # orange court — encore fluide
 RATIO_CONGESTION_MIN = 1.5      # orange long ou rouge → congestionné
 
+# Plage horaire DEESP — le rapport officiel ne couvre que 7h-19h, même si
+# notre collecte étend à 24h/24 (cf. CLAUDE.md § 4.5.1 et § 4.5.7).
+# Les heures hors plage sont **filtrées** des calculs publiés dans /rapport
+# pour préserver la conformité méthodologique stricte.
+DEESP_HEURE_DEBUT = 7
+DEESP_HEURE_FIN = 19  # exclusive : tranches 7h-18h59 incluses
+
 TypeJour = Literal["jour_ouvrable", "week_end"]
+
+
+def _dans_plage_deesp(horodatage_local) -> bool:
+    """True si l'heure locale est dans la plage DEESP officielle (7h-19h)."""
+    return DEESP_HEURE_DEBUT <= horodatage_local.hour < DEESP_HEURE_FIN
 
 
 def _type_jour(d: date) -> TypeJour:
@@ -163,9 +175,15 @@ def temps_traversee_par_troncon(
     )
 
     # Group key : (troncon_id, type_jour, date_locale) → list[duree_trafic_s]
+    # ATTENTION : on FILTRE strictement à la plage DEESP officielle (7h-19h)
+    # même si la collecte étend à 24h/24, pour préserver la conformité
+    # méthodologique (cf. CLAUDE.md § 4.5.1).
     par_jour: dict[tuple[int, TypeJour, date], list[int]] = defaultdict(list)
     for m in mesures:
-        d_local = m.horodatage.astimezone(fuseau_local).date()
+        local = m.horodatage.astimezone(fuseau_local)
+        if not _dans_plage_deesp(local):
+            continue
+        d_local = local.date()
         tj = _type_jour(d_local)
         par_jour[(m.troncon_id, tj, d_local)].append(m.duree_trafic_s)
 
@@ -276,6 +294,9 @@ def troncons_congestionnes(
         if ratio < RATIO_CONGESTION_MIN:
             continue  # fluide ou orange court → ne compte pas
         local = m.horodatage.astimezone(fuseau_local)
+        # Filtre plage DEESP (7h-19h) — voir _dans_plage_deesp.
+        if not _dans_plage_deesp(local):
+            continue
         occurrences[(t.id, local.weekday(), local.hour)] += 1
 
     # Agrégation par (troncon, heure) — règle SEMAINE

@@ -452,6 +452,16 @@ def demarrer_scheduler() -> dict[str, str | int | None]:
     _ajouter_job_agregation_nocturne(scheduler, settings)
     job_agregation = scheduler.get_job(_JOB_ID_AGREGATION)
 
+    # Affichage spécial pour la collecte 24h/24 (start=0 et end=24).
+    couvre_journee_complete = (
+        settings.collect_start_hour == 0 and settings.collect_end_hour == 24
+    )
+    plage_horaire = (
+        f"24h/24 ({settings.tz})"
+        if couvre_journee_complete
+        else f"{settings.collect_start_hour}h-{settings.collect_end_hour}h ({settings.tz})"
+    )
+
     return {
         "etat": "demarre",
         "prochaine_execution": job.next_run_time.isoformat() if job and job.next_run_time else None,
@@ -461,7 +471,7 @@ def demarrer_scheduler() -> dict[str, str | int | None]:
             else None
         ),
         "intervalle_min": settings.collect_interval_minutes,
-        "plage_horaire": f"{settings.collect_start_hour}h-{settings.collect_end_hour}h ({settings.tz})",
+        "plage_horaire": plage_horaire,
     }
 
 

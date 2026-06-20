@@ -38,12 +38,14 @@ class Settings(BaseSettings):
     google_routes_api_key: str | None = Field(default=None, alias="GOOGLE_ROUTES_API_KEY")
 
     # === Paramètres de collecte (APScheduler) ===
-    # Alignement méthodologique DEESP (cf. CLAUDE.md § 4.5.1) :
-    # 1 mesure par heure pleine, plage 7h-19h Africa/Abidjan.
-    # Quota Google : 13 cycles × 6 tronçons = 78 req/jour (≪ 250).
+    # Méthodologie : 1 mesure par heure pleine, 24h/24.
+    # Le rapport DEESP couvre 7h-19h mais notre collecte étend à 24h pour
+    # offrir une couverture analytique complète (nuit / aube / pic matinal)
+    # tout en restant largement sous le quota Google (144 ≪ 250 req/jour).
+    # Voir CLAUDE.md § 4.5.1.
     collect_interval_minutes: int = Field(default=60, alias="COLLECT_INTERVAL_MINUTES")
-    collect_start_hour: int = Field(default=7, alias="COLLECT_START_HOUR")
-    collect_end_hour: int = Field(default=19, alias="COLLECT_END_HOUR")
+    collect_start_hour: int = Field(default=0, alias="COLLECT_START_HOUR")
+    collect_end_hour: int = Field(default=24, alias="COLLECT_END_HOUR")
     reference_speed_kmh: float = Field(default=50.0, alias="REFERENCE_SPEED_KMH")
 
     # === Fuseau horaire de référence du PAA ===
