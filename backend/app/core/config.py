@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     # Si non précisé via query param, le code calcule un seuil = 1,5 × T_ref.
     seuil_depassement_s: int | None = Field(default=None, alias="SEUIL_DEPASSEMENT_S")
 
+    # === Stockage des relevés terrain GPX (P5) ===
+    # Dossier local où sont persistés les fichiers GPX importés. Le chemin est
+    # créé au démarrage du backend s'il n'existe pas. En production Railway,
+    # définir un volume persistant et pointer cette variable dessus.
+    gpx_storage_dir: str = Field(default="./data/gpx", alias="GPX_STORAGE_DIR")
+
     # === Sécurité de l'API ===
     api_secret_key: str = Field(..., alias="API_SECRET_KEY")
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")

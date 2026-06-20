@@ -18,6 +18,7 @@
 6. [Ce qui est livré dans la phase P6.1](#6--ce-qui-est-livré-dans-la-phase-p61)
 7. [Déploiement Railway (production)](#7--déploiement-railway-production)
 8. [Ce qui est livré dans la phase P4 (frontend)](#8--ce-qui-est-livré-dans-la-phase-p4-frontend)
+   - [8bis. Phase P5 — validation terrain](#8bis--ce-qui-est-livré-dans-la-phase-p5-validation-terrain)
 9. [Démarrer le projet sur ma machine](#9--démarrer-le-projet-sur-ma-machine)
 10. [Vérifier que tout fonctionne (tests)](#10--vérifier-que-tout-fonctionne-tests)
 11. [Comprendre les fichiers du projet](#11--comprendre-les-fichiers-du-projet)
@@ -713,12 +714,101 @@ Pour rejouer le splash screen : il se rejoue à **chaque ouverture de fenêtre**
 
 ### Ce qui n'est **pas encore** fait à la fin de P4
 
-- ❌ Page **Fiabilité** : tableau de comparaison GPX vs Google *(arrive en P5)*
+- ✅ Page **Fiabilité** : livrée en P5 (voir § 8bis ci-dessous)
 - ❌ Page **Prédiction** : sélecteur date/heure + temps estimé *(arrive en P6.2 / P6.3)*
 - ❌ Page **Administration** : ajout/édition de tronçons *(arrive en P6.4)*
 - ❌ **Polylines exactes** des 6 tronçons sur la carte : nécessite OSRM exposé
   (cf. CLAUDE.md § 8.3) — pour l'instant des **segments droits** entre origine
   et destination sont utilisés, ce qui reste lisible mais moins précis.
+
+---
+
+## 8bis · Ce qui est livré dans la phase P5 (validation terrain)
+
+> **L'idée en une phrase :** on prend un fichier GPX issu d'un téléphone qui a
+> parcouru un ou plusieurs des 6 tronçons, on découpe automatiquement la trace
+> aux bornes officielles, on calcule le temps réel mesuré par tronçon, on le
+> compare à la mesure Google la plus proche dans le temps, et on suit l'écart
+> dans le temps pour détecter une dérive éventuelle des sources API.
+
+### ✅ Endpoint d'import GPX
+
+`POST /terrain/import` (multipart/form-data) accepte un fichier `.gpx` avec
+horodatages. Pipeline :
+
+1. **Parse** : `gpxpy` extrait les `<trkpt>` qui ont un `<time>` (les autres
+   sont ignorés — sans timestamp on ne peut pas calculer une durée).
+2. **Découpage automatique** : pour chaque tronçon des 6 actifs, on cherche
+   dans la trace le point le plus proche de l'origine puis de la destination
+   (rayon **80 m** — couvre l'imprécision GPS). Si trouvé et dans le bon
+   ordre, on construit un segment.
+3. **OSRM Match** (best-effort) : pour chaque segment, on appelle OSRM
+   `/match/v1/driving/...` sur la sous-trace et on récupère une confiance
+   (0..1). Si OSRM n'est pas accessible, le reste fonctionne quand même —
+   seule la confiance reste à NULL.
+4. **Appariement Google** : pour le timestamp médian du segment, on cherche
+   dans `mesures` la ligne `source=google` (`duree_trafic_s NOT NULL`) la plus
+   proche, dans une fenêtre de **30 minutes**. Calcul de
+   ε = (T_terrain − T_api) / T_api.
+5. **Persistance** : une ligne par tronçon détecté dans `releves_terrain`. Le
+   GPX brut est conservé sur disque (`GPX_STORAGE_DIR`, défaut `./data/gpx`).
+
+### ✅ Endpoints de lecture
+
+| Endpoint | Rôle |
+|----------|------|
+| `GET /terrain/releves?troncon_id=...&limite=...` | Historique des relevés, du plus récent au plus ancien |
+| `GET /terrain/calibration?fenetre=4` | Moyenne mobile des écarts sur les 4 derniers relevés par tronçon (= facteur de calibration) |
+
+### ✅ Script « Option A » — GPX synthétiques
+
+Pour valider la boucle d'import **sans déplacement terrain**, le script
+[`backend/app/generer_gpx_synthetiques.py`](backend/app/generer_gpx_synthetiques.py)
+appelle OSRM `/route` pour chaque tronçon, décode la polyline retournée
+(Google precision 5), interpole la trace à ~1 pt/s, et écrit un fichier GPX
+1.1 standard.
+
+```powershell
+# Depuis le dossier backend, OSRM_BASE_URL doit pointer vers OSRM local Docker
+python -m app.generer_gpx_synthetiques --sortie ./data/gpx_synth --congestion 1.4
+```
+
+Les 6 GPX produits dans `./data/gpx_synth/troncon_*.gpx` sont directement
+uploadables via `POST /terrain/import`. L'écart relatif obtenu sera proche de
+0 (logique : c'est le tracé OSRM théorique, identique à la polyline stockée
+en base) — mais cela démontre que le pipeline complet fonctionne. Pour des
+vraies données terrain, remplacer ces fichiers par des traces téléphone
+(OsmAnd Tracker, Strava, GPX Logger…).
+
+### ✅ Page Fiabilité (frontend)
+
+[`frontend/app/fiabilite/page.tsx`](frontend/app/fiabilite/page.tsx) compose
+4 blocs depuis [`PageFiabilite.tsx`](frontend/components/fiabilite/PageFiabilite.tsx) :
+
+| Bloc | Description |
+|------|-------------|
+| **3 KPI** | Date de la dernière session terrain ; **écart moyen global** (moyenne des écarts moyens par tronçon) ; **nombre de tronçons validés** (\|ε\| ≤ 10 %) |
+| **Import GPX** | Input file `.gpx` + bouton Importer → POST puis affichage du tableau des relevés produits |
+| **Évolution de l'écart** | Recharts LineChart, une ligne par tronçon, axe Y en pourcentage, ligne de référence à 0 % en bleu ciel pointillé |
+| **Tableau de calibration** | Pour chaque tronçon : moyenne des 4 derniers écarts, dernier écart, statut coloré (vert ≤ 10 % / orange ≤ 25 % / rouge > 25 %) |
+
+### Migration de schéma 0004
+
+La migration **`backend/alembic/versions/0004_terrain_horodatage.py`** ajoute
+3 colonnes à `releves_terrain` :
+
+- `horodatage_passage` (datetime UTC) — instant médian du passage
+- `duree_api_s` (int) — durée API utilisée comme référence
+- `confiance_matching` (float 0..1) — confiance OSRM Match
+
+```powershell
+# Local
+cd backend
+alembic upgrade head
+
+# Railway — depuis la Console du service backend
+alembic upgrade head
+```
 
 ---
 

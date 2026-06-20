@@ -25,6 +25,7 @@ redis>=5.0,<6.0
 # --- Traitement de données et import GPX / Excel ---
 pandas>=2.2,<3.0
 openpyxl>=3.1,<4.0
+gpxpy>=1.6,<2.0          # parser GPX (P5 — validation terrain hebdomadaire)
 
 # --- Modèles prédictifs (P6) ---
 scikit-learn>=1.5,<2.0

@@ -9,13 +9,16 @@
  */
 
 import type {
+  CalibrationResponse,
   CarteEtat,
   CollecteStatus,
   EvolutionResponse,
+  ImportGpxResponse,
   IndicateursPeriode,
   JourSemaine,
   Mesure,
   ProfilHoraire,
+  ReleveTerrainResponse,
   SerieTemporelle,
   Troncon,
 } from "./types";
@@ -220,6 +223,48 @@ export function urlExportProfils(format: "xlsx" = "xlsx"): string {
   return `${baseUrl()}/export/profils?format=${format}`;
 }
 
+// ---------------------------------------------------------------------------
+// Validation terrain (P5) — POST /terrain/import + lecture des relevés
+// ---------------------------------------------------------------------------
+
+export async function postTerrainImport(
+  fichier: File,
+  dateSession?: string,
+): Promise<ImportGpxResponse> {
+  const formData = new FormData();
+  formData.append("fichier", fichier);
+  if (dateSession) formData.append("date_session", dateSession);
+
+  const url = `${baseUrl()}/terrain/import`;
+  let reponse: Response;
+  try {
+    reponse = await fetch(url, { method: "POST", body: formData });
+  } catch (cause) {
+    throw new ApiError(0, "", `Réseau indisponible — impossible de joindre ${url}`);
+  }
+  if (!reponse.ok) {
+    const corps = await reponse.text().catch(() => "");
+    throw new ApiError(reponse.status, corps);
+  }
+  return (await reponse.json()) as ImportGpxResponse;
+}
+
+export function getTerrainReleves(params?: {
+  troncon_id?: number;
+  limite?: number;
+}): Promise<ReleveTerrainResponse> {
+  const query = new URLSearchParams();
+  if (params?.troncon_id !== undefined)
+    query.set("troncon_id", String(params.troncon_id));
+  if (params?.limite !== undefined) query.set("limite", String(params.limite));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return appel<ReleveTerrainResponse>(`/terrain/releves${suffix}`);
+}
+
+export function getTerrainCalibration(fenetre = 4): Promise<CalibrationResponse> {
+  return appel<CalibrationResponse>(`/terrain/calibration?fenetre=${fenetre}`);
+}
+
 export const api = {
   baseUrl,
   health: getHealth,
@@ -234,6 +279,9 @@ export const api = {
   profilHoraire: getProfilHoraire,
   serieTemporelle: getSerieTemporelle,
   evolution: getEvolution,
+  terrainImport: postTerrainImport,
+  terrainReleves: getTerrainReleves,
+  terrainCalibration: getTerrainCalibration,
   urlExportMesures,
   urlExportProfils,
 };

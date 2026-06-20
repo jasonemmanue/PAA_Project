@@ -239,11 +239,24 @@ class ReleveTerrain(Base):
 
     __tablename__ = "releves_terrain"
 
+    __table_args__ = (
+        Index(
+            "ix_releves_terrain_troncon_horodatage",
+            "troncon_id", "horodatage_passage",
+        ),
+    )
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     troncon_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("troncons.id", ondelete="RESTRICT"), nullable=False
     )
     date_session: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # Instant médian (UTC) du passage sur le tronçon — sert à apparier finement
+    # avec la mesure Google la plus proche dans le temps (cf. P5).
+    horodatage_passage: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Chemin relatif ou URL vers le fichier GPX (stocké dans un volume dédié)
     fichier_gpx: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -251,8 +264,14 @@ class ReleveTerrain(Base):
     # Durée effectivement mesurée sur le terrain, en secondes
     duree_mesuree_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Durée API utilisée comme référence pour le calcul de l'écart
+    duree_api_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # (durée_terrain – durée_API) / durée_API — NULL si pas encore calculé
     ecart_relatif: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Confiance OSRM du map-matching (0..1) — NULL si OSRM indisponible
+    confiance_matching: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Relation
     troncon: Mapped["Troncon"] = relationship(

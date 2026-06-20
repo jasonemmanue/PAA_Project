@@ -34,6 +34,7 @@ from app.api.export import router as export_router
 from app.api.indicateurs import router as indicateurs_router
 from app.api.mesures import router as mesures_router
 from app.api.profils import router as profils_router
+from app.api.terrain import router as terrain_router
 from app.api.troncons import router as troncons_router
 from app.collecte.scheduler import arreter_scheduler, demarrer_scheduler
 from app.core.config import get_settings
@@ -153,6 +154,15 @@ _TAGS_METADATA = [
         ),
     },
     {
+        "name": "validation terrain",
+        "description": (
+            "Import hebdomadaire des relevés terrain GPX (P5) : découpage "
+            "automatique de la trace par tronçon via OSRM Match, appariement "
+            "avec la mesure Google la plus proche, calcul de l'écart relatif "
+            "et du facteur de calibration par tronçon."
+        ),
+    },
+    {
         "name": "diagnostic",
         "description": "Tests ponctuels des sources de mesure (Google, OSRM).",
     },
@@ -224,4 +234,5 @@ app.include_router(carte_router)
 app.include_router(carte_ws_router)
 app.include_router(import_router)
 app.include_router(evolution_router)
+app.include_router(terrain_router)
 app.include_router(diag_router)

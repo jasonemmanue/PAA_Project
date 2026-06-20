@@ -207,3 +207,61 @@ export interface EvolutionResponse {
   nb_lignes: number;
   lignes: LigneEvolution[];
 }
+
+// ---------------------------------------------------------------------------
+// Validation terrain (P5) — releves_terrain, calibration, import GPX
+// ---------------------------------------------------------------------------
+
+/** Une ligne issue d'un import GPX, telle que renvoyée par POST /terrain/import. */
+export interface ReleveTerrainImport {
+  id: number;
+  troncon_id: number;
+  troncon_nom: string;
+  horodatage_passage_utc: string;
+  duree_terrain_s: number;
+  duree_api_s: number | null;
+  ecart_relatif: number | null;
+  confiance_matching: number | null;
+  distance_trace_m: number;
+  distance_officielle_m: number;
+}
+
+/** Réponse complète de POST /terrain/import. */
+export interface ImportGpxResponse {
+  date_session: string;
+  fichier_gpx: string;
+  nb_points_gpx: number;
+  nb_troncons_detectes: number;
+  releves: ReleveTerrainImport[];
+}
+
+/** Une ligne issue de GET /terrain/releves. */
+export interface ReleveTerrainHistorique {
+  id: number;
+  troncon_id: number;
+  date_session: string;
+  horodatage_passage_utc: string | null;
+  duree_mesuree_s: number | null;
+  duree_api_s: number | null;
+  ecart_relatif: number | null;
+  confiance_matching: number | null;
+}
+
+export interface ReleveTerrainResponse {
+  nb_lignes: number;
+  lignes: ReleveTerrainHistorique[];
+}
+
+/** Facteur de calibration par tronçon (GET /terrain/calibration). */
+export interface CalibrationTroncon {
+  troncon_id: number;
+  troncon_nom: string;
+  nb_releves: number;
+  ecart_moyen: number | null;
+  ecart_courant: number | null;
+}
+
+export interface CalibrationResponse {
+  fenetre_relevees: number;
+  troncons: CalibrationTroncon[];
+}
