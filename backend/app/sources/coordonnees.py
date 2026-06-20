@@ -1,4 +1,4 @@
-"""Coordonnées GPS approximatives des 4 points d'extrémité des 3 axes officiels.
+"""Coordonnées GPS des 4 points d'extrémité des 3 axes officiels.
 
 Ces coordonnées servent à :
   1. Compléter automatiquement les colonnes lat_*/lon_* des `troncons` via OSRM
@@ -6,9 +6,10 @@ Ces coordonnées servent à :
   2. Reconstruire l'origine/destination à partir du nom d'un tronçon lors d'un
      appel /diag/*.
 
-⚠️  Ces coordonnées sont des **approximations utiles** (à ~50 m près) collectées
-    depuis OpenStreetMap. Elles doivent être affinées par les relevés terrain
-    de la phase P5 (utilisation des points GPS exacts mesurés sur place).
+⚠️  **Source de vérité** : Google Maps. Ces coordonnées ont été ajustées sur
+    la base d'observations terrain et sont alignées avec celles déployées en
+    production Railway. Tout `git pull` qui ramènerait d'anciennes valeurs
+    OSM approximatives doit être rejeté.
 """
 
 from typing import NamedTuple
@@ -21,20 +22,20 @@ class PointGPS(NamedTuple):
 
 
 # ---------------------------------------------------------------------------
-# Points d'extrémité — Abidjan, Côte d'Ivoire
+# Points d'extrémité — Abidjan, Côte d'Ivoire (source : Google Maps)
 # ---------------------------------------------------------------------------
 # Convention : 4 points uniques, partagés par les axes (Palm Beach commun aux 3).
 
-CARENA_PLATEAU = PointGPS(lat=5.32348, lon=-4.01857)
+CARENA_PLATEAU = PointGPS(lat=5.328119, lon=-4.028563)
 """CARENA (Compagnie Africaine de Réparations Navales) — Plateau, bord de lagune."""
 
-TOYOTA_CFAO_TREICHVILLE = PointGPS(lat=5.30180, lon=-4.01060)
+TOYOTA_CFAO_TREICHVILLE = PointGPS(lat=5.295971, lon=-4.005131)
 """Concession Toyota / CFAO Motors — Boulevard Giscard d'Estaing, Treichville."""
 
-SODECI_ZONE_4 = PointGPS(lat=5.30030, lon=-3.99410)
+SODECI_ZONE_4 = PointGPS(lat=5.293686, lon=-4.000390)
 """Agence SODECI — Zone 4 (Marcory), Boulevard de Marseille."""
 
-PHARMACIE_PALM_BEACH = PointGPS(lat=5.26450, lon=-3.97250)
+PHARMACIE_PALM_BEACH = PointGPS(lat=5.258705, lon=-3.981960)
 """Pharmacie Palm Beach — Zone 4 / Port-Bouët, proche carrefour Vridi."""
 
 

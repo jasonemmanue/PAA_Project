@@ -122,10 +122,10 @@ export function EvolutionEcart({
               tickFormatter={(v) => `${v.toFixed(0)} %`}
             />
             <Tooltip
-              formatter={(v: number | string | null, name) => {
+              formatter={(v, name) => {
                 if (v === null || v === undefined) return ["—", name];
-                const valeur = typeof v === "number" ? `${v.toFixed(1)} %` : String(v);
-                return [valeur, name];
+                if (typeof v === "number") return [`${v.toFixed(1)} %`, name];
+                return [String(v), name];
               }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />

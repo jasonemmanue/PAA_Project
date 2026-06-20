@@ -346,10 +346,16 @@ function pointsTroncon(t: EtatTronconCarte): [number, number][] {
       return decodes;
     }
   }
-  // 2) Repli : segment droit origine → destination
+  // 2) Repli : segment droit origine → destination.
+  //    Le backend `construire_etat_carte` expose les coords sous `geometrie`,
+  //    et certaines versions les ont aussi remontées au top-level.
+  const latO = t.lat_origine ?? t.geometrie?.lat_origine ?? NaN;
+  const lonO = t.lon_origine ?? t.geometrie?.lon_origine ?? NaN;
+  const latD = t.lat_destination ?? t.geometrie?.lat_destination ?? NaN;
+  const lonD = t.lon_destination ?? t.geometrie?.lon_destination ?? NaN;
   const segment: [number, number][] = [
-    [t.lat_origine, t.lon_origine],
-    [t.lat_destination, t.lon_destination],
+    [latO as number, lonO as number],
+    [latD as number, lonD as number],
   ];
   if (segment.every(estCoordonneeValide)) {
     return segment;

@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -318,10 +319,67 @@ async def lister_releves(
                     round(r.confiance_matching, 3)
                     if r.confiance_matching is not None else None
                 ),
+                # Nom de fichier court (sans chemin) pour permettre au frontend
+                # de regrouper les relevés par GPX source et de demander le
+                # téléchargement via /terrain/releves/{id}/gpx.
+                "nom_fichier_gpx": (
+                    Path(r.fichier_gpx).name if r.fichier_gpx else None
+                ),
             }
             for r in lignes
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# GET /terrain/releves/{id}/gpx — sert le fichier GPX brut depuis disque
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/releves/{releve_id}/gpx",
+    summary="Télécharge le fichier GPX brut d'un relevé",
+    description=(
+        "Renvoie le `.gpx` exact uploadé par l'opérateur, tel qu'il est stocké "
+        "sur le volume `GPX_STORAGE_DIR` du backend. Utilisé par la page "
+        "Fiabilité pour rejouer la prévisualisation cartographique d'une "
+        "session passée sans re-télécharger via l'utilisateur."
+    ),
+    response_class=FileResponse,
+)
+async def telecharger_gpx(
+    releve_id: int,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    releve = db.get(ReleveTerrain, releve_id)
+    if releve is None or not releve.fichier_gpx:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Relevé id={releve_id} introuvable ou sans fichier GPX.",
+        )
+    # Résolution du chemin : si stocké en chemin absolu, on vérifie qu'il
+    # reste contenu dans le dossier de stockage (anti directory-traversal).
+    racine = Path(get_settings().gpx_storage_dir).resolve()
+    candidat = Path(releve.fichier_gpx)
+    chemin = candidat if candidat.is_absolute() else racine / candidat.name
+    try:
+        chemin = chemin.resolve()
+        chemin.relative_to(racine)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chemin GPX hors du dossier de stockage autorisé.",
+        ) from exc
+    if not chemin.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Fichier GPX absent du disque : {chemin.name}",
+        )
+    return FileResponse(
+        chemin,
+        media_type="application/gpx+xml",
+        filename=chemin.name,
+    )
 
 
 # ---------------------------------------------------------------------------

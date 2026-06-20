@@ -25,7 +25,12 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # 15432 sur l'hôte (Windows + Hyper-V réservent TOUTE la plage
+      # 5358-5557 d'après `netsh interface ipv4 show excludedportrange
+      # protocol=tcp` — donc 5432, 5433, etc. sont inaccessibles). Le
+      # conteneur garde 5432 en interne, le backend via Docker DNS continue
+      # d'utiliser `db:5432`.
+      - "15432:5432"
     healthcheck:
       # Les ${...} sont ici interpolés par le shell DANS le conteneur
       # à partir des variables injectées via env_file.

@@ -99,6 +99,12 @@
     "importTitle": "Import a GPX recording",
     "importDescription": "The file is automatically split at the boundaries of the 6 monitored segments. The relative gap with the nearest Google measurement is computed for each segment.",
     "btnImporter": "Import",
+    "btnImporterLot": "Import batch ({n})",
+    "progressionLot": "Importing {n} / {total}…",
+    "lotFichiersReussis": "Files processed",
+    "lotFichiersErreurs": "Files in error",
+    "etPlus": "… and {n} more",
+    "colFichier": "File",
     "choisirFichier": "Choose a file",
     "dateSession": "Session date",
     "nbPointsGpx": "GPX points",
@@ -119,7 +125,14 @@
     "statutSurveiller": "Watch",
     "statutDerive": "Drifted",
     "statutSansDonnees": "No data",
-    "aucunReleve": "No field recording imported yet."
+    "aucunReleve": "No field recording imported yet.",
+    "apercuTitle": "Trace preview",
+    "apercuDescription": "Raw trace of the selected GPX, overlaid on the 6 official segments (dashed lines). Green/red markers show the boundaries of detected segments.",
+    "apercuPlaceholder": "Select one or more GPX files to display their trace here.",
+    "legendeTrace": "Uploaded GPX trace",
+    "legendeTroncons": "Official segments (reference)",
+    "marqueurDebut": "Detected segment start",
+    "marqueurFin": "Detected segment end"
   },
   "prediction": {
     "title": "Prediction & optimal time",

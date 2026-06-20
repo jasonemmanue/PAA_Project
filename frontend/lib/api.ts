@@ -244,7 +244,22 @@ export async function postTerrainImport(
   }
   if (!reponse.ok) {
     const corps = await reponse.text().catch(() => "");
-    throw new ApiError(reponse.status, corps);
+    // FastAPI renvoie typiquement `{"detail": "message"}` — on l'extrait pour
+    // l'afficher tel quel à l'utilisateur, sinon on retombe sur "HTTP <code>".
+    let message = `HTTP ${reponse.status}`;
+    try {
+      const json = JSON.parse(corps);
+      if (typeof json?.detail === "string") {
+        message = `HTTP ${reponse.status} — ${json.detail}`;
+      } else if (Array.isArray(json?.detail)) {
+        message = `HTTP ${reponse.status} — ${json.detail
+          .map((d: { msg?: string }) => d?.msg ?? JSON.stringify(d))
+          .join(" ; ")}`;
+      }
+    } catch {
+      // corps non-JSON — on garde "HTTP <code>"
+    }
+    throw new ApiError(reponse.status, corps, message);
   }
   return (await reponse.json()) as ImportGpxResponse;
 }
@@ -265,6 +280,24 @@ export function getTerrainCalibration(fenetre = 4): Promise<CalibrationResponse>
   return appel<CalibrationResponse>(`/terrain/calibration?fenetre=${fenetre}`);
 }
 
+/**
+ * Télécharge le fichier GPX brut d'un relevé (le contenu, pas une URL).
+ * Retourne un File pour pouvoir le reparser côté client comme un upload.
+ */
+export async function getTerrainGpx(releveId: number): Promise<File> {
+  const url = `${baseUrl()}/terrain/releves/${releveId}/gpx`;
+  const reponse = await fetch(url);
+  if (!reponse.ok) {
+    const corps = await reponse.text().catch(() => "");
+    throw new ApiError(reponse.status, corps);
+  }
+  const blob = await reponse.blob();
+  // On fabrique un File à partir du Blob — préserve le content-type GPX.
+  return new File([blob], `releve_${releveId}.gpx`, {
+    type: "application/gpx+xml",
+  });
+}
+
 export const api = {
   baseUrl,
   health: getHealth,
@@ -282,6 +315,7 @@ export const api = {
   terrainImport: postTerrainImport,
   terrainReleves: getTerrainReleves,
   terrainCalibration: getTerrainCalibration,
+  terrainGpx: getTerrainGpx,
   urlExportMesures,
   urlExportProfils,
 };

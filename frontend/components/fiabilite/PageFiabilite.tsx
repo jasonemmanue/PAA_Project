@@ -16,6 +16,7 @@
  * Après chaque import GPX réussi, recharge releves + calibration.
  */
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 
 import { CalibrationTable } from "@/components/fiabilite/CalibrationTable";
@@ -24,33 +25,49 @@ import { ImportGpx } from "@/components/fiabilite/ImportGpx";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
+import { parserGpxFichier, type TraceGpx } from "@/lib/gpxClient";
 import { useI18n } from "@/lib/i18n";
 import type {
   CalibrationResponse,
+  CarteEtat,
+  ReleveTerrainImport,
   ReleveTerrainResponse,
   Troncon,
 } from "@/lib/types";
+
+// Import dynamique côté client — Leaflet utilise `window` au montage.
+const CarteApercu = dynamic(
+  () =>
+    import("@/components/fiabilite/CarteApercu").then((m) => m.CarteApercu),
+  { ssr: false },
+);
 
 const FENETRE_CALIBRATION = 4;
 
 export function PageFiabilite() {
   const { t } = useI18n();
   const [troncons, setTroncons] = useState<Troncon[]>([]);
+  const [etatCarte, setEtatCarte] = useState<CarteEtat | null>(null);
   const [releves, setReleves] = useState<ReleveTerrainResponse | null>(null);
   const [calibration, setCalibration] = useState<CalibrationResponse | null>(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
+  // États dérivés pour la prévisualisation carte (hydratés depuis Railway).
+  const [tracesApercu, setTracesApercu] = useState<TraceGpx[]>([]);
+  const [relevesApercu, setRelevesApercu] = useState<ReleveTerrainImport[]>([]);
 
   const rechargerDonnees = useCallback(async () => {
     setChargement(true);
     setErreur(null);
     try {
-      const [tr, rel, cal] = await Promise.all([
+      const [tr, etc, rel, cal] = await Promise.all([
         api.troncons(),
+        api.carteEtat(),
         api.terrainReleves({ limite: 500 }),
         api.terrainCalibration(FENETRE_CALIBRATION),
       ]);
       setTroncons(Array.isArray(tr) ? tr : []);
+      setEtatCarte(etc);
       setReleves(rel);
       setCalibration(cal);
     } catch (e) {
@@ -63,6 +80,83 @@ export function PageFiabilite() {
   useEffect(() => {
     rechargerDonnees();
   }, [rechargerDonnees]);
+
+  /**
+   * Hydratation cartographique depuis Railway.
+   *
+   * Au montage (et après chaque rechargement de releves), on récupère depuis
+   * la dernière session terrain :
+   *   - Pour chaque fichier GPX unique : on télécharge le `.gpx` brut via
+   *     /terrain/releves/{id}/gpx, on le parse côté client → 1 trace par fichier
+   *   - Tous les relevés de la session → marqueurs début/fin sur la carte
+   *
+   * Cette hydratation est complètement déterministe — pas de cache navigateur,
+   * pas de localStorage. La source de vérité reste Railway.
+   */
+  useEffect(() => {
+    const lignes = releves?.lignes ?? [];
+    if (lignes.length === 0) {
+      setTracesApercu([]);
+      setRelevesApercu([]);
+      return;
+    }
+    // 1) Identifier la dernière session
+    const derniereDate = lignes
+      .map((l) => l.date_session)
+      .sort()
+      .reverse()[0];
+    const lignesDerniere = lignes.filter((l) => l.date_session === derniereDate);
+
+    // 2) Un releve_id représentatif par nom de fichier (pour ne télécharger
+    //    qu'une fois chaque GPX même si plusieurs tronçons y sont détectés)
+    const idParFichier = new Map<string, number>();
+    for (const r of lignesDerniere) {
+      const cle = r.nom_fichier_gpx ?? `releve_${r.id}`;
+      if (!idParFichier.has(cle)) idParFichier.set(cle, r.id);
+    }
+
+    // 3) Téléchargement + parse en parallèle
+    let annule = false;
+    (async () => {
+      const traces: TraceGpx[] = [];
+      await Promise.all(
+        Array.from(idParFichier.entries()).map(async ([nom, id]) => {
+          try {
+            const fichier = await api.terrainGpx(id);
+            const trace = await parserGpxFichier(fichier);
+            traces.push({ ...trace, nomFichier: nom });
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[PageFiabilite] téléchargement GPX échoué pour le relevé ${id} :`,
+              err,
+            );
+          }
+        }),
+      );
+      if (annule) return;
+      setTracesApercu(traces);
+      // Pour les marqueurs : on transforme les releves historiques en
+      // ReleveTerrainImport-compatibles (les champs utilisés sont id, troncon_id).
+      setRelevesApercu(
+        lignesDerniere.map((r) => ({
+          id: r.id,
+          troncon_id: r.troncon_id,
+          troncon_nom: "",
+          horodatage_passage_utc: r.horodatage_passage_utc ?? "",
+          duree_terrain_s: r.duree_mesuree_s ?? 0,
+          duree_api_s: r.duree_api_s,
+          ecart_relatif: r.ecart_relatif,
+          confiance_matching: r.confiance_matching,
+          distance_trace_m: 0,
+          distance_officielle_m: 0,
+        })),
+      );
+    })();
+    return () => {
+      annule = true;
+    };
+  }, [releves]);
 
   // KPIs sommaires
   const nbReleves = releves?.nb_lignes ?? 0;
@@ -107,8 +201,19 @@ export function PageFiabilite() {
         </Card>
       </div>
 
-      {/* Import GPX */}
-      <ImportGpx onImporte={rechargerDonnees} />
+      {/* Import GPX (avec callbacks vers la carte) */}
+      <ImportGpx
+        onImporte={rechargerDonnees}
+        onTracesChange={setTracesApercu}
+        onRelevesChange={setRelevesApercu}
+      />
+
+      {/* Prévisualisation cartographique des traces uploadées */}
+      <CarteApercu
+        etatCarte={etatCarte}
+        traces={tracesApercu}
+        releves={relevesApercu}
+      />
 
       {/* Évolution écart */}
       <EvolutionEcart releves={releves?.lignes ?? []} troncons={troncons} />

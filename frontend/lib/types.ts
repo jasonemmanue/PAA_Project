@@ -58,10 +58,22 @@ export interface EtatTronconCarte {
   id: number;
   nom: string;
   polyline: string | null;
-  lat_origine: number;
-  lon_origine: number;
-  lat_destination: number;
-  lon_destination: number;
+  /**
+   * Géométrie nichée — c'est sous cette clé que le backend
+   * (`construire_etat_carte`) expose vraiment les coordonnées des extrémités.
+   * Les champs top-level ci-dessous (lat_origine etc.) sont conservés en
+   * fallback pour la compatibilité ; ils peuvent être absents en pratique.
+   */
+  geometrie?: {
+    lat_origine: number | null;
+    lon_origine: number | null;
+    lat_destination: number | null;
+    lon_destination: number | null;
+  };
+  lat_origine?: number | null;
+  lon_origine?: number | null;
+  lat_destination?: number | null;
+  lon_destination?: number | null;
   couleur_etat: string;
   classe_congestion: ClasseCongestion;
   tti: number | null;
@@ -245,6 +257,8 @@ export interface ReleveTerrainHistorique {
   duree_api_s: number | null;
   ecart_relatif: number | null;
   confiance_matching: number | null;
+  /** Nom court du fichier GPX (sans chemin) — utilisé pour le téléchargement. */
+  nom_fichier_gpx: string | null;
 }
 
 export interface ReleveTerrainResponse {

@@ -642,7 +642,7 @@ combine plusieurs visualisations :
 | **Sélecteurs** | Dropdown tronçon + boutons radio 24h / 7j / 30j / 90j | `getTroncons()` |
 | **Barre de pilotage** | Badge « Mode planifié » avec **pastille à 3 états** (vert qui pulse en plage active / **bleu calme en veille la nuit** / gris arrêté) + libellé fidèle (« Collecte active / en veille / arrêtée ») + lignes **Plage active : 7h–19h (Africa/Abidjan)** et **Prochain cycle : aujourd'hui 18:40** ou **demain 07:00** + boutons **Démarrer / Arrêter la collecte** + boutons **Export CSV** et **Export Excel** | `collecteStatus`, `collecteStart`, `collecteStop`, `urlExportMesures` |
 | **4 compteurs** | Temps moyen, minimum, maximum, nombre de mesures sur la période | `getIndicateursTroncon` |
-| **3 cartes FHWA** | TTI, PTI, BTI mis en valeur + badge de classe de congestion | idem |
+| **3 cartes FHWA en français** | **ITP** (Indice de Temps de Parcours), **IPT** (Indice de Planification du Temps), **IMT** (Indice de Marge Tampon) — mappés sur les acronymes internationaux TTI/PTI/BTI dans le code et l'API | idem |
 | **Courbe Recharts** | 3 séries superposées : **temps avec trafic** (rouge), **P95** (vert tirets), **ligne référence 50 km/h en bleu ciel** | `getSerieTemporelle` |
 | **Heatmap horaire jour × heure** | Grille 7 × 24 colorée du vert (fluide) au rouge (congestionné) selon le ratio temps observé / temps fluide ; survol → valeur précise | 7 appels parallèles à `getProfilHoraire(jour, fenetre=90j)` |
 | **Évolution pluriannuelle** | Diagramme à barres comparant les temps min / moyen / max entre les campagnes officielles (`oct_2025` vs `fev_2026`) avec toggle **Jours ouvrables / Week-ends** | `getEvolution()` (table `evolution_indicateur` issue de P6.1) |
@@ -757,7 +757,8 @@ horodatages. Pipeline :
 
 | Endpoint | Rôle |
 |----------|------|
-| `GET /terrain/releves?troncon_id=...&limite=...` | Historique des relevés, du plus récent au plus ancien |
+| `GET /terrain/releves?troncon_id=...&limite=...` | Historique des relevés, du plus récent au plus ancien — inclut `nom_fichier_gpx` pour permettre au frontend de regrouper |
+| `GET /terrain/releves/{id}/gpx` | Renvoie le **fichier GPX brut** stocké sur disque (avec garde anti directory-traversal). Utilisé par la page Fiabilité pour rejouer la prévisualisation cartographique d'une session passée |
 | `GET /terrain/calibration?fenetre=4` | Moyenne mobile des écarts sur les 4 derniers relevés par tronçon (= facteur de calibration) |
 
 ### ✅ Script « Option A » — GPX synthétiques
@@ -770,15 +771,72 @@ appelle OSRM `/route` pour chaque tronçon, décode la polyline retournée
 
 ```powershell
 # Depuis le dossier backend, OSRM_BASE_URL doit pointer vers OSRM local Docker
-python -m app.generer_gpx_synthetiques --sortie ./data/gpx_synth --congestion 1.4
+docker compose exec backend python -m app.generer_gpx_synthetiques `
+    --sortie /app/data/gpx_synth `
+    --congestion 1.4 `
+    --horodatage-debut "2026-06-19T14:00:00"
 ```
 
-Les 6 GPX produits dans `./data/gpx_synth/troncon_*.gpx` sont directement
-uploadables via `POST /terrain/import`. L'écart relatif obtenu sera proche de
-0 (logique : c'est le tracé OSRM théorique, identique à la polyline stockée
-en base) — mais cela démontre que le pipeline complet fonctionne. Pour des
-vraies données terrain, remplacer ces fichiers par des traces téléphone
-(OsmAnd Tracker, Strava, GPX Logger…).
+L'argument **`--horodatage-debut`** (ISO 8601, UTC par défaut) sert à
+**caller** les GPX synthétiques sur une fenêtre où la collecte Google a
+déjà tourné. Sans lui, le script utilise « aujourd'hui 08:00 UTC », et si
+on teste en dehors des heures de collecte (par ex. samedi matin tôt), les
+ε sortent à `null` faute de mesure API à apparier. Pour la démo, viser un
+horaire représentatif (mi-après-midi d'un jour ouvré récent). Les 6 GPX
+s'enchaînent avec 10 min de battement entre chacun, couvrant ~2h30 — ce qui
+englobe largement plusieurs cycles Google de 20 min.
+
+> 🧪 **Données synthétiques uniquement.** Ces GPX suivent le tracé OSRM
+> théorique : ε proches de 0, et 1 trace peut « détecter » 2-3 tronçons
+> contigus (ex. CARENA → Palm Beach passe à proximité de Toyota CFAO, donc
+> les deux tronçons sont détectés). C'est utile pour valider la **boucle
+> P5 de bout en bout** mais **NE remplace PAS** de vrais relevés terrain
+> hebdomadaires. La calibration définitive nécessite des traces GPS issues
+> d'un téléphone parcourant réellement les 6 tronçons (OsmAnd Tracker,
+> Strava, GPX Logger…). Les fichiers générés ici sont **provisoires** et
+> seront supprimés ou archivés à l'arrivée des premiers vrais GPX.
+
+### 🧭 Mode actuel — simulation contrôlée
+
+| Composant | Localisation | Statut |
+|-----------|--------------|--------|
+| Backend FastAPI + DB + Redis | **Railway** | ✅ Production |
+| Frontend Next.js | **Local** (`npm start`) | ⏳ À déployer sur Vercel/Railway |
+| Moteur OSRM | **Docker local uniquement** | ⏳ Pas exposé en prod |
+| Relevés terrain GPX | **Synthétiques** (script `generer_gpx_synthetiques.py`) | ⏳ À remplacer par des traces téléphone |
+
+**Ce qui est réel** : les mesures Google Routes (collecte planifiée 7h–19h),
+le découpage automatique aux bornes des tronçons, l'appariement temporel
+avec la mesure API la plus proche, la persistance dans la DB Railway,
+l'affichage page Fiabilité.
+
+**Ce qui est simulé** : les durées **terrain** elles-mêmes (générées via
+OSRM théorique × facteur de congestion) et la confiance OSRM Match (`null`
+faute d'OSRM en prod).
+
+**Flux d'upload actuel** : navigateur → page Fiabilité locale
+(`localhost:3030/fiabilite`) → POST direct vers le backend Railway.
+Les conteneurs Docker locaux (`osrm`/`db`/`backend`) **ne sont nécessaires
+QUE pour régénérer les GPX synthétiques**. Pour de simples uploads (qu'ils
+soient synthétiques ou réels), aucun Docker requis — il suffit d'avoir le
+frontend lancé.
+
+**Migration vers le réel** :
+
+1. Procurer un GPS smartphone (**OsmAnd Tracker** recommandé) à un opérateur PAA.
+2. Sessions hebdomadaires : l'opérateur parcourt les 6 tronçons, exporte
+   les `.gpx` du téléphone.
+3. Upload via la même page Fiabilité — pas besoin de `--horodatage-debut`,
+   les vraies heures sont dans le fichier.
+4. (Optionnel) Exposer OSRM en prod via Oracle Cloud Free Tier (cf. CLAUDE.md
+   § 8.3) pour récupérer `confiance_matching`.
+5. (Optionnel) Purger les relevés synthétiques de la base :
+   `DELETE FROM releves_terrain WHERE fichier_gpx LIKE '%gpx_synth%'` dans
+   la Console Railway.
+
+Les 6 fichiers produits dans `./backend/data/gpx_synth/troncon_*.gpx` sont
+directement uploadables via `POST /terrain/import` ou via la page Fiabilité
+(bouton **Importer le lot**).
 
 ### ✅ Page Fiabilité (frontend)
 
@@ -788,7 +846,8 @@ vraies données terrain, remplacer ces fichiers par des traces téléphone
 | Bloc | Description |
 |------|-------------|
 | **3 KPI** | Date de la dernière session terrain ; **écart moyen global** (moyenne des écarts moyens par tronçon) ; **nombre de tronçons validés** (\|ε\| ≤ 10 %) |
-| **Import GPX** | Input file `.gpx` + bouton Importer → POST puis affichage du tableau des relevés produits |
+| **Import GPX** | Input file `.gpx` **multi-fichiers** (sélection de 1 à 6+ fichiers en une fois) + bouton Importer → boucle séquentielle des POST, barre de progression, tableau consolidé avec le nom de fichier d'origine, gestion des erreurs ligne par ligne |
+| **Prévisualisation cartographique** | **Carte Leaflet** affichant les 6 tronçons officiels (lignes pointillées) + la ou les traces GPX uploadées (or, en superposition) + marqueurs verts (début) / rouges (fin) aux bornes des tronçons détectés. Les traces sont parsées côté client dès la sélection du fichier — affichage instantané avant même l'upload. |
 | **Évolution de l'écart** | Recharts LineChart, une ligne par tronçon, axe Y en pourcentage, ligne de référence à 0 % en bleu ciel pointillé |
 | **Tableau de calibration** | Pour chaque tronçon : moyenne des 4 derniers écarts, dernier écart, statut coloré (vert ≤ 10 % / orange ≤ 25 % / rouge > 25 %) |
 

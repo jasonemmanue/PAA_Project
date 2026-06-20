@@ -279,8 +279,25 @@ async def main_async(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
 
-    horodatage_depart = datetime.now(tz=timezone.utc).replace(
-        hour=8, minute=0, second=0, microsecond=0,
+    if args.horodatage_debut:
+        try:
+            horodatage_depart = datetime.fromisoformat(args.horodatage_debut)
+        except ValueError as exc:
+            logger.error(
+                "Format ISO invalide pour --horodatage-debut : %s "
+                "(ex. attendu : '2026-06-19T14:00:00').", exc,
+            )
+            sys.exit(1)
+        if horodatage_depart.tzinfo is None:
+            horodatage_depart = horodatage_depart.replace(tzinfo=timezone.utc)
+    else:
+        horodatage_depart = datetime.now(tz=timezone.utc).replace(
+            hour=8, minute=0, second=0, microsecond=0,
+        )
+    logger.info(
+        "Premier tronçon démarre à %s (UTC). Les suivants s'enchaînent "
+        "10 min après la fin du précédent.",
+        horodatage_depart.isoformat(),
     )
 
     resultats: list[GpxGenere] = []
@@ -324,6 +341,17 @@ def parser_arguments() -> argparse.Namespace:
         help=(
             "Facteur multiplicateur du temps fluide OSRM (défaut 1.4 — simule "
             "un trafic moyen). 1.0 = pas de congestion, 2.0 = très fort trafic."
+        ),
+    )
+    parseur.add_argument(
+        "--horodatage-debut",
+        default=None,
+        help=(
+            "Horodatage ISO 8601 du premier point du premier tronçon "
+            "(ex. '2026-06-19T14:00:00'). UTC si pas de fuseau. Si omis, "
+            "utilise aujourd'hui à 08:00 UTC. Utile pour caller les GPX sur "
+            "une fenêtre où des mesures Google existent déjà en base "
+            "(validation P5)."
         ),
     )
     return parseur.parse_args()
