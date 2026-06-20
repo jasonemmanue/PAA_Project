@@ -18,6 +18,7 @@
   "nav": {
     "carte": "Accueil / Carte",
     "indicateurs": "Indicateurs",
+    "rapport": "Rapport DEESP",
     "fiabilite": "Fiabilité",
     "prediction": "Prédiction",
     "administration": "Administration"

@@ -23,6 +23,7 @@ export type EntreeNav = {
 export const ENTREES_NAV: EntreeNav[] = [
   { href: "/", labelKey: "nav.carte", Icon: IconCarte },
   { href: "/indicateurs", labelKey: "nav.indicateurs", Icon: IconIndicateurs },
+  { href: "/rapport", labelKey: "nav.rapport", Icon: IconIndicateurs },
   { href: "/fiabilite", labelKey: "nav.fiabilite", Icon: IconFiabilite },
   { href: "/prediction", labelKey: "nav.prediction", Icon: IconPrediction },
   { href: "/administration", labelKey: "nav.administration", Icon: IconAdmin },

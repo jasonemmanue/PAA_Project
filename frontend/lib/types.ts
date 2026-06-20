@@ -279,3 +279,74 @@ export interface CalibrationResponse {
   fenetre_relevees: number;
   troncons: CalibrationTroncon[];
 }
+
+// ---------------------------------------------------------------------------
+// Rapport DEESP — endpoints /rapport/*
+// ---------------------------------------------------------------------------
+
+export interface TempsTheorique {
+  axe: string;
+  distance_km: number;
+  temps_50kmh_s: number;
+  temps_50kmh: string; // ex. "17 mn 53 s"
+}
+
+export interface RapportTempsTheoriques {
+  tableau: string;
+  lignes: TempsTheorique[];
+}
+
+export interface LigneTempsTraversee {
+  troncon_id: number;
+  troncon_nom: string;
+  type_jour: "jour_ouvrable" | "week_end";
+  nb_mesures: number;
+  temps_min_mn: number | null;
+  temps_moyen_mn: number | null;
+  temps_max_mn: number | null;
+}
+
+export interface RapportTempsTraversee {
+  campagne: string;
+  debut_utc: string;
+  fin_utc: string;
+  nb_lignes: number;
+  lignes: LigneTempsTraversee[];
+}
+
+export interface EntreeCongestion {
+  troncon_id: number;
+  troncon_nom: string;
+  heure: number;
+  tranche: string;
+  nb_par_jour_semaine: Record<string, number>;
+  nb_total_semaine: number;
+  regle_jour_indicatif: boolean;
+  regle_semaine: boolean;
+}
+
+export interface RapportZonesCongestionnees {
+  campagne: string;
+  nb_entrees: number;
+  regles: {
+    ratio_congestion_min: number;
+    regle_jour_indicatif: string;
+    regle_semaine: string;
+  };
+  entrees: EntreeCongestion[];
+}
+
+export interface PointGraphiqueDEESP {
+  date: string;
+  libelle_jour: string;
+  temps_mn: number;
+}
+
+export interface RapportGraphique {
+  troncon_id: number;
+  campagne: string;
+  agregat: "min" | "max";
+  axe_y_unite: string;
+  nb_points: number;
+  points: PointGraphiqueDEESP[];
+}

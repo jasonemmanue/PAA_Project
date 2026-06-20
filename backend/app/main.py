@@ -34,6 +34,7 @@ from app.api.export import router as export_router
 from app.api.indicateurs import router as indicateurs_router
 from app.api.mesures import router as mesures_router
 from app.api.profils import router as profils_router
+from app.api.rapport import router as rapport_router
 from app.api.terrain import router as terrain_router
 from app.api.troncons import router as troncons_router
 from app.collecte.scheduler import arreter_scheduler, demarrer_scheduler
@@ -163,6 +164,16 @@ _TAGS_METADATA = [
         ),
     },
     {
+        "name": "rapport DEESP",
+        "description": (
+            "Reproduit les 17 tableaux et 12 graphiques du rapport officiel "
+            "DEESP/DEEF (cf. CLAUDE.md § 4.5) — temps min/moyen/max par axe "
+            "× sens × type-jour, identification des tronçons congestionnés "
+            "selon les règles d'occurrence du rapport (≥ 3/jour-indicatif "
+            "ou ≥ 4/semaine), comparaison pluriannuelle entre campagnes."
+        ),
+    },
+    {
         "name": "diagnostic",
         "description": "Tests ponctuels des sources de mesure (Google, OSRM).",
     },
@@ -235,4 +246,5 @@ app.include_router(carte_ws_router)
 app.include_router(import_router)
 app.include_router(evolution_router)
 app.include_router(terrain_router)
+app.include_router(rapport_router)
 app.include_router(diag_router)

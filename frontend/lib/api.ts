@@ -18,6 +18,10 @@ import type {
   JourSemaine,
   Mesure,
   ProfilHoraire,
+  RapportGraphique,
+  RapportTempsTheoriques,
+  RapportTempsTraversee,
+  RapportZonesCongestionnees,
   ReleveTerrainResponse,
   SerieTemporelle,
   Troncon,
@@ -298,6 +302,40 @@ export async function getTerrainGpx(releveId: number): Promise<File> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Rapport DEESP — endpoints /rapport/*
+// ---------------------------------------------------------------------------
+
+export function getRapportTempsTheoriques(): Promise<RapportTempsTheoriques> {
+  return appel<RapportTempsTheoriques>("/rapport/temps-theoriques");
+}
+
+export function getRapportTempsTraversee(
+  campagne: string,
+): Promise<RapportTempsTraversee> {
+  return appel<RapportTempsTraversee>(
+    `/rapport/temps-traversee?campagne=${encodeURIComponent(campagne)}`,
+  );
+}
+
+export function getRapportZonesCongestionnees(
+  campagne: string,
+): Promise<RapportZonesCongestionnees> {
+  return appel<RapportZonesCongestionnees>(
+    `/rapport/zones-congestionnees?campagne=${encodeURIComponent(campagne)}`,
+  );
+}
+
+export function getRapportGraphique(
+  tronconId: number,
+  campagne: string,
+  agregat: "min" | "max",
+): Promise<RapportGraphique> {
+  return appel<RapportGraphique>(
+    `/rapport/graphique/${tronconId}?campagne=${encodeURIComponent(campagne)}&agregat=${agregat}`,
+  );
+}
+
 export const api = {
   baseUrl,
   health: getHealth,
@@ -316,6 +354,10 @@ export const api = {
   terrainReleves: getTerrainReleves,
   terrainCalibration: getTerrainCalibration,
   terrainGpx: getTerrainGpx,
+  rapportTempsTheoriques: getRapportTempsTheoriques,
+  rapportTempsTraversee: getRapportTempsTraversee,
+  rapportZonesCongestionnees: getRapportZonesCongestionnees,
+  rapportGraphique: getRapportGraphique,
   urlExportMesures,
   urlExportProfils,
 };
