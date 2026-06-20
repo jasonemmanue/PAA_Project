@@ -983,10 +983,10 @@ directement uploadables via `POST /terrain/import` ou via la page Fiabilité
 | **3 KPI** | Date de la dernière session terrain ; **écart moyen global** (moyenne des écarts moyens par tronçon) ; **nombre de tronçons validés** (\|ε\| ≤ 10 %) |
 | **Import GPX** | Input file `.gpx` **multi-fichiers** (sélection de 1 à 6+ fichiers en une fois) + bouton Importer → boucle séquentielle des POST, barre de progression, tableau consolidé avec le nom de fichier d'origine, gestion des erreurs ligne par ligne |
 | **Prévisualisation cartographique** | **Carte Leaflet** affichant les 6 tronçons officiels (lignes pointillées) + la ou les traces GPX uploadées (or, en superposition) + marqueurs verts (début) / rouges (fin) aux bornes des tronçons détectés. Les traces sont parsées côté client dès la sélection du fichier — affichage instantané avant même l'upload. |
-| **Évolution de l'écart** | Recharts LineChart, une ligne par tronçon, axe Y en pourcentage, ligne de référence à 0 % en bleu ciel pointillé |
+| **Évolution de l'écart** | Recharts LineChart, une ligne par tronçon, axe Y en pourcentage, ligne de référence à 0 % en bleu ciel pointillé. **Note** : tant qu'une seule session est importée, seuls les *dots* sont affichés (pas de trait) — Recharts a besoin de ≥ 2 points par tronçon pour tracer une polyligne. Les vraies courbes apparaissent dès la 2e session terrain hebdomadaire. |
 | **Tableau de calibration** | Pour chaque tronçon : moyenne des 4 derniers écarts, dernier écart, statut coloré (vert ≤ 10 % / orange ≤ 25 % / rouge > 25 %) |
 
-### Migration de schéma 0004
+### Migrations de schéma 0004 et 0005
 
 La migration **`backend/alembic/versions/0004_terrain_horodatage.py`** ajoute
 3 colonnes à `releves_terrain` :
@@ -994,6 +994,22 @@ La migration **`backend/alembic/versions/0004_terrain_horodatage.py`** ajoute
 - `horodatage_passage` (datetime UTC) — instant médian du passage
 - `duree_api_s` (int) — durée API utilisée comme référence
 - `confiance_matching` (float 0..1) — confiance OSRM Match
+
+La migration **`backend/alembic/versions/0005_contenu_gpx_bytea.py`** ajoute
+une 4e colonne pour résoudre un bug critique de **persistance** :
+
+- `contenu_gpx` (BYTEA) — contenu binaire du `.gpx`, **source de vérité**
+
+**Pourquoi cette 5e migration** : sur Railway, le système de fichiers du
+conteneur est **éphémère**. Tout redéploiement (push code) vide le disque,
+et donc les `.gpx` stockés dans `/app/data/gpx/` disparaissent. La table
+`releves_terrain` garde leur chemin mais le fichier n'existe plus → 404
+permanent sur `/terrain/releves/{id}/gpx`.
+
+En stockant le binaire directement dans la DB, on s'affranchit de
+l'éphéméralité du disque. Survenance : transactionnelle, backup auto avec
+PostgreSQL. Coût : ~100 Ko/relevé × N relevés = négligeable pour le volume
+attendu (50-100 relevés/an).
 
 ```powershell
 # Local
@@ -1003,6 +1019,34 @@ alembic upgrade head
 # Railway — depuis la Console du service backend
 alembic upgrade head
 ```
+
+### ✅ Stockage GPX : BYTEA en priorité, disque en repli
+
+| Mode | Quand | Effet |
+|------|-------|-------|
+| **BYTEA en DB** | Toutes les nouvelles importations depuis migration 0005 | Source de vérité, survit aux redéploiements Railway |
+| Disque local (`GPX_STORAGE_DIR`) | Dev local + repli pour relevés pré-0005 | Persistance hors Railway (Docker Compose, machines persistantes) |
+| **HTTP 410 Gone** | Relevé sans contenu BYTEA + fichier perdu sur disque | Réponse explicite invitant à ré-uploader |
+
+L'endpoint `GET /terrain/releves/{id}/gpx` essaie les trois sources dans
+cet ordre, et le frontend ([`PageFiabilite.tsx`](frontend/components/fiabilite/PageFiabilite.tsx))
+log silencieusement les 410 (relevés historiques) tout en remontant les
+autres erreurs pour debug.
+
+### Hydratation cartographique au montage
+
+La page Fiabilité charge automatiquement la **dernière session terrain** au
+montage, **sans aucun localStorage**. Le flux :
+
+1. `GET /terrain/releves?limite=500` → identifie la session la plus récente
+   par `date_session`
+2. Pour chaque `nom_fichier_gpx` unique → `GET /terrain/releves/{id}/gpx`
+3. Parse client-side → traces colorées sur la carte
+4. Markers début/fin dédupés par libellé POI (CARENA / Toyota / SODECI /
+   Palm Beach) avec badges numériques
+
+Donc même après un F5, ou si l'utilisateur arrive directement sur l'URL
+`/fiabilite`, la carte se peuple toute seule depuis la prod Railway.
 
 ---
 
