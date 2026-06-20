@@ -24,6 +24,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     SmallInteger,
     String,
     Text,
@@ -258,8 +259,13 @@ class ReleveTerrain(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    # Chemin relatif ou URL vers le fichier GPX (stocké dans un volume dédié)
+    # Chemin relatif ou URL vers le fichier GPX (stocké dans un volume dédié).
+    # Conserve le nom de fichier pour les logs et le téléchargement.
     fichier_gpx: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Contenu binaire du `.gpx` — source de vérité, survit aux redéploiements
+    # Railway (où le disque est éphémère par défaut). Cf. migration 0005.
+    contenu_gpx: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     # Durée effectivement mesurée sur le terrain, en secondes
     duree_mesuree_s: Mapped[int | None] = mapped_column(Integer, nullable=True)

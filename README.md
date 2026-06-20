@@ -11,6 +11,7 @@
 ## Sommaire
 
 0. [Audit de conformité aux 5 étapes du brief jury](#0--audit-de-conformité-aux-5-étapes-du-brief-jury)
+   - [0bis. Polylines des tronçons : 2 niveaux de rendu](#0bis--polylines-des-tronçons--2-niveaux-de-rendu)
 1. [À quoi ça sert ?](#1--à-quoi-ça-sert-)
 2. [Comment ça marche en images](#2--comment-ça-marche-en-images)
 3. [Ce qui est livré dans la phase P1](#3--ce-qui-est-livré-dans-la-phase-p1)
@@ -81,7 +82,7 @@
 | Récupération **temps de parcours** | ✅ | Scheduler APScheduler toutes les 20 min, 7h–19h Africa/Abidjan |
 | Récupération **distances** | ✅ | Stockées en base via `seed_troncons` (officielles) + OSRM (réelles routière) |
 | Récupération **niveaux de congestion** | ✅ | TTI calculé à chaque cycle → classification fluide/dense/congestionné |
-| Récupération **itinéraires** | ✅ | Polylines OSRM stockées dans `troncons.polyline`, affichées sur Leaflet |
+| Récupération **itinéraires** | 🟡 | Polylines OSRM stockées dans `troncons.polyline` quand OSRM est accessible. Sur Railway (où OSRM n'est pas exposé), **fallback** via `python -m app.complete_sans_osrm` : segments droits encodés, pas de routage réel mais visualisation possible. **Procédure complète de déploiement OSRM permanent sur Oracle Cloud Free Tier** documentée dans [CLAUDE.md § 8.7](CLAUDE.md) (45-60 min de setup, 0 € récurrent). |
 | Récupération **données de circulation** | ✅ | 180+ mesures/jour à 20 min d'intervalle, persistées et accessibles via `/mesures`, `/troncons/{id}/mesures`, etc. |
 | Zoom dynamique | ✅ | `flyToBounds` animé, niveau adaptatif `maxZoom 15` |
 | Recentrage automatique | ✅ | `fitBounds` global au chargement si tout est fluide, sinon centré sur le point chaud |
@@ -120,6 +121,42 @@
 - **1 nuance importante** : « visualisation réelle de la zone » dépend d'OSRM en prod (mitigation immédiate avec `complete_sans_osrm.py`)
 - **Étape 5** : 5/7 livrés à 100 %, 2 partiels (tests + stabilité) — couverture suffisante pour un prototype hackathon
 - **6 manquants** identifiés, tous déjà planifiés dans la feuille de route P6 / P7
+
+---
+
+## 0bis · Polylines des tronçons : 2 niveaux de rendu
+
+Pour comprendre ce qui s'affiche sur la carte selon votre setup :
+
+| Setup | Polylines obtenues | Rendu visuel | Quand l'utiliser |
+|-------|--------------------|--------------|------------------|
+| **Aucun script lancé** | `NULL` en base | **Rien** ne s'affiche (carte vide) | Jamais — bug |
+| `python -m app.complete_sans_osrm` (✅ sans OSRM) | Segment droit 2 points encodé en Google polyline | 6 traits droits qui **coupent la lagune Ébrié** — moche mais visible | Démo express, Railway tant qu'OSRM n'est pas exposé |
+| `python -m app.complete_troncons` (❌ besoin OSRM accessible) | Polyline ~600-1000 caractères suivant les routes | 6 vraies polylines **suivant boulevard de Marseille, pont Houphouët-Boigny, etc.** | Production, démo finale, dès qu'OSRM est exposé |
+
+### Ce que demande chaque script
+
+| Script | OSRM requis ? | DB requise ? | Action |
+|--------|---------------|--------------|--------|
+| `seed_troncons` | ❌ | ✅ | Insère les 6 lignes (noms, distance officielle). Coords et polyline restent `NULL`. |
+| `set_coords_depuis_seed` | ❌ | ✅ | Pose **uniquement** les coords depuis `coordonnees.py`. Polyline et distance inchangées. |
+| **`complete_sans_osrm`** | ❌ | ✅ | Pose coords + **polyline = segment droit encodé**. Distance officielle conservée. |
+| `complete_troncons` | ✅ | ✅ | Pose coords + **polyline réelle routière** + distance recalculée par OSRM. |
+
+### Workflow recommandé pour Railway
+
+```bash
+# Sur la Console Railway, juste après le premier déploiement :
+alembic upgrade head          # appliquer les migrations
+python -m app.seed_troncons   # insérer les 6 tronçons
+python -m app.complete_sans_osrm   # polylines droites (fallback)
+
+# Plus tard, dès qu'OSRM sera accessible (ngrok ou Oracle Cloud) :
+python -m app.complete_troncons   # écrase les polylines droites par les vraies routières
+```
+
+`complete_troncons` étant idempotent, on peut le rejouer N fois sans effet
+secondaire.
 
 ---
 

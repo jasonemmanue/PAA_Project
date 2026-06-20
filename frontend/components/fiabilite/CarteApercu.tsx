@@ -284,7 +284,7 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
       compte: number,
       anchorX: number,
     ) => {
-      const taille = 28;
+      const taille = 34; // un peu plus grand pour faciliter le hover
       return L.divIcon({
         html: `
           <div style="
@@ -295,9 +295,10 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
             width:${taille}px;
             height:${taille}px;
             display:flex; align-items:center; justify-content:center;
-            font-weight:700; font-size:13px;
-            box-shadow:0 2px 6px rgba(0,0,0,0.4);
+            font-weight:700; font-size:15px;
+            box-shadow:0 2px 8px rgba(0,0,0,0.5);
             line-height:1;
+            cursor: pointer;
           ">${compte > 1 ? compte : symbole}</div>`,
         className: "paa-poi-fiabilite",
         iconSize: [taille, taille],
@@ -310,18 +311,24 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
         const nbDeparts = info.departs.size;
         const nbArrivees = info.arrivees.size;
         // Vert (départs) — décalé vers la gauche pour ne pas couvrir le rouge.
+        // zIndexOffset=1000 garantit que le marker passe AU-DESSUS des
+        // polylines (dont le tooltip aurait sinon priorité au hover).
         if (nbDeparts > 0) {
           const icone = fabriquerBadge(
             COULEUR_MARQUEUR_DEBUT,
             "↗",
             nbDeparts,
-            28, // anchorX = largeur → décale le centre du marker à GAUCHE du point
+            34, // anchorX = largeur → décale le centre du marker à GAUCHE du point
           );
           const tronconsTexte = Array.from(info.departs).join("<br/>");
-          const marker = L.marker([info.lat, info.lon], { icon: icone })
+          const marker = L.marker([info.lat, info.lon], {
+            icon: icone,
+            zIndexOffset: 1000,
+            riseOnHover: true,
+          })
             .bindTooltip(
               `<strong>${t("fiabilite.marqueurDebut")} — ${info.libelle}</strong><br/>${tronconsTexte}`,
-              { direction: "top", offset: [0, -14] },
+              { direction: "top", offset: [0, -18] },
             )
             .addTo(map);
           marqueurs.current.push(marker);
@@ -335,10 +342,14 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
             0, // anchorX = 0 → décale le centre à DROITE du point
           );
           const tronconsTexte = Array.from(info.arrivees).join("<br/>");
-          const marker = L.marker([info.lat, info.lon], { icon: icone })
+          const marker = L.marker([info.lat, info.lon], {
+            icon: icone,
+            zIndexOffset: 1000,
+            riseOnHover: true,
+          })
             .bindTooltip(
               `<strong>${t("fiabilite.marqueurFin")} — ${info.libelle}</strong><br/>${tronconsTexte}`,
-              { direction: "top", offset: [0, -14] },
+              { direction: "top", offset: [0, -18] },
             )
             .addTo(map);
           marqueurs.current.push(marker);

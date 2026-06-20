@@ -27,7 +27,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -237,6 +237,10 @@ async def importer_gpx(
             date_session=date_session,
             horodatage_passage=segment.horodatage_passage,
             fichier_gpx=chemin_gpx,
+            # Le contenu binaire est la **source de vérité** : ça survit aux
+            # redéploiements Railway (disque éphémère par défaut). Le fichier
+            # sur disque (`fichier_gpx`) reste utile pour le dev local.
+            contenu_gpx=contenu,
             duree_mesuree_s=segment.duree_s,
             duree_api_s=duree_api_s,
             ecart_relatif=ecart_relatif,
@@ -340,45 +344,66 @@ async def lister_releves(
     "/releves/{releve_id}/gpx",
     summary="Télécharge le fichier GPX brut d'un relevé",
     description=(
-        "Renvoie le `.gpx` exact uploadé par l'opérateur, tel qu'il est stocké "
-        "sur le volume `GPX_STORAGE_DIR` du backend. Utilisé par la page "
-        "Fiabilité pour rejouer la prévisualisation cartographique d'une "
-        "session passée sans re-télécharger via l'utilisateur."
+        "Renvoie le `.gpx` exact uploadé par l'opérateur. Sert d'abord depuis "
+        "la colonne `contenu_gpx` (BYTEA en DB — source de vérité, survit aux "
+        "redéploiements Railway), avec repli sur le disque (`fichier_gpx`) "
+        "pour les relevés antérieurs à la migration 0005."
     ),
-    response_class=FileResponse,
 )
 async def telecharger_gpx(
     releve_id: int,
     db: Session = Depends(get_db),
-) -> FileResponse:
+) -> Response:
     releve = db.get(ReleveTerrain, releve_id)
-    if releve is None or not releve.fichier_gpx:
+    if releve is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Relevé id={releve_id} introuvable ou sans fichier GPX.",
+            detail=f"Relevé id={releve_id} introuvable.",
         )
-    # Résolution du chemin : si stocké en chemin absolu, on vérifie qu'il
-    # reste contenu dans le dossier de stockage (anti directory-traversal).
-    racine = Path(get_settings().gpx_storage_dir).resolve()
-    candidat = Path(releve.fichier_gpx)
-    chemin = candidat if candidat.is_absolute() else racine / candidat.name
-    try:
-        chemin = chemin.resolve()
-        chemin.relative_to(racine)
-    except (ValueError, OSError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Chemin GPX hors du dossier de stockage autorisé.",
-        ) from exc
-    if not chemin.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Fichier GPX absent du disque : {chemin.name}",
+
+    nom_fichier = (
+        Path(releve.fichier_gpx).name if releve.fichier_gpx
+        else f"releve_{releve_id}.gpx"
+    )
+
+    # 1) Source primaire : contenu binaire en DB (depuis migration 0005)
+    if releve.contenu_gpx:
+        return Response(
+            content=bytes(releve.contenu_gpx),
+            media_type="application/gpx+xml",
+            headers={"Content-Disposition": f'inline; filename="{nom_fichier}"'},
         )
-    return FileResponse(
-        chemin,
-        media_type="application/gpx+xml",
-        filename=chemin.name,
+
+    # 2) Repli : fichier sur disque (pour les relevés pré-migration 0005,
+    #    et le dev local où le disque est persistant).
+    if releve.fichier_gpx:
+        racine = Path(get_settings().gpx_storage_dir).resolve()
+        candidat = Path(releve.fichier_gpx)
+        chemin = candidat if candidat.is_absolute() else racine / candidat.name
+        try:
+            chemin = chemin.resolve()
+            chemin.relative_to(racine)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Chemin GPX hors du dossier de stockage autorisé.",
+            ) from exc
+        if chemin.exists():
+            return FileResponse(
+                chemin,
+                media_type="application/gpx+xml",
+                filename=chemin.name,
+            )
+
+    # 3) Aucune source utilisable — relevé importé avant 0005 ET fichier perdu
+    #    (typiquement : disque Railway éphémère réinitialisé).
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=(
+            f"Le contenu GPX du relevé {releve_id} n'est plus disponible "
+            "(uploadé avant migration 0005, fichier perdu suite à un "
+            "redéploiement Railway). Ré-uploadez le GPX pour le retrouver."
+        ),
     )
 
 

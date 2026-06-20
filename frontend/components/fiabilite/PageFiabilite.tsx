@@ -126,11 +126,21 @@ export function PageFiabilite() {
             const trace = await parserGpxFichier(fichier);
             traces.push({ ...trace, nomFichier: nom });
           } catch (err) {
-            // eslint-disable-next-line no-console
-            console.warn(
-              `[PageFiabilite] téléchargement GPX échoué pour le relevé ${id} :`,
-              err,
-            );
+            // 410 Gone = relevé pré-migration 0005 dont le fichier est perdu
+            // sur le disque Railway éphémère. Inutile d'alerter l'utilisateur.
+            const statut = (err as { statut?: number })?.statut;
+            if (statut === 410) {
+              // eslint-disable-next-line no-console
+              console.info(
+                `[PageFiabilite] relevé ${id} : contenu perdu (pré-migration 0005)`,
+              );
+            } else {
+              // eslint-disable-next-line no-console
+              console.warn(
+                `[PageFiabilite] téléchargement GPX échoué pour le relevé ${id} :`,
+                err,
+              );
+            }
           }
         }),
       );
