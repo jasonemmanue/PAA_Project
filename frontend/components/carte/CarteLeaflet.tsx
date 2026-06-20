@@ -10,7 +10,11 @@
 import "leaflet/dist/leaflet.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Map as LeafletMap, Polyline as LeafletPolyline } from "leaflet";
+import type {
+  Map as LeafletMap,
+  Marker as LeafletMarker,
+  Polyline as LeafletPolyline,
+} from "leaflet";
 
 import { api } from "@/lib/api";
 import { decoderPolyline } from "@/lib/polyline";
@@ -35,6 +39,25 @@ const TUILE_ATTR =
 const CENTRE_ABIDJAN: [number, number] = [5.29, -4.0];
 const ZOOM_INITIAL = 12;
 
+// Classement des classes de congestion pour identifier le « point chaud »
+// au chargement (utilisé par le zoom intelligent).
+const ORDRE_GRAVITE: Record<string, number> = {
+  congestionne: 3,
+  dense: 2,
+  fluide: 1,
+  indetermine: 0,
+};
+
+// POI — 4 points stratégiques de la zone portuaire. Les libellés correspondent
+// à ceux extractibles d'un `troncon.nom` via le séparateur " → " (cf.
+// backend/app/sources/coordonnees.py).
+const POI_INFO: Record<string, { code: string; libelleCourt: string; couleur: string }> = {
+  "CARENA (Plateau)": { code: "C", libelleCourt: "CARENA", couleur: "#1565C8" },
+  "Toyota CFAO (Treichville)": { code: "T", libelleCourt: "Toyota CFAO", couleur: "#C62828" },
+  "Agence SODECI (Zone 4)": { code: "S", libelleCourt: "SODECI", couleur: "#2E7D32" },
+  "Pharmacie Palm Beach": { code: "P", libelleCourt: "Palm Beach", couleur: "#0B2545" },
+};
+
 type Props = {
   /** Tronçon à mettre en surbrillance et vers lequel zoomer. */
   tronconSelectionneId: number | null;
@@ -57,6 +80,10 @@ export function CarteLeaflet({
   const LRef = useRef<typeof import("leaflet") | null>(null);
   const onSelectionnerRef = useRef(onSelectionner);
   onSelectionnerRef.current = onSelectionner;
+  const poiMarkersRef = useRef<LeafletMarker[]>([]);
+  // Garde pour ne déclencher le zoom intelligent qu'une seule fois
+  // (sinon la mise à jour WebSocket re-centre toutes les 20 min).
+  const zoomInitialFaitRef = useRef(false);
 
   const [etat, setEtat] = useState<CarteEtat | null>(null);
   const [chargement, setChargement] = useState(true);
@@ -108,6 +135,8 @@ export function CarteLeaflet({
         mapRef.current = null;
         lignesRef.current.clear();
         heatLayerRef.current = null;
+        poiMarkersRef.current = [];
+        zoomInitialFaitRef.current = false;
       };
     })();
 
@@ -186,6 +215,87 @@ export function CarteLeaflet({
         maxZoom: 17,
         gradient: { 0.3: "#F39C12", 0.7: "#E67E22", 1.0: "#E74C3C" },
       }).addTo(map);
+    }
+
+    // -- POI : 4 markers stratégiques (CARENA, Toyota CFAO, SODECI, Palm Beach)
+    //    On collecte les coords uniques en parsant `troncon.nom` (séparateur " → ").
+    if (poiMarkersRef.current.length === 0) {
+      const poiParLibelle = new Map<string, [number, number]>();
+      for (const tr of etat.troncons) {
+        const [libO, libD] = tr.nom.split(" → ").map((s) => s.trim());
+        const latO = tr.lat_origine ?? tr.geometrie?.lat_origine ?? null;
+        const lonO = tr.lon_origine ?? tr.geometrie?.lon_origine ?? null;
+        const latD = tr.lat_destination ?? tr.geometrie?.lat_destination ?? null;
+        const lonD = tr.lon_destination ?? tr.geometrie?.lon_destination ?? null;
+        if (libO && Number.isFinite(latO) && Number.isFinite(lonO)) {
+          poiParLibelle.set(libO, [latO as number, lonO as number]);
+        }
+        if (libD && Number.isFinite(latD) && Number.isFinite(lonD)) {
+          poiParLibelle.set(libD, [latD as number, lonD as number]);
+        }
+      }
+      for (const [libelle, [latPt, lonPt]] of poiParLibelle) {
+        const info = POI_INFO[libelle];
+        if (!info) continue; // libellé inconnu → on ne fabrique pas de POI
+        const icone = L.divIcon({
+          html: `
+            <div class="paa-poi-pin" style="
+              background:${info.couleur};
+              color:#ffffff;
+              border:2px solid #ffffff;
+              border-radius:50%;
+              width:32px; height:32px;
+              display:flex; align-items:center; justify-content:center;
+              font-weight:700; font-size:14px;
+              box-shadow:0 2px 6px rgba(0,0,0,0.4);
+            ">${info.code}</div>`,
+          className: "paa-poi-icon",
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
+        });
+        const marker = L.marker([latPt, lonPt], { icon: icone, interactive: true })
+          .bindTooltip(info.libelleCourt, {
+            direction: "top",
+            offset: [0, -10],
+            permanent: false,
+          })
+          .addTo(map);
+        poiMarkersRef.current.push(marker);
+      }
+    }
+
+    // -- Zoom intelligent : au PREMIER chargement, on centre sur le tronçon
+    //    le plus dégradé (worst classe puis worst TTI) ; si tout est fluide,
+    //    on cadre sur l'ensemble des 6 tronçons.
+    if (!zoomInitialFaitRef.current && etat.troncons.length > 0) {
+      const troncons = etat.troncons.slice();
+      troncons.sort((a, b) => {
+        const ga = ORDRE_GRAVITE[a.classe_congestion] ?? 0;
+        const gb = ORDRE_GRAVITE[b.classe_congestion] ?? 0;
+        if (ga !== gb) return gb - ga;
+        return (b.tti ?? 0) - (a.tti ?? 0);
+      });
+      const cible = troncons[0];
+      const points = pointsTroncon(cible);
+      if (
+        cible.classe_congestion !== "fluide"
+        && cible.classe_congestion !== "indetermine"
+        && points.length >= 2
+      ) {
+        const bounds = L.latLngBounds(points);
+        map.flyToBounds(bounds, { padding: [40, 40], duration: 1.0, maxZoom: 15 });
+      } else {
+        // Tout fluide → cadre global sur les 6 tronçons
+        const tousPoints: [number, number][] = [];
+        for (const tr of etat.troncons) tousPoints.push(...pointsTroncon(tr));
+        if (tousPoints.length >= 2) {
+          map.fitBounds(L.latLngBounds(tousPoints), {
+            padding: [30, 30],
+            maxZoom: 13,
+          });
+        }
+      }
+      zoomInitialFaitRef.current = true;
     }
   }, [etat, locale]);
 

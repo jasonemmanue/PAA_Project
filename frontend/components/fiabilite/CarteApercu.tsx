@@ -22,7 +22,7 @@ import "leaflet/dist/leaflet.css";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
-  CircleMarker as LeafletCircle,
+  Layer as LeafletLayer,
   Map as LeafletMap,
   Polyline as LeafletPolyline,
 } from "leaflet";
@@ -72,7 +72,7 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
   const LRef = useRef<typeof import("leaflet") | null>(null);
   const polylinesTroncons = useRef<LeafletPolyline[]>([]);
   const polylinesTraces = useRef<LeafletPolyline[]>([]);
-  const marqueurs = useRef<LeafletCircle[]>([]);
+  const marqueurs = useRef<LeafletLayer[]>([]);
   const [pret, setPret] = useState(false);
 
   // 1) Initialisation Leaflet (une seule fois)
@@ -225,70 +225,139 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
 
     const tronconsParId = new Map(etatCarte.troncons.map((tr) => [tr.id, tr]));
 
-    const boundsMarqueurs: [number, number][] = [];
+    // Dédup par LIBELLÉ DE POI (et non par coord) : SODECI et Toyota CFAO
+    // sont à 600 m l'un de l'autre — un dédup par coord arrondie les sépare
+    // bien en théorie, mais à zoom 12 leurs markers de 28 px se chevauchent
+    // visuellement. Dédupliquer par libellé garantit qu'on dessine UN
+    // marker logique par POI, à sa coord exacte (celle du troncon dont il
+    // est origine ou destination). On compte sur troncon_id unique pour
+    // éviter de double-compter quand une session contient plusieurs relevés
+    // pour le même tronçon.
+    interface PoiInfo {
+      libelle: string;
+      lat: number;
+      lon: number;
+      departs: Set<string>;    // troncons "Origine → Destination" qui partent
+      arrivees: Set<string>;   // troncons qui arrivent
+    }
+    const poiParLibelle = new Map<string, PoiInfo>();
+
+    const ajouter = (
+      libelle: string,
+      lat: number,
+      lon: number,
+      role: "depart" | "arrivee",
+      tronconNom: string,
+    ) => {
+      const existant = poiParLibelle.get(libelle);
+      const info = existant ?? {
+        libelle, lat, lon,
+        departs: new Set<string>(),
+        arrivees: new Set<string>(),
+      };
+      if (role === "depart") info.departs.add(tronconNom);
+      else info.arrivees.add(tronconNom);
+      poiParLibelle.set(libelle, info);
+    };
+
     for (const releve of releves) {
-      try {
-        const tr = tronconsParId.get(releve.troncon_id);
-        if (!tr) continue;
-        const latO = tr.lat_origine ?? tr.geometrie?.lat_origine ?? null;
-        const lonO = tr.lon_origine ?? tr.geometrie?.lon_origine ?? null;
-        const latD = tr.lat_destination ?? tr.geometrie?.lat_destination ?? null;
-        const lonD = tr.lon_destination ?? tr.geometrie?.lon_destination ?? null;
-        if (
-          !Number.isFinite(latO)
-          || !Number.isFinite(lonO)
-          || !Number.isFinite(latD)
-          || !Number.isFinite(lonD)
-        ) continue;
-        // Markers visiblement plus grands (radius 10, weight 3) avec
-        // contour blanc pour ressortir sur les tuiles OSM colorées.
-        const debut = L.circleMarker([latO as number, lonO as number], {
-          radius: 10,
-          color: "#ffffff",
-          fillColor: COULEUR_MARQUEUR_DEBUT,
-          fillOpacity: 0.95,
-          weight: 3,
-        });
-        debut.addTo(map);
-        debut.bindTooltip(`${t("fiabilite.marqueurDebut")} — ${tr.nom}`, {
-          permanent: false,
-          direction: "top",
-        });
-
-        const fin = L.circleMarker([latD as number, lonD as number], {
-          radius: 10,
-          color: "#ffffff",
-          fillColor: COULEUR_MARQUEUR_FIN,
-          fillOpacity: 0.95,
-          weight: 3,
-        });
-        fin.addTo(map);
-        fin.bindTooltip(`${t("fiabilite.marqueurFin")} — ${tr.nom}`, {
-          permanent: false,
-          direction: "top",
-        });
-
-        marqueurs.current.push(debut, fin);
-        boundsMarqueurs.push(
-          [latO as number, lonO as number],
-          [latD as number, lonD as number],
-        );
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[CarteApercu] marqueurs non dessinés pour le tronçon ${releve.troncon_id} :`,
-          err,
-        );
+      const tr = tronconsParId.get(releve.troncon_id);
+      if (!tr) continue;
+      const latO = tr.lat_origine ?? tr.geometrie?.lat_origine ?? null;
+      const lonO = tr.lon_origine ?? tr.geometrie?.lon_origine ?? null;
+      const latD = tr.lat_destination ?? tr.geometrie?.lat_destination ?? null;
+      const lonD = tr.lon_destination ?? tr.geometrie?.lon_destination ?? null;
+      const [libO, libD] = tr.nom.split(" → ").map((s) => s.trim());
+      if (libO && Number.isFinite(latO) && Number.isFinite(lonO)) {
+        ajouter(libO, latO as number, lonO as number, "depart", tr.nom);
+      }
+      if (libD && Number.isFinite(latD) && Number.isFinite(lonD)) {
+        ajouter(libD, latD as number, lonD as number, "arrivee", tr.nom);
       }
     }
-    // Re-centrage en incluant les marqueurs : si on les dessine alors que la
-    // carte avait été centrée sur les traces seules, certains marqueurs
-    // peuvent tomber hors de la fenêtre. Ce fitBounds rééquilibre.
+
+    const boundsMarqueurs: [number, number][] = [];
+
+    const fabriquerBadge = (
+      couleur: string,
+      symbole: string,
+      compte: number,
+      anchorX: number,
+    ) => {
+      const taille = 28;
+      return L.divIcon({
+        html: `
+          <div style="
+            background:${couleur};
+            color:#ffffff;
+            border:3px solid #ffffff;
+            border-radius:50%;
+            width:${taille}px;
+            height:${taille}px;
+            display:flex; align-items:center; justify-content:center;
+            font-weight:700; font-size:13px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.4);
+            line-height:1;
+          ">${compte > 1 ? compte : symbole}</div>`,
+        className: "paa-poi-fiabilite",
+        iconSize: [taille, taille],
+        iconAnchor: [anchorX, taille / 2],
+      });
+    };
+
+    for (const info of poiParLibelle.values()) {
+      try {
+        const nbDeparts = info.departs.size;
+        const nbArrivees = info.arrivees.size;
+        // Vert (départs) — décalé vers la gauche pour ne pas couvrir le rouge.
+        if (nbDeparts > 0) {
+          const icone = fabriquerBadge(
+            COULEUR_MARQUEUR_DEBUT,
+            "↗",
+            nbDeparts,
+            28, // anchorX = largeur → décale le centre du marker à GAUCHE du point
+          );
+          const tronconsTexte = Array.from(info.departs).join("<br/>");
+          const marker = L.marker([info.lat, info.lon], { icon: icone })
+            .bindTooltip(
+              `<strong>${t("fiabilite.marqueurDebut")} — ${info.libelle}</strong><br/>${tronconsTexte}`,
+              { direction: "top", offset: [0, -14] },
+            )
+            .addTo(map);
+          marqueurs.current.push(marker);
+        }
+        // Rouge (arrivées) — décalé vers la droite.
+        if (nbArrivees > 0) {
+          const icone = fabriquerBadge(
+            COULEUR_MARQUEUR_FIN,
+            "↘",
+            nbArrivees,
+            0, // anchorX = 0 → décale le centre à DROITE du point
+          );
+          const tronconsTexte = Array.from(info.arrivees).join("<br/>");
+          const marker = L.marker([info.lat, info.lon], { icon: icone })
+            .bindTooltip(
+              `<strong>${t("fiabilite.marqueurFin")} — ${info.libelle}</strong><br/>${tronconsTexte}`,
+              { direction: "top", offset: [0, -14] },
+            )
+            .addTo(map);
+          marqueurs.current.push(marker);
+        }
+        boundsMarqueurs.push([info.lat, info.lon]);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[CarteApercu] POI non dessiné :", err);
+      }
+    }
+
+    // Re-centrage incluant les marqueurs pour qu'aucun ne soit hors de la
+    // fenêtre (cas typique : Palm Beach au sud, CARENA au nord — la trace
+    // seule peut ne pas suffire à cadrer les deux extrémités).
     if (boundsMarqueurs.length >= 2) {
       try {
         map.fitBounds(boundsMarqueurs as any, {
-          padding: [40, 40],
-          maxZoom: 14,
+          padding: [50, 50],
+          maxZoom: 13,
         });
       } catch {
         /* silencieux */
