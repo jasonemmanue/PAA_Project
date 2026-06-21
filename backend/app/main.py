@@ -33,6 +33,7 @@ from app.api.evolution import router as evolution_router
 from app.api.export import router as export_router
 from app.api.indicateurs import router as indicateurs_router
 from app.api.mesures import router as mesures_router
+from app.api.predire import router as predire_router
 from app.api.profils import router as profils_router
 from app.api.rapport import router as rapport_router
 from app.api.terrain import router as terrain_router
@@ -174,6 +175,15 @@ _TAGS_METADATA = [
         ),
     },
     {
+        "name": "prédicteur",
+        "description": (
+            "Prédicteur DEESP par profils horaires avec cascade gracieuse "
+            "(Google → profils → 50 km/h). Renvoie min/moyen/max en minutes. "
+            "Calibration terrain appliquée UNIQUEMENT si des relevés réels "
+            "sont disponibles — pas avec les GPX synthétiques."
+        ),
+    },
+    {
         "name": "diagnostic",
         "description": "Tests ponctuels des sources de mesure (Google, OSRM).",
     },
@@ -247,4 +257,5 @@ app.include_router(import_router)
 app.include_router(evolution_router)
 app.include_router(terrain_router)
 app.include_router(rapport_router)
+app.include_router(predire_router)
 app.include_router(diag_router)

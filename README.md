@@ -22,12 +22,13 @@
 7. [Déploiement Railway (production)](#7--déploiement-railway-production)
 8. [Ce qui est livré dans la phase P4 (frontend)](#8--ce-qui-est-livré-dans-la-phase-p4-frontend)
    - [8bis. Phase P5 — validation terrain](#8bis--ce-qui-est-livré-dans-la-phase-p5-validation-terrain)
-9. [Démarrer le projet sur ma machine](#9--démarrer-le-projet-sur-ma-machine)
-10. [Vérifier que tout fonctionne (tests)](#10--vérifier-que-tout-fonctionne-tests)
-11. [Comprendre les fichiers du projet](#11--comprendre-les-fichiers-du-projet)
-12. [Petit glossaire technique](#12--petit-glossaire-technique)
-13. [Problèmes fréquents et solutions](#13--problèmes-fréquents-et-solutions)
-14. [La suite du projet](#14--la-suite-du-projet)
+9. [**La page Rapport DEESP** — alignement méthodologique PAA](#9--la-page-rapport-deesp--alignement-méthodologique-paa)
+10. [Démarrer le projet sur ma machine](#10--démarrer-le-projet-sur-ma-machine)
+11. [Vérifier que tout fonctionne (tests)](#11--vérifier-que-tout-fonctionne-tests)
+12. [Comprendre les fichiers du projet](#12--comprendre-les-fichiers-du-projet)
+13. [Petit glossaire technique](#13--petit-glossaire-technique)
+14. [Problèmes fréquents et solutions](#14--problèmes-fréquents-et-solutions)
+15. [La suite du projet](#15--la-suite-du-projet)
 
 ---
 
@@ -1073,7 +1074,171 @@ Donc même après un F5, ou si l'utilisateur arrive directement sur l'URL
 
 ---
 
-## 9 · Démarrer le projet sur ma machine
+## 9 · La page Rapport DEESP — alignement méthodologique PAA
+
+> **TL;DR** — Cette page est la **réponse directe au rapport officiel
+> DEESP/DEEF d'octobre 2025** du Port Autonome d'Abidjan. Elle reproduit ses
+> **17 tableaux et 12 graphiques** dans le navigateur, alimentés par nos
+> mesures temps réel. C'est la pièce qui transforme notre prototype en
+> **outil opérationnel du processus officiel du PAA**.
+
+### Pourquoi cette page existe (et pourquoi elle est différente d'« Indicateurs »)
+
+L'application a **deux pages d'analyse**, et elles ne servent **pas au même
+public** :
+
+| Page | Pour qui | Indicateurs publiés | Fréquence de consultation |
+|------|----------|--------------------|---------------------------|
+| **`/indicateurs`** (norme FHWA) | **Opérateur du dispatch** qui suit la fluidité temps réel | ITP / IPT / IMT (TTI / PTI / BTI internationalisés) | Plusieurs fois par jour |
+| **`/rapport`** (norme DEESP/DEEF) | **DEESP/DEEF + direction PAA** qui rédigent les rapports semestriels | Temps min / moyen / max en minutes par axe × sens × type-jour | À chaque clôture mensuelle |
+
+→ La page Indicateurs sert au **monitoring continu** (statut instantané, TTI
+courant, classification fluide/dense/congestionné). La page Rapport sert à la
+**production réglementaire** (les chiffres qui finissent dans les comptes
+rendus officiels remontés à la Direction Générale et au Ministère).
+
+### Le principe de fonctionnement en 3 étages
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. COLLECTE — 24h/24, 1 mesure / heure / tronçon       │
+│    Google Routes (TRAFFIC_AWARE_OPTIMAL)               │
+│    144 requêtes / jour                                  │
+└──────────────────────────┬──────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│ 2. FILTRE DEESP — couche `app/analyse/rapport_paa.py`  │
+│    Ne garde que les mesures entre 7h et 19h            │
+│    (conformité au rapport officiel)                    │
+│    Distingue jour_ouvrable (lun-ven) vs week_end       │
+│    Critère congestion : ratio > 1.5 × T_ref_50kmh      │
+└──────────────────────────┬──────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│ 3. PUBLICATION — endpoints `/rapport/*` + page web     │
+│    Tableau 1 : Distance + temps théorique 50 km/h      │
+│    Tableaux 3-15 : Min/Moyen/Max par axe × type-jour   │
+│    Tableau 16 : Tronçons congestionnés (règles 3 ou 4) │
+│    Graphiques 1-12 : BarCharts par jour (min ou max)   │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Comment lire les 17 tableaux et 12 graphiques
+
+#### Bloc 1 — Tableau 1 (temps théoriques)
+
+Distance officielle des 3 axes + temps à 50 km/h calculé. Statique, dérivé
+du seed des tronçons. C'est la **référence** contre laquelle on compare
+toutes les mesures.
+
+#### Bloc 2 — Tableaux 3 à 7 (temps MINIMAL)
+
+Pour chaque tronçon et type-jour (ouvrable / week-end), le **temps minimum
+observé** sur la campagne. Si un tronçon n'a *jamais* été en-dessous du
+théorique, c'est un signe de congestion structurelle.
+
+> **Exemple de lecture** : Tableau 4 (axe Toyota CFAO ↔ Palm Beach) affiche
+> 12 mn (ouvrable) / 12 mn (week-end) dans le sens aller. Pour 8 km, le
+> théorique est 9 min 36 s — on est donc à ~2 min au-dessus en condition
+> idéale, lié probablement aux feux tricolores.
+
+#### Bloc 3 — Tableaux 8 à 11 (temps MOYEN)
+
+**Méthode DEESP particulière** : ce n'est pas la moyenne brute de toutes les
+mesures. C'est la **moyenne des moyennes journalières** :
+
+```
+temps_moyen_mn = Σ ( moyenne_des_mesures_du_jour ) / nombre_de_jours
+```
+
+Cette méthode lisse les jours atypiques (manifs, accidents) sans les exclure.
+C'est la valeur qui sert dans le rapport remonté à la Direction.
+
+#### Bloc 4 — Tableaux 12 à 15 (temps MAXIMAL)
+
+Plus grande durée observée. Met en évidence les **événements exceptionnels**.
+Dans l'exemple du rapport oct. 2025 : 61 mn observées sur l'axe Palm Beach
+→ CARENA un jour ouvrable, alors que la moyenne est de 37 mn.
+
+#### Bloc 5 — Tableau 16 (zones congestionnées récurrentes)
+
+**Le tableau opérationnellement le plus utile.** Liste les tranches horaires
+où un tronçon a été congestionné selon les deux règles DEESP :
+
+| Règle | Quand elle se déclenche |
+|-------|--------------------------|
+| **≥ 3 fois sur un jour-indicatif** | Le tronçon T1C est rouge 3 lundis sur 4, à 15h-16h → règle déclenchée |
+| **≥ 4 fois dans la semaine** | Le tronçon T1C est rouge 4 jours différents (lun, mer, ven, sam), à 15h-16h → règle déclenchée |
+
+Si **au moins une des deux** règles se déclenche pour un (tronçon, heure),
+il apparaît dans le Tableau 16 avec un badge précisant **quelle règle** a
+été déclenchée.
+
+#### Bloc 6 — Graphiques 1 à 12 (BarCharts)
+
+Exclusivement des **barres verticales** (pas de courbes), conformes au format
+du rapport :
+
+| Graphiques | Sens | Agrégat |
+|------------|------|---------|
+| 1, 3, 5 | Aller | Temps minimal par jour |
+| 2, 4, 6 | Retour | Temps minimal par jour |
+| 7, 9, 11 | Aller | Temps maximal par jour |
+| 8, 10, 12 | Retour | Temps maximal par jour |
+
+Axe X = jour calendaire de la campagne, axe Y = minutes entières. Une barre
+= un point de mesure agrégé.
+
+### Conformité au rapport officiel
+
+L'application reproduit **tous** les éléments du rapport oct. 2025 :
+
+| Élément du rapport DEESP | Implémentation | Endpoint API |
+|--------------------------|----------------|--------------|
+| Tableau 1 | TableauTempsTheoriques | `GET /rapport/temps-theoriques` |
+| Tableaux 3 à 6 | TableauTempsTraversee (agregat='min') | `GET /rapport/temps-traversee` |
+| Tableau 7 | Récap min sur les 3 axes | idem |
+| Tableaux 8 à 10 | TableauTempsTraversee (agregat='moyen') | idem |
+| Tableau 11 | Récap moyen | idem |
+| Tableaux 12 à 14 | TableauTempsTraversee (agregat='max') | idem |
+| Tableau 15 | Récap max | idem |
+| Tableau 16 | TableauZonesCongestionnees | `GET /rapport/zones-congestionnees` |
+| Tableau 17 | Synthèse (déduite) | idem |
+| Tableau 19 | Comparaison pluriannuelle | `GET /rapport/comparaison` |
+| Graphiques 1 à 12 | GraphiquesParAxe (BarChart Recharts) | `GET /rapport/graphique/{id}` |
+
+### Comment l'utiliser en pratique (DEESP)
+
+Pour produire le rapport mensuel du PAA :
+
+1. **Sélectionner la campagne** (mois) dans le sélecteur en haut de page
+   (input `<input type="month">`)
+2. **Lire les blocs dans l'ordre** : Tableau 1 (référence) → Tableaux 3-15
+   (temps observés) → Tableau 16 (zones rouges) → Graphiques 1-12
+   (visualisation)
+3. **Exporter** : tous les tableaux sont sélectionnables / copiables vers
+   Excel ou Word ; les graphiques sont des images PNG capturables
+4. **Comparer** : appeler manuellement
+   `GET /rapport/comparaison?campagne_a=2025-10&campagne_b=2026-02` pour
+   produire le Tableau 19 pluriannuel
+
+### Limitations actuelles
+
+- 🟡 La page est **techniquement opérationnelle** mais affiche peu de
+  chiffres tant que la collecte n'a pas tourné **un mois complet** (28-30
+  jours). Au 2026-06-21, on cumule ~2 jours.
+- 🟡 La **comparaison pluriannuelle Tableau 19** nécessite au moins 2 mois
+  d'historique. Elle utilisera la table `evolution_indicateur` (importée
+  en P6.1 — fév 2025 vs oct 2025) en attendant que la collecte continue
+  alimente les mois suivants.
+- 🟢 La **conformité méthodologique** est garantie *quel que soit le volume
+  de données* : si la collecte tourne 7 jours, les Tableaux 3-15 sont
+  partiellement remplis mais déjà conformes (mêmes formules, même filtre
+  7h-19h, même distinction ouvrable / week-end).
+
+---
+
+## 10 · Démarrer le projet sur ma machine
 
 > ⚠️ Toutes les commandes ci-dessous se lancent dans **PowerShell sur Windows**,
 > à la racine du projet (`C:\Users\…\paa-traverse`), pas dans un sous-dossier.
@@ -1156,7 +1321,7 @@ jour`), **tout est prêt**.
 
 ---
 
-## 10 · Vérifier que tout fonctionne (tests)
+## 11 · Vérifier que tout fonctionne (tests)
 
 ### Test 1 — Le backend répond
 
@@ -1307,7 +1472,7 @@ message `{type: "maj", donnees: {...}}` apparaît dans la console.
 
 ---
 
-## 11 · Comprendre les fichiers du projet
+## 12 · Comprendre les fichiers du projet
 
 ```
 paa-traverse/
@@ -1356,7 +1521,7 @@ paa-traverse/
 
 ---
 
-## 12 · Petit glossaire technique
+## 13 · Petit glossaire technique
 
 | Mot                  | Explication simple                                                                                            |
 |----------------------|---------------------------------------------------------------------------------------------------------------|
@@ -1388,7 +1553,7 @@ paa-traverse/
 
 ---
 
-## 13 · Problèmes fréquents et solutions
+## 14 · Problèmes fréquents et solutions
 
 ### « Le port 8000 est déjà utilisé / je n'arrive pas à démarrer le backend »
 
@@ -1434,7 +1599,7 @@ Puis recommencer depuis l'étape 4 du démarrage.
 
 ---
 
-## 14 · La suite du projet
+## 15 · La suite du projet
 
 Sept phases au total (voir [CLAUDE.md § 4](CLAUDE.md#4-feuille-de-route--7-phases)).
 

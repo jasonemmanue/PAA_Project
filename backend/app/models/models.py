@@ -279,6 +279,15 @@ class ReleveTerrain(Base):
     # Confiance OSRM du map-matching (0..1) — NULL si OSRM indisponible
     confiance_matching: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Flag indiquant qu'il s'agit d'un VRAI relevé terrain (téléphone GPS
+    # parcourant réellement le tronçon) et non d'un GPX synthétique généré
+    # par `app/generer_gpx_synthetiques.py`. Quand False, le facteur de
+    # calibration calculé sur ce relevé n'est PAS appliqué par le prédicteur
+    # (cf. P6.2 amendement 1, CLAUDE.md § 4.5).
+    source_reelle: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     # Relation
     troncon: Mapped["Troncon"] = relationship(
         "Troncon", back_populates="releves_terrain"
@@ -333,4 +342,50 @@ class EvolutionIndicateur(Base):
         return (
             f"<EvolutionIndicateur axe={self.axe!r} sens={self.sens!r} "
             f"periode={self.periode!r} type_jour={self.type_jour!r}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Table : alertes  (P6.2 — prédicteur DEESP)
+# ---------------------------------------------------------------------------
+
+
+class Alerte(Base):
+    """Alerte de congestion anormale — une mesure dépassant le P95 historique.
+
+    Émise par le prédicteur DEESP quand `duree_trafic_s` d'une mesure courante
+    dépasse le P95 historique du créneau correspondant (jour-semaine × heure).
+    Sert le résultat n°5 de l'article 4 du cahier des charges (« Système
+    d'alerte temps réel ») ainsi que la 5e recommandation du rapport DEESP.
+    """
+
+    __tablename__ = "alertes"
+
+    __table_args__ = (
+        Index("ix_alertes_troncon_horodatage", "troncon_id", "horodatage_utc"),
+        Index("ix_alertes_lu", "lu"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    troncon_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("troncons.id", ondelete="CASCADE"), nullable=False
+    )
+    horodatage_utc: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    valeur_mesuree_s: Mapped[int] = mapped_column(Integer, nullable=False)
+    p95_attendu_s: Mapped[float] = mapped_column(Float, nullable=False)
+    # "jour_ouvrable" ou "week_end" (cf. CLAUDE.md § 4.5.5)
+    type_jour: Mapped[str] = mapped_column(String(20), nullable=False)
+    lu: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    creee_le: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default="now()", nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Alerte id={self.id} troncon_id={self.troncon_id} "
+            f"valeur={self.valeur_mesuree_s}s p95={self.p95_attendu_s}s>"
         )
