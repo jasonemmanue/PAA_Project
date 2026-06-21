@@ -13,11 +13,15 @@ Utilisé par P6.3 (heure optimale de départ) pour résoudre un nom de lieu
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 import httpx
 
 from app.sources.coordonnees import PointGPS
+
+
+logger = logging.getLogger("paa.geocoder")
 
 
 NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org"
@@ -47,7 +51,7 @@ async def _appel_nominatim(
     params: dict[str, str | int],
     timeout_s: float,
 ) -> list[dict] | None:
-    """Appel HTTP Nominatim avec gestion d'erreur silencieuse."""
+    """Appel HTTP Nominatim avec gestion d'erreur loggée."""
     headers = {
         "User-Agent": USER_AGENT,
         "Accept-Language": "fr",
@@ -60,11 +64,26 @@ async def _appel_nominatim(
                 params=params,
                 headers=headers,
             )
+            logger.info(
+                "Nominatim q=%r → HTTP %d (len=%d)",
+                params.get("q"), reponse.status_code, len(reponse.content),
+            )
             reponse.raise_for_status()
             resultats = reponse.json()
-        except (httpx.HTTPError, ValueError):
+        except httpx.TimeoutException as exc:
+            logger.warning("Nominatim TIMEOUT q=%r : %s", params.get("q"), exc)
             return None
-    return resultats if isinstance(resultats, list) else None
+        except httpx.HTTPError as exc:
+            logger.warning("Nominatim HTTPError q=%r : %s", params.get("q"), exc)
+            return None
+        except ValueError as exc:
+            logger.warning("Nominatim JSON invalide q=%r : %s", params.get("q"), exc)
+            return None
+    if isinstance(resultats, list):
+        logger.info("Nominatim q=%r → %d résultat(s)", params.get("q"), len(resultats))
+        return resultats
+    logger.warning("Nominatim q=%r → réponse non-liste : %r", params.get("q"), type(resultats))
+    return None
 
 
 async def geocoder(
@@ -88,6 +107,7 @@ async def geocoder(
     if not requete or not requete.strip():
         return None
     q = requete.strip()
+    logger.info("== Géocodage demandé : %r ==", q)
 
     # 1) Côte d'Ivoire + viewbox Abidjan
     res = await _appel_nominatim(
@@ -157,12 +177,27 @@ async def _geocoder_photon(
                 params={"q": requete, "limit": 1, "lang": "fr"},
                 headers=headers,
             )
+            logger.info(
+                "Photon q=%r → HTTP %d (len=%d)",
+                requete, reponse.status_code, len(reponse.content),
+            )
             reponse.raise_for_status()
             donnees = reponse.json()
-        except (httpx.HTTPError, ValueError):
+        except httpx.TimeoutException as exc:
+            logger.warning("Photon TIMEOUT q=%r : %s", requete, exc)
+            return None
+        except httpx.HTTPError as exc:
+            logger.warning("Photon HTTPError q=%r : %s", requete, exc)
+            return None
+        except ValueError as exc:
+            logger.warning("Photon JSON invalide q=%r : %s", requete, exc)
             return None
 
     features = donnees.get("features") if isinstance(donnees, dict) else None
+    logger.info(
+        "Photon q=%r → %d feature(s)",
+        requete, len(features) if isinstance(features, list) else 0,
+    )
     if not features or not isinstance(features, list):
         return None
 
@@ -171,7 +206,6 @@ async def _geocoder_photon(
         coords = feature["geometry"]["coordinates"]  # [lon, lat]
         lon, lat = float(coords[0]), float(coords[1])
         props = feature.get("properties", {})
-        # Photon ne renvoie pas un display_name complet : on en compose un.
         libelle_parts = [
             props.get("name"),
             props.get("city"),
@@ -179,12 +213,14 @@ async def _geocoder_photon(
             props.get("country"),
         ]
         libelle = ", ".join(p for p in libelle_parts if p) or requete
+        logger.info("Photon q=%r → %s (%.4f, %.4f)", requete, libelle, lat, lon)
         return ResultatGeocodage(
             libelle=str(libelle),
             point=PointGPS(lat=lat, lon=lon),
             classe=props.get("osm_value"),
         )
-    except (KeyError, ValueError, TypeError, IndexError):
+    except (KeyError, ValueError, TypeError, IndexError) as exc:
+        logger.warning("Photon parsing échoué q=%r : %s", requete, exc)
         return None
 
 
