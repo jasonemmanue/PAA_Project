@@ -385,13 +385,27 @@ def get_scheduler() -> AsyncIOScheduler:
 def _construire_trigger(settings: Settings) -> CronTrigger:
     """Construit un CronTrigger restreint à la plage horaire active.
 
-    Exemple : interval 15 min, plage 7h→19h, fuseau Africa/Abidjan
-      → minute='*/15', hour='7-18' (19 exclu pour ne pas tirer à 19h00).
+    Exemples :
+      - interval 15 min, plage 7h→19h → minute='*/15', hour='7-18'
+      - interval 60 min, plage 0h→24h → **minute=0, hour='0-23'**
+        (APScheduler refuse `*/60` car le champ minute va de 0 à 59 —
+         step > range : `ValueError`. Sémantiquement équivalent à "1 cycle
+         par heure pleine".)
     """
     interval = max(1, settings.collect_interval_minutes)
     # `7-18` couvre 07:00..18:59 ; on n'inclut pas l'heure de fin pour éviter
     # un cycle juste après la fermeture de la fenêtre.
     plage_heures = f"{settings.collect_start_hour}-{max(settings.collect_start_hour, settings.collect_end_hour - 1)}"
+
+    if interval >= 60:
+        # 1 cycle / heure (ou plus rare) — tir à la minute 0 de chaque heure
+        # active. APScheduler refuse `*/N` pour N ≥ 60 sur le champ minute.
+        return CronTrigger(
+            minute=0,
+            hour=plage_heures,
+            timezone=ZoneInfo(settings.tz),
+        )
+
     return CronTrigger(
         minute=f"*/{interval}",
         hour=plage_heures,
