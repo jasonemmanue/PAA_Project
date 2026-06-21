@@ -98,7 +98,7 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
     };
   }, []);
 
-  // 2) Affichage des 6 tronçons (référence) — recalculé quand l'état carte change
+  // 2) Affichage de tous les tronçons surveillés (référence) — recalculé quand l'état carte change
   useEffect(() => {
     const L = LRef.current;
     const map = mapRef.current;

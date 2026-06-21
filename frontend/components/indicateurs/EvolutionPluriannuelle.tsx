@@ -6,7 +6,15 @@
  *
  * Source : table `evolution_indicateur` (alimentée par l'import P6.1).
  * Affiche pour chaque période (oct_2025, fev_2026, …) les temps min / moyen / max
- * agrégés sur les 6 axes, séparés en jours ouvrables / week-ends.
+ * agrégés sur tous les axes présents dans la table, séparés en jours
+ * ouvrables / week-ends.
+ *
+ * Note importante (CLAUDE.md § 4.6) : les tronçons créés via
+ * /administration/troncons ne disposent pas de données pluriannuelles tant
+ * qu'aucune campagne historique ne les couvre — ils restent donc absents de
+ * ce graphique, qui repose exclusivement sur les imports P6.1. Le reste du
+ * pipeline (collecte, indicateurs, prédicteur, rapport DEESP) les inclut
+ * normalement.
  */
 
 import { useEffect, useState } from "react";
@@ -52,7 +60,7 @@ export function EvolutionPluriannuelle() {
 
   const lignesFiltrees = lignes.filter((l) => l.type_jour === typeJour);
 
-  // Agrégation : moyenne des 6 axes (× 2 sens = 12 lignes) par période
+  // Agrégation : moyenne sur tous les axes × sens présents dans la table par période
   const parPeriode = new Map<
     string,
     { sommeMin: number; sommeMoyen: number; sommeMax: number; n: number }

@@ -2,7 +2,9 @@
 
 /**
  * Sélecteurs réutilisables pour la page Indicateurs.
- * - SelecteurTroncon : liste déroulante des 6 tronçons (chargés depuis l'API)
+ * - SelecteurTroncon : liste déroulante de **tous les tronçons actifs**
+ *   chargés dynamiquement depuis `/troncons` — y compris les tronçons
+ *   ajoutés via la page Administration (cf. CLAUDE.md § 4.6).
  * - SelecteurPeriode : groupe de boutons radio 24h / 7j / 30j / 90j
  * - SelecteurJour    : groupe de boutons radio Lundi → Dimanche
  */

@@ -24,7 +24,8 @@ import { Card } from "@/components/ui/Card";
 import { useI18n } from "@/lib/i18n";
 import type { ReleveTerrainHistorique, Troncon } from "@/lib/types";
 
-// Palette par index (6 tronçons max) — réutilise les nuances PAA hors bleu ciel.
+// Palette par index — réutilise les nuances PAA hors bleu ciel. Réutilisée
+// circulairement (`idx % PALETTE.length`) si le nombre de tronçons dépasse 6.
 const PALETTE = [
   "#1565C8",
   "#64B5F6",

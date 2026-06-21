@@ -433,6 +433,21 @@ export interface TronconAdmin {
   vitesse_ref_kmh: number;
   couleur: string;
   actif: boolean;
+  /**
+   * Résumé d'adoption renvoyé uniquement par POST /administration/troncons —
+   * indique combien de tronçons sont surveillés après la création et si le
+   * quota Google est encore tenable.
+   */
+  adoption_collecte?: AdoptionCollecte;
+}
+
+export interface AdoptionCollecte {
+  nb_troncons_actifs: number;
+  google_requetes_par_jour: number;
+  plafond_google: number;
+  scheduler_redemarrage_requis: boolean;
+  inclusion_prochain_cycle: boolean;
+  avertissement_quota: string | null;
 }
 
 export interface SousTroncon {

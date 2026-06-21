@@ -94,7 +94,7 @@ export function PageRapport() {
         </label>
         <div className="text-fluid-xs app-text-muted">
           La campagne couvre du 1er au dernier jour du mois sélectionné. <br />
-          Méthodologie : 1 mesure/heure × 12 heures × 6 tronçons × ~30 jours.
+          Méthodologie DEESP : 1 mesure/heure × 12 heures × tronçons surveillés × ~30 jours.
         </div>
       </div>
 

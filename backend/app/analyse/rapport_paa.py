@@ -79,14 +79,19 @@ class TempsTheorique:
 
 
 def temps_theoriques(db: Session) -> list[TempsTheorique]:
-    """Reproduit le Tableau 1 du rapport — temps théoriques par axe à 50 km/h."""
-    # On déduplique par axe (chaque axe a 2 troncons aller/retour).
+    """Reproduit le Tableau 1 du rapport — temps théoriques par axe à 50 km/h.
+
+    Fonctionne pour **tout tronçon actif** (les 6 axes officiels seedés + les
+    axes ajoutés dynamiquement via /administration/troncons). La déduplication
+    aller/retour utilise un libellé d'axe insensible au sens (cf.
+    `_libelle_axe`), donc un nouvel axe « AGL → Grand Moulin » + son retour
+    « Grand Moulin → AGL » apparaissent sur une seule ligne du Tableau 1.
+    """
     troncons = list(
         db.execute(select(Troncon).where(Troncon.actif.is_(True))).scalars()
     )
     par_axe: dict[str, Troncon] = {}
     for t in troncons:
-        # Nom canonique de l'axe = libellé du sens "Origine → ... → Palm Beach"
         nom_axe = _libelle_axe(t.nom)
         if nom_axe not in par_axe:
             par_axe[nom_axe] = t
@@ -104,15 +109,34 @@ def temps_theoriques(db: Session) -> list[TempsTheorique]:
 
 
 def _libelle_axe(nom_troncon: str) -> str:
-    """Convertit "CARENA → Palm Beach" ou inverse en "CARENA - Palm Beach"."""
+    """Libellé canonique de l'axe (insensible au sens de circulation).
+
+    Convertit « CARENA → Pharmacie Palm Beach » et « Pharmacie Palm Beach →
+    CARENA » vers le même libellé, pour pouvoir dédupliquer les 2 sens du
+    même axe dans le Tableau 1 du rapport DEESP.
+
+    Stratégie :
+      1. Pour les axes officiels (« … → Palm Beach » ou « Palm Beach → … »),
+         on impose Palm Beach en seconde position pour conserver l'ordre
+         attendu par le rapport.
+      2. Pour tout autre axe (créé via /administration), on normalise par
+         **ordre alphabétique** des deux extrémités. Cela garantit que
+         « FOO → BAR » et « BAR → FOO » produisent le même libellé sans
+         dépendre d'un mot-clé particulier.
+    """
     parts = nom_troncon.split(" → ")
     if len(parts) != 2:
         return nom_troncon
     a, b = parts[0].strip(), parts[1].strip()
-    # Palm Beach est commun aux 3 axes → on met l'autre en tête
+    # 1) Convention rapport DEESP : Palm Beach toujours en seconde position
     if "Palm Beach" in a:
         a, b = b, a
-    return f"{a} - {b}"
+        return f"{a} - {b}"
+    if "Palm Beach" in b:
+        return f"{a} - {b}"
+    # 2) Tronçons libres ajoutés via /administration : tri alphabétique stable
+    extremite_1, extremite_2 = sorted([a, b])
+    return f"{extremite_1} - {extremite_2}"
 
 
 def _format_mn_s(secondes: int) -> str:

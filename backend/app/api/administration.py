@@ -24,6 +24,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.collecte.scheduler import (
+    QUOTA_GOOGLE_JOUR_MAX,
+    estimer_requetes_par_jour,
+)
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.models import SousTroncon, Troncon
 from app.sources.polyline import (
@@ -147,7 +152,14 @@ def creer_troncon(
     db.add(troncon)
     db.commit()
     db.refresh(troncon)
-    return _serializer_troncon(troncon)
+
+    # Le tronçon est inclus AU PROCHAIN CYCLE sans redémarrage du scheduler,
+    # car `cycle_de_collecte()` recharge la liste des tronçons actifs à chaque
+    # tick. On expose dans la réponse une estimation du quota Google et un
+    # avertissement éventuel pour aider l'opérateur à dimensionner la collecte.
+    payload_reponse = _serializer_troncon(troncon)
+    payload_reponse["adoption_collecte"] = _resume_adoption_collecte(db)
+    return payload_reponse
 
 
 @router.patch(
@@ -396,6 +408,39 @@ def _serializer_troncon(t: Troncon) -> dict[str, Any]:
         "vitesse_ref_kmh": t.vitesse_ref_kmh,
         "couleur": t.couleur,
         "actif": t.actif,
+    }
+
+
+def _resume_adoption_collecte(db: Session) -> dict[str, Any]:
+    """Renvoie ce que devient la collecte Google après la création d'un tronçon.
+
+    Permet à la page Administration d'afficher dès l'enregistrement :
+      - combien de tronçons actifs sont désormais surveillés,
+      - le nombre de requêtes/jour estimées,
+      - un avertissement si on franchit le plafond Google (250 req/jour).
+
+    Le scheduler ne nécessite pas de redémarrage : `cycle_de_collecte()`
+    relit la liste des tronçons actifs à chaque tick.
+    """
+    settings = get_settings()
+    nb_actifs = db.execute(
+        select(func.count(Troncon.id)).where(Troncon.actif.is_(True))
+    ).scalar_one() or 0
+    estimation = estimer_requetes_par_jour(settings, nb_actifs)
+    avertissement: str | None = None
+    if estimation > QUOTA_GOOGLE_JOUR_MAX:
+        avertissement = (
+            f"Le quota Google estimé ({estimation} req/jour) dépasse la "
+            f"limite {QUOTA_GOOGLE_JOUR_MAX}. Augmenter COLLECT_INTERVAL_MINUTES "
+            "ou réduire la plage horaire."
+        )
+    return {
+        "nb_troncons_actifs": nb_actifs,
+        "google_requetes_par_jour": estimation,
+        "plafond_google": QUOTA_GOOGLE_JOUR_MAX,
+        "scheduler_redemarrage_requis": False,
+        "inclusion_prochain_cycle": True,
+        "avertissement_quota": avertissement,
     }
 
 

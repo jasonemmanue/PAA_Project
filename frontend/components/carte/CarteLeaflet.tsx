@@ -2,9 +2,10 @@
 
 /**
  * Composant de carte Leaflet — client uniquement (Leaflet utilise `window`).
- * Affiche les 6 tronçons colorés selon la classe de congestion, met à jour
- * en temps réel via WebSocket, propose des popups détaillés, un recentrage
- * animé et une heatmap des congestions.
+ * Affiche tous les tronçons actifs (les 6 officiels + ceux créés via la page
+ * Administration) colorés selon la classe de congestion, met à jour en temps
+ * réel via WebSocket, propose des popups détaillés, un recentrage animé et
+ * une heatmap des congestions.
  */
 
 import "leaflet/dist/leaflet.css";
@@ -266,7 +267,7 @@ export function CarteLeaflet({
 
     // -- Zoom intelligent : au PREMIER chargement, on centre sur le tronçon
     //    le plus dégradé (worst classe puis worst TTI) ; si tout est fluide,
-    //    on cadre sur l'ensemble des 6 tronçons.
+    //    on cadre sur l'ensemble des tronçons surveillés.
     if (!zoomInitialFaitRef.current && etat.troncons.length > 0) {
       const troncons = etat.troncons.slice();
       troncons.sort((a, b) => {
@@ -285,7 +286,7 @@ export function CarteLeaflet({
         const bounds = L.latLngBounds(points);
         map.flyToBounds(bounds, { padding: [40, 40], duration: 1.0, maxZoom: 15 });
       } else {
-        // Tout fluide → cadre global sur les 6 tronçons
+        // Tout fluide → cadre global sur l'ensemble des tronçons surveillés
         const tousPoints: [number, number][] = [];
         for (const tr of etat.troncons) tousPoints.push(...pointsTroncon(tr));
         if (tousPoints.length >= 2) {

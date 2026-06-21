@@ -10,7 +10,7 @@
  *      du moment (worst classe, puis worst TTI). Permet à l'opérateur PAA de
  *      voir immédiatement où la situation appelle attention.
  *
- *   3. **Liste des 6 tronçons** — triée du plus dégradé au plus fluide, chaque
+ *   3. **Liste des tronçons surveillés** — triée du plus dégradé au plus fluide, chaque
  *      ligne cliquable déclenche un recentrage animé de la carte. Le tronçon
  *      sélectionné est marqué d'un bord coloré et d'un fond contrasté.
  */
@@ -73,7 +73,9 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
       {/* ── Bandeau KPI ── */}
       <div className="paa-card p-3">
         <p className="mb-2 text-fluid-xs font-medium app-text-muted">
-          {locale === "fr" ? "État des 6 tronçons" : "Status of the 6 segments"}
+          {locale === "fr"
+            ? `État des ${etat.nb_troncons} tronçons`
+            : `Status of the ${etat.nb_troncons} segments`}
         </p>
         <div className="grid grid-cols-3 gap-2">
           <KpiCompteur

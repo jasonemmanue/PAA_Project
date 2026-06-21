@@ -1,8 +1,18 @@
 "use client";
 
 /**
- * Onglet "Axes principaux" — création/archivage des 6 axes officiels et
+ * Onglet "Axes principaux" — création/archivage des axes officiels et de
  * tout nouveau tronçon (ex. AGL → Grand Moulin).
+ *
+ * Un tronçon créé ici est immédiatement adopté par toutes les chaînes du
+ * projet, sans redéploiement ni redémarrage (cf. CLAUDE.md § 4.6) :
+ *  - collecte Google au prochain cycle,
+ *  - carte temps réel + état /carte/etat,
+ *  - indicateurs FHWA + heatmap horaire,
+ *  - profils horaires nocturnes,
+ *  - prédicteur DEESP + heure optimale,
+ *  - rapport DEESP (Tableaux 3-17, 19 + Graphiques 1-12),
+ *  - calibration GPX terrain.
  */
 
 import dynamic from "next/dynamic";
@@ -68,7 +78,19 @@ export function OngletAxes({
         lon_destination: fin.lon,
         couleur,
       });
-      setSucces(`✅ Tronçon créé : ${t.nom} (id=${t.id}, ${t.distance_km} km)`);
+      const ad = t.adoption_collecte;
+      const lignes = [
+        `✅ Tronçon créé : ${t.nom} (id=${t.id}, ${t.distance_km} km)`,
+        "Il est automatiquement inclus au prochain cycle de collecte Google et dans toutes les analyses (carte, indicateurs, profils horaires, prédicteur DEESP, heure optimale, rapport, calibration GPX).",
+      ];
+      if (ad) {
+        lignes.push(
+          `Surveillance : ${ad.nb_troncons_actifs} tronçons actifs · ` +
+            `Google estimé ${ad.google_requetes_par_jour}/${ad.plafond_google} req/jour.`,
+        );
+        if (ad.avertissement_quota) lignes.push(`⚠ ${ad.avertissement_quota}`);
+      }
+      setSucces(lignes.join("\n"));
       reinitialiser();
       onChange();
     } catch (e) {
@@ -207,7 +229,7 @@ export function OngletAxes({
             </div>
           )}
           {succes && (
-            <div className="rounded-md bg-statut-fluide/10 border border-statut-fluide/40 px-3 py-2 text-fluid-sm text-statut-fluide">
+            <div className="whitespace-pre-line rounded-md bg-statut-fluide/10 border border-statut-fluide/40 px-3 py-2 text-fluid-sm text-statut-fluide">
               {succes}
             </div>
           )}
@@ -215,7 +237,12 @@ export function OngletAxes({
       </Card>
 
       {/* Carte */}
-      <Card titre="Carte interactive" description="Les 6 tronçons existants en pointillés. Le nouveau tronçon en violet plein.">
+      <Card
+        titre="Carte interactive"
+        description={
+          `Les ${troncons.filter((t) => t.actif).length} tronçons actifs en pointillés. Le nouveau tronçon en violet plein.`
+        }
+      >
         <CarteAdmin
           pointActif={pointActif}
           debut={debut}
