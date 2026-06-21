@@ -76,6 +76,7 @@ yarn-error.log*
 Thumbs.db
 desktop.ini
 CLAUDE.md
+mes_prompts_finaux.md
 .claude/
 
 # ============================================================
