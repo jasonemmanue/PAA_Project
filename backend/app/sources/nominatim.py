@@ -21,6 +21,10 @@ from app.sources.coordonnees import PointGPS
 
 
 NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org"
+# Photon — alternative gratuite à Nominatim, basée sur les mêmes données OSM,
+# gérée par Komoot, beaucoup plus permissive pour les hébergeurs cloud
+# (Nominatim bannit régulièrement les IP de Railway/AWS/GCP).
+PHOTON_BASE_URL = "https://photon.komoot.io/api"
 # Cf. politique d'usage Nominatim : User-Agent identifiant l'app
 USER_AGENT = "paa-traverse/1.0 (Hackathon Port Autonome Abidjan — paa.ci)"
 
@@ -105,25 +109,82 @@ async def geocoder(
             timeout_s,
         )
     if not res:
-        # 3) Recherche libre mondiale (dernier recours)
+        # 3) Recherche libre mondiale (dernier recours sur Nominatim)
         res = await _appel_nominatim(
             {"q": q, "format": "json", "limit": 1, "addressdetails": 0},
             timeout_s,
         )
-    if not res:
+
+    if res:
+        premier = res[0]
+        try:
+            return ResultatGeocodage(
+                libelle=str(premier.get("display_name") or q),
+                point=PointGPS(
+                    lat=float(premier["lat"]),
+                    lon=float(premier["lon"]),
+                ),
+                classe=premier.get("class"),
+            )
+        except (KeyError, ValueError, TypeError):
+            pass
+
+    # 4) Fallback Photon (Komoot) — fiable depuis les hébergeurs cloud
+    return await _geocoder_photon(q, timeout_s)
+
+
+async def _geocoder_photon(
+    requete: str,
+    timeout_s: float,
+) -> ResultatGeocodage | None:
+    """Géocodage via Photon (Komoot) en repli si Nominatim ne répond pas.
+
+    Photon est basé sur les mêmes données OSM mais avec une politique
+    d'usage beaucoup plus permissive — il n'est pas bloqué depuis les IP
+    Railway/AWS/GCP comme Nominatim peut l'être.
+
+    API : https://photon.komoot.io/api/?q=<requete>&limit=1
+    Réponse : GeoJSON FeatureCollection.
+    """
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept-Language": "fr",
+    }
+    async with httpx.AsyncClient(timeout=timeout_s) as client:
+        try:
+            reponse = await client.get(
+                PHOTON_BASE_URL,
+                params={"q": requete, "limit": 1, "lang": "fr"},
+                headers=headers,
+            )
+            reponse.raise_for_status()
+            donnees = reponse.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+
+    features = donnees.get("features") if isinstance(donnees, dict) else None
+    if not features or not isinstance(features, list):
         return None
 
-    premier = res[0]
+    feature = features[0]
     try:
+        coords = feature["geometry"]["coordinates"]  # [lon, lat]
+        lon, lat = float(coords[0]), float(coords[1])
+        props = feature.get("properties", {})
+        # Photon ne renvoie pas un display_name complet : on en compose un.
+        libelle_parts = [
+            props.get("name"),
+            props.get("city"),
+            props.get("state"),
+            props.get("country"),
+        ]
+        libelle = ", ".join(p for p in libelle_parts if p) or requete
         return ResultatGeocodage(
-            libelle=str(premier.get("display_name") or q),
-            point=PointGPS(
-                lat=float(premier["lat"]),
-                lon=float(premier["lon"]),
-            ),
-            classe=premier.get("class"),
+            libelle=str(libelle),
+            point=PointGPS(lat=lat, lon=lon),
+            classe=props.get("osm_value"),
         )
-    except (KeyError, ValueError, TypeError):
+    except (KeyError, ValueError, TypeError, IndexError):
         return None
 
 
