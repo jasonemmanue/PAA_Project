@@ -56,6 +56,16 @@ engine = create_engine(
     pool_pre_ping=True,   # Invalide les connexions périmées avant usage
     pool_size=5,
     max_overflow=10,
+    pool_recycle=1800,    # Recycle toute connexion > 30 min — évite les "SSL EOF"
+                          # quand Railway/PG coupent silencieusement les sessions idle.
+    connect_args={
+        # TCP keepalives → la couche réseau Railway sait que la connexion vit
+        # encore et ne la coupe pas. Réduit les "Connection reset by peer".
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    },
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
