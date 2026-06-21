@@ -21,6 +21,11 @@ import type {
   PredictionResponse,
   ProfilHoraire,
   QualiteResponse,
+  SousTroncon,
+  SousTronconCreer,
+  SousTronconsResponse,
+  TronconAdmin,
+  TronconCreer,
   RapportGraphique,
   RapportTempsTheoriques,
   RapportTempsTraversee,
@@ -364,6 +369,11 @@ export const api = {
   predire: getPredire,
   qualitePrediction: getQualitePrediction,
   heureOptimale: getHeureOptimale,
+  creerTroncon: postCreerTroncon,
+  supprimerTroncon: deleteTroncon,
+  sousTroncons: getSousTroncons,
+  creerSousTroncon: postCreerSousTroncon,
+  supprimerSousTroncon: deleteSousTroncon,
   urlExportMesures,
   urlExportProfils,
 };
@@ -398,4 +408,46 @@ export function getHeureOptimale(
   if (dateCible) params.set("date", dateCible);
   if (tronconId !== undefined) params.set("troncon_id", String(tronconId));
   return appel<HeureOptimaleResponse>(`/heure-optimale?${params.toString()}`);
+}
+
+// ---------------------------------------------------------------------------
+// Administration (P6.4)
+// ---------------------------------------------------------------------------
+
+export function postCreerTroncon(payload: TronconCreer): Promise<TronconAdmin> {
+  return appel<TronconAdmin>("/administration/troncons", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteTroncon(id: number): Promise<unknown> {
+  return appel<unknown>(`/administration/troncons/${id}`, { method: "DELETE" });
+}
+
+export function getSousTroncons(tronconId: number): Promise<SousTronconsResponse> {
+  return appel<SousTronconsResponse>(
+    `/administration/troncons/${tronconId}/sous-troncons`,
+  );
+}
+
+export function postCreerSousTroncon(
+  tronconId: number,
+  payload: SousTronconCreer,
+): Promise<SousTroncon> {
+  return appel<SousTroncon>(
+    `/administration/troncons/${tronconId}/sous-troncons`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function deleteSousTroncon(id: number): Promise<unknown> {
+  return appel<unknown>(`/administration/sous-troncons/${id}`, {
+    method: "DELETE",
+  });
 }

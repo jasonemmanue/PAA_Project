@@ -415,3 +415,66 @@ export interface HeureOptimaleResponse {
   creneau_pire: { depart: string; total_mn: number };
   recommandation: string;
 }
+
+// ---------------------------------------------------------------------------
+// Administration (P6.4) — CRUD tronçons + sous-tronçons codifiés
+// ---------------------------------------------------------------------------
+
+export interface TronconAdmin {
+  id: number;
+  nom: string;
+  lat_origine: number | null;
+  lon_origine: number | null;
+  lat_destination: number | null;
+  lon_destination: number | null;
+  polyline: string | null;
+  distance_m: number;
+  distance_km: number;
+  vitesse_ref_kmh: number;
+  couleur: string;
+  actif: boolean;
+}
+
+export interface SousTroncon {
+  id: number;
+  troncon_id: number;
+  code: string;
+  nom_court: string;
+  ordre: number;
+  lat_debut: number;
+  lon_debut: number;
+  lat_fin: number;
+  lon_fin: number;
+  polyline: string | null;
+  distance_m: number;
+  actif: boolean;
+}
+
+export interface SousTronconsResponse {
+  troncon_id: number;
+  troncon_nom: string;
+  nb_sous_troncons: number;
+  sous_troncons: SousTroncon[];
+}
+
+export interface TronconCreer {
+  nom: string;
+  lat_origine: number;
+  lon_origine: number;
+  lat_destination: number;
+  lon_destination: number;
+  waypoints?: [number, number][];
+  distance_m?: number;
+  vitesse_ref_kmh?: number;
+  couleur?: string;
+}
+
+export interface SousTronconCreer {
+  code: string;
+  nom_court: string;
+  lat_debut: number;
+  lon_debut: number;
+  lat_fin: number;
+  lon_fin: number;
+  ordre?: number;
+}
