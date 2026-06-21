@@ -33,6 +33,7 @@ from app.api.evolution import router as evolution_router
 from app.api.export import router as export_router
 from app.api.indicateurs import router as indicateurs_router
 from app.api.mesures import router as mesures_router
+from app.api.heure_optimale import router as heure_optimale_router
 from app.api.predire import router as predire_router
 from app.api.profils import router as profils_router
 from app.api.rapport import router as rapport_router
@@ -184,6 +185,15 @@ _TAGS_METADATA = [
         ),
     },
     {
+        "name": "heure optimale",
+        "description": (
+            "Module P6.3 — calcul de l'heure de départ optimale vers un "
+            "tronçon du port avec propagation temporelle (le profil horaire "
+            "utilisé est celui de l'instant d'arrivée au tronçon, pas du "
+            "départ). Géocodage via Nominatim (OpenStreetMap)."
+        ),
+    },
+    {
         "name": "diagnostic",
         "description": "Tests ponctuels des sources de mesure (Google, OSRM).",
     },
@@ -258,4 +268,5 @@ app.include_router(evolution_router)
 app.include_router(terrain_router)
 app.include_router(rapport_router)
 app.include_router(predire_router)
+app.include_router(heure_optimale_router)
 app.include_router(diag_router)

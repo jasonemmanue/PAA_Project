@@ -350,3 +350,68 @@ export interface RapportGraphique {
   nb_points: number;
   points: PointGraphiqueDEESP[];
 }
+
+// ---------------------------------------------------------------------------
+// Prédicteur (P6.2)
+// ---------------------------------------------------------------------------
+
+export type SourcePrediction =
+  | "google_routes"
+  | "predicteur_profils_60j"
+  | "vitesse_ref_50kmh";
+
+export interface PredictionResponse {
+  troncon_id: number;
+  troncon_nom: string;
+  instant_local: string;
+  type_jour: "jour_ouvrable" | "week_end";
+  prediction: {
+    min_mn: number | null;
+    mediane_mn: number | null;
+    moyen_mn: number | null;
+    max_mn: number | null;
+    p95_mn: number | null;
+    fourchette_p25_p75_mn: [number, number] | null;
+  };
+  source: SourcePrediction;
+  confiance: number;
+  calibration_appliquee: number;
+  avertissement: string | null;
+}
+
+export interface QualiteResponse {
+  fenetre_jours: number;
+  mae_minutes: {
+    jour_ouvrable: number | null;
+    week_end: number | null;
+  };
+  nb_observations: {
+    jour_ouvrable: number;
+    week_end: number;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Heure optimale de départ (P6.3)
+// ---------------------------------------------------------------------------
+
+export interface CreneauHoraire {
+  depart: string; // "HH:MM"
+  arrivee_troncon: string;
+  approche_mn: number;
+  traversee_mn: number;
+  total_mn: number;
+}
+
+export interface HeureOptimaleResponse {
+  depart: { adresse: string; lat: number; lon: number };
+  troncon_utilise: { id: number; nom: string };
+  date: string;
+  type_jour: "jour_ouvrable" | "week_end";
+  approche_libre_mn: number;
+  methode_approche: "osrm" | "haversine_30kmh";
+  creneaux: CreneauHoraire[];
+  creneau_optimal: { depart: string; total_mn: number; gain_vs_pire_mn: number };
+  creneau_pire: { depart: string; total_mn: number };
+  recommandation: string;
+}
