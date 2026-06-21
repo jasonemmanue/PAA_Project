@@ -33,6 +33,7 @@ from app.api.evolution import router as evolution_router
 from app.api.export import router as export_router
 from app.api.indicateurs import router as indicateurs_router
 from app.api.mesures import router as mesures_router
+from app.api.administration import router as administration_router
 from app.api.heure_optimale import router as heure_optimale_router
 from app.api.predire import router as predire_router
 from app.api.profils import router as profils_router
@@ -194,6 +195,15 @@ _TAGS_METADATA = [
         ),
     },
     {
+        "name": "administration",
+        "description": (
+            "P6.4 — CRUD tronçons + sous-tronçons codifiés (T1A, T1B, T1C, "
+            "T2A...) selon la convention DEESP. Suppression toujours LOGIQUE. "
+            "Sans dépendance OSRM — la géométrie est calculée à partir des "
+            "waypoints fournis par l'utilisateur."
+        ),
+    },
+    {
         "name": "diagnostic",
         "description": "Tests ponctuels des sources de mesure (Google, OSRM).",
     },
@@ -269,4 +279,5 @@ app.include_router(terrain_router)
 app.include_router(rapport_router)
 app.include_router(predire_router)
 app.include_router(heure_optimale_router)
+app.include_router(administration_router)
 app.include_router(diag_router)

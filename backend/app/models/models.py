@@ -101,6 +101,11 @@ class Troncon(Base):
     releves_terrain: Mapped[list["ReleveTerrain"]] = relationship(
         "ReleveTerrain", back_populates="troncon", cascade="all, delete-orphan"
     )
+    sous_troncons: Mapped[list["SousTroncon"]] = relationship(
+        "SousTroncon", back_populates="troncon",
+        cascade="all, delete-orphan",
+        order_by="SousTroncon.ordre",
+    )
 
     def temps_reference_s(self) -> float:
         """Temps de parcours théorique à vitesse de référence, en secondes."""
@@ -388,4 +393,73 @@ class Alerte(Base):
         return (
             f"<Alerte id={self.id} troncon_id={self.troncon_id} "
             f"valeur={self.valeur_mesuree_s}s p95={self.p95_attendu_s}s>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Table : sous_troncons  (P6.4 — granularité fine DEESP)
+# ---------------------------------------------------------------------------
+
+
+class SousTroncon(Base):
+    """Portion codifiée d'un axe principal (T1A, T1B, T1C, T2A...).
+
+    Permet l'analyse fine des zones de congestion au niveau de portions de
+    chaque axe — convention DEESP (cf. CLAUDE.md § 4.5 et Tableau 16 du
+    rapport oct. 2025).
+
+    Contrainte : code unique par tronçon parent. Suppression toujours
+    logique (actif=False).
+    """
+
+    __tablename__ = "sous_troncons"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "troncon_id", "code", name="uq_sous_troncons_parent_code",
+        ),
+        Index(
+            "ix_sous_troncons_parent_ordre",
+            "troncon_id", "ordre",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    troncon_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("troncons.id", ondelete="CASCADE"), nullable=False,
+    )
+    # Code DEESP — ex. "T1A", "T2B", "T3C"
+    code: Mapped[str] = mapped_column(String(10), nullable=False)
+    nom_court: Mapped[str] = mapped_column(String(120), nullable=False)
+    # Ordre séquentiel sur le tronçon parent
+    ordre: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Bornes du sous-tronçon
+    lat_debut: Mapped[float] = mapped_column(Float, nullable=False)
+    lon_debut: Mapped[float] = mapped_column(Float, nullable=False)
+    lat_fin: Mapped[float] = mapped_column(Float, nullable=False)
+    lon_fin: Mapped[float] = mapped_column(Float, nullable=False)
+    # Géométrie + distance
+    polyline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    distance_m: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Suppression logique
+    actif: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
+    cree_le: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default="now()", nullable=False,
+    )
+
+    # Relation
+    troncon: Mapped["Troncon"] = relationship(
+        "Troncon", back_populates="sous_troncons",
+    )
+
+    def temps_reference_s(self) -> float:
+        """Temps théorique 50 km/h pour ce sous-tronçon."""
+        return (self.distance_m / 1000.0) / 50.0 * 3600.0
+
+    def __repr__(self) -> str:
+        return (
+            f"<SousTroncon id={self.id} troncon_id={self.troncon_id} "
+            f"code={self.code!r} ordre={self.ordre}>"
         )
