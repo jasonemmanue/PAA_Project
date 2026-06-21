@@ -29,8 +29,11 @@ NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org"
 # gérée par Komoot, beaucoup plus permissive pour les hébergeurs cloud
 # (Nominatim bannit régulièrement les IP de Railway/AWS/GCP).
 PHOTON_BASE_URL = "https://photon.komoot.io/api"
-# Cf. politique d'usage Nominatim : User-Agent identifiant l'app
-USER_AGENT = "paa-traverse/1.0 (Hackathon Port Autonome Abidjan — paa.ci)"
+# Cf. politique d'usage Nominatim : User-Agent identifiant l'app.
+# IMPORTANT : Pure ASCII obligatoire — les headers HTTP refusent les
+# caractères Unicode comme l'em dash (—, U+2014). Bug subtil : httpx lève
+# un UnicodeEncodeError silencieux lors de l'envoi du header.
+USER_AGENT = "paa-traverse/1.0 (Hackathon Port Autonome Abidjan - paa.ci)"
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,14 @@ async def _appel_nominatim(
             return None
         except httpx.HTTPError as exc:
             logger.warning("Nominatim HTTPError q=%r : %s", params.get("q"), exc)
+            return None
+        except UnicodeEncodeError as exc:
+            # Headers HTTP doivent être ASCII — un User-Agent / Referer
+            # contenant des caractères Unicode lèvera cette erreur.
+            logger.error(
+                "Nominatim UnicodeEncodeError (header non-ASCII) q=%r : %s",
+                params.get("q"), exc,
+            )
             return None
         except ValueError as exc:
             logger.warning("Nominatim JSON invalide q=%r : %s", params.get("q"), exc)
@@ -188,6 +199,12 @@ async def _geocoder_photon(
             return None
         except httpx.HTTPError as exc:
             logger.warning("Photon HTTPError q=%r : %s", requete, exc)
+            return None
+        except UnicodeEncodeError as exc:
+            logger.error(
+                "Photon UnicodeEncodeError (header non-ASCII) q=%r : %s",
+                requete, exc,
+            )
             return None
         except ValueError as exc:
             logger.warning("Photon JSON invalide q=%r : %s", requete, exc)
