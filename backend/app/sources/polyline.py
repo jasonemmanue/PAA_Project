@@ -67,3 +67,75 @@ def distance_cumulee_m(points: list[tuple[float, float]]) -> int:
         lat2, lon2 = points[i]
         total += distance_haversine_m(lat1, lon1, lat2, lon2)
     return total
+
+
+def decoder_polyline(encoded: str) -> list[tuple[float, float]]:
+    """Décode une chaîne Google polyline precision 5 en liste de (lat, lon).
+
+    Algorithme inverse de `encoder_polyline` — utilisé pour calculer la
+    distance couverte par chaque `speedReadingInterval` Google (cf. règle
+    DEESP § 4.5.2 : un tronçon est congestionné si rouge ou si orange sur
+    ≥ 50 % de sa longueur).
+    """
+    if not encoded:
+        return []
+    points: list[tuple[float, float]] = []
+    index = 0
+    lat = 0
+    lon = 0
+    longueur = len(encoded)
+
+    while index < longueur:
+        # Latitude
+        b = 0
+        shift = 0
+        result = 0
+        while True:
+            if index >= longueur:
+                return points
+            b = ord(encoded[index]) - 63
+            index += 1
+            result |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlat = ~(result >> 1) if (result & 1) else (result >> 1)
+        lat += dlat
+
+        # Longitude
+        shift = 0
+        result = 0
+        while True:
+            if index >= longueur:
+                return points
+            b = ord(encoded[index]) - 63
+            index += 1
+            result |= (b & 0x1F) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlon = ~(result >> 1) if (result & 1) else (result >> 1)
+        lon += dlon
+
+        points.append((lat / 1e5, lon / 1e5))
+    return points
+
+
+def distances_cumulees_m(points: list[tuple[float, float]]) -> list[int]:
+    """Renvoie la distance cumulée en mètres à chaque sommet (point 0 → 0).
+
+    Permet de localiser à quelle position kilométrique se trouve l'index
+    d'un sommet — utilisé pour mesurer la longueur d'un
+    `speedReadingInterval` (Google donne des indices de polyline, pas des
+    distances).
+    """
+    if not points:
+        return []
+    cumul = [0]
+    total = 0
+    for i in range(1, len(points)):
+        lat1, lon1 = points[i - 1]
+        lat2, lon2 = points[i]
+        total += distance_haversine_m(lat1, lon1, lat2, lon2)
+        cumul.append(total)
+    return cumul

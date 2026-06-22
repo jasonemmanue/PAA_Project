@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session
 
 from app.analyse.indicateurs import (
     Granularite,
-    SeuilsCongestion,
     detecter_heures_pointe,
     serie_temporelle,
 )
@@ -40,8 +39,9 @@ router = APIRouter(prefix="/indicateurs", tags=["indicateurs"])
     summary="Série temporelle du temps de traversée (article 4 du cahier des charges)",
     description=(
         "Renvoie une série temporelle agrégée du temps de parcours, à granularité "
-        "horaire (`hour`) ou journalière (`day`). Chaque point contient la moyenne, "
-        "la médiane, le P95, le TTI et la classe de congestion correspondante. "
+        "horaire (`hour`) ou journalière (`day`). Chaque point contient les "
+        "temps min / moyen / max (s), le taux de mesures congestionnées selon "
+        "la règle couleur DEESP, et la classe de congestion dominante. "
         "Par défaut la série couvre les 7 derniers jours locaux."
     ),
     responses={
@@ -51,13 +51,14 @@ router = APIRouter(prefix="/indicateurs", tags=["indicateurs"])
                 "troncon_id": 3,
                 "troncon_nom": "Toyota CFAO (Treichville) → Pharmacie Palm Beach",
                 "granularite": "hour",
-                "temps_reference_s": 576.0,
+                "temps_reference_50kmh_s": 576.0,
                 "nb_points": 1,
                 "points": [{
                     "instant_local": "2026-06-18T19:00:00+00:00",
+                    "min_s": 1500.0,
                     "moyenne_s": 1642.0,
-                    "p95_s": 1642.0,
-                    "tti": 2.851,
+                    "max_s": 1800.0,
+                    "taux_congestion": 1.0,
                     "classe_congestion": "congestionne",
                     "nb_mesures": 1,
                 }],
@@ -102,8 +103,8 @@ async def serie_indicateurs(
     summary="Heures de pointe détectées par jour de la semaine",
     description=(
         "Pour chaque jour de la semaine, identifie les heures où la moyenne "
-        "horaire dépasse `seuil_tti × T_ref(50 km/h)`. La valeur par défaut "
-        "du seuil provient de `TTI_SEUIL_HEURE_POINTE` (`.env`)."
+        "horaire dépasse `facteur_pointe × T_ref(50 km/h)` (par défaut "
+        "1.5 × T_ref, cohérent avec la limite de vitesse 50 km/h du rapport)."
     ),
     responses={
         200: {
@@ -114,7 +115,7 @@ async def serie_indicateurs(
                 "fenetre_jours": 30,
                 "temps_reference_50kmh_s": 576.0,
                 "seuil_heure_pointe_s": 864.0,
-                "seuil_heure_pointe_tti": 1.5,
+                "facteur_pointe": 1.5,
                 "heures_de_pointe": {
                     "lundi": [], "mardi": [], "mercredi": [],
                     "jeudi": [19], "vendredi": [],
@@ -127,9 +128,9 @@ async def serie_indicateurs(
 async def heures_pointe_indicateurs(
     troncon_id: int,
     fenetre_jours: int = Query(30, description="30, 60 ou 90."),
-    seuil_tti: float | None = Query(
-        None,
-        description="TTI seuil pour qu'une heure soit dite « de pointe » (défaut `.env`).",
+    facteur_pointe: float = Query(
+        1.5,
+        description="Multiplicateur de T_ref(50 km/h) au-delà duquel l'heure est dite « de pointe ».",
     ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -138,17 +139,11 @@ async def heures_pointe_indicateurs(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="fenetre_jours doit valoir 30, 60 ou 90.",
         )
-    base = SeuilsCongestion.depuis_settings()
-    seuils = SeuilsCongestion(
-        dense=base.dense,
-        congestionne=base.congestionne,
-        heure_pointe=seuil_tti if seuil_tti is not None else base.heure_pointe,
-    )
     try:
         return detecter_heures_pointe(
             db, troncon_id,
             fenetre_jours=fenetre_jours,
-            seuils=seuils,
+            facteur_pointe=facteur_pointe,
         )
     except LookupError as exc:
         raise HTTPException(

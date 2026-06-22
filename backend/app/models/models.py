@@ -143,7 +143,9 @@ class Mesure(Base):
         DateTime(timezone=True), nullable=False
     )
 
-    # NULL si la source concernée n'a pas renvoyé de valeur exploitable
+    # Conservés pour les agrégats min/moyen/max par jour/semaine/mois
+    # (Tableaux 3-15 du rapport DEESP, cf. CLAUDE.md § 4.5.4). NULL si la
+    # source n'a pas renvoyé de valeur exploitable (trou de mesure).
     duree_trafic_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duree_sans_trafic_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -155,6 +157,18 @@ class Mesure(Base):
     )
 
     vitesse_moyenne_kmh: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Critère DEESP couleur (cf. rapport oct. 2025 § METHODOLOGIE et
+    # CLAUDE.md § 4.5.2). Pourcentages de la longueur du tronçon par couleur
+    # Google Maps : vert / orange / rouge. NULL si Google n'a pas renvoyé
+    # `speedReadingIntervals` pour ce cycle (zone non couverte par les
+    # données trafic — aucune valeur n'est inventée).
+    pourcentage_rouge: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pourcentage_orange: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pourcentage_vert: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Verdict DEESP : True si rouge>0 OU orange ≥ 50 %, False sinon. NULL si
+    # les pourcentages couleur sont absents.
+    est_congestionne: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Flag posé par le job d'agrégation (méthode IQR) — la mesure reste
     # conservée en base, mais le frontend peut l'écarter de ses graphes.

@@ -1,47 +1,54 @@
-"""Indicateurs de congestion normalisés (FHWA-like) — phase P3.
+"""Indicateurs de congestion alignés sur la méthodologie DEESP.
 
-Définitions retenues (cf. *FHWA Travel Time Reliability: Making It There On Time, All The Time*) :
+⚠️  **Refonte 2026-06-22** — alignement strict sur le rapport DEESP/DEEF
+    (« Évaluation du temps de traversée octobre 2025 »).
 
-  - **TTI (Travel Time Index)** = temps_mesuré / temps_référence
-      Vaut 1 si on roule en conditions fluides, > 1 dès qu'il y a perte de temps.
+Avant : on calculait TTI / PTI / BTI (FHWA) et on classait les tronçons
+en fluide / dense / congestionné en fonction d'un ratio
+`duree_trafic / T_ref`. Ce ratio était une **approximation numérique** du
+critère couleur DEESP — pas le critère officiel.
 
-  - **PTI (Planning Time Index)** = P95(temps_mesuré) / temps_référence
-      Mesure le temps qu'il faut « budgétiser » pour être à l'heure 95 % du temps.
+Maintenant : la qualification fluide / congestionné vient **exclusivement
+des couleurs Google Maps** (champ `mesures.est_congestionne`, alimenté par
+les `speedReadingIntervals` de l'API Google Routes). Le rapport ne
+distingue d'ailleurs pas de classe « dense » intermédiaire — on est
+fidèle au texte.
 
-  - **BTI (Buffer Time Index)** = (P95 − moyenne) / moyenne
-      Marge proportionnelle qu'un usager doit prévoir au-dessus de la moyenne.
+On conserve la production des 5 indicateurs **temps** publiés par le
+rapport (cf. § 4.5.4) :
 
-  - **P95 brut** : 95ᵉ percentile de duree_trafic_s sur la fenêtre.
+  - **temps minimal** (Tableaux 3-7)   : min des `duree_trafic_s`
+  - **temps moyen**   (Tableaux 8-11)  : moyenne des moyennes journalières
+  - **temps maximal** (Tableaux 12-15) : max des `duree_trafic_s`
+  - **temps de référence 50 km/h**     : `distance / 50 km/h`
+  - **taux de congestion**             : nb_mesures congestionnées /
+                                          nb_mesures totales (selon le
+                                          critère couleur DEESP)
 
-  - **Fréquence de dépassement d'un seuil** :
-      part des mesures dont duree_trafic_s > seuil. Le seuil est soit fourni
-      explicitement (query), soit configuré dans .env (SEUIL_DEPASSEMENT_S),
-      soit dérivé automatiquement : 1,5 × T_ref.
-
-Cascade du « temps de référence » (par ordre de priorité, CLAUDE.md § 2.5) :
-  1. **Google `duree_sans_trafic_s`** observée sur la même fenêtre (médiane).
-  2. ~~TomTom `freeFlow`~~ — *retiré du projet, conservé pour mémoire dans le code*.
-  3. **Temps de référence 50 km/h** dérivé de la distance officielle du tronçon.
-
-Classification de congestion (configurable via .env) :
-  - **fluide**       : TTI < TTI_SEUIL_DENSE          (défaut 1,3)
-  - **dense**        : TTI_SEUIL_DENSE ≤ TTI ≤ TTI_SEUIL_CONGESTIONNE (défauts 1,3–2,0)
-  - **congestionné** : TTI > TTI_SEUIL_CONGESTIONNE   (défaut 2,0)
+Ces indicateurs alimentent les vues période courante / mois / semaine /
+jour de la page Indicateurs. Les durées sans trafic et le TTI **ne sont
+plus exposés** dans cette interface — ils restent stockés en base mais
+n'apparaissent plus dans les réponses publiques.
 """
 
 from __future__ import annotations
 
 import logging
 import statistics
+from collections import defaultdict
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings, get_settings
+from app.analyse.congestion import (
+    ClasseCongestionDEESP,
+    classer_congestion,
+)
+from app.core.config import get_settings
 from app.models.models import Mesure, ProfilHoraire, Troncon
 
 
@@ -49,117 +56,67 @@ logger = logging.getLogger("paa.analyse")
 
 
 # ---------------------------------------------------------------------------
-# Types et constantes
+# Types
 # ---------------------------------------------------------------------------
 
 
-ClasseCongestion = Literal["fluide", "dense", "congestionne", "indetermine"]
-SourceTempsReference = Literal["google_freeflow_median", "tomtom_freeflow", "vitesse_ref_50kmh"]
 Granularite = Literal["hour", "day"]
 
 
-@dataclass(frozen=True)
-class SeuilsCongestion:
-    """Paramètres de classification par TTI — surchargeables par appel."""
-    dense: float
-    congestionne: float
-    heure_pointe: float
-
-    @classmethod
-    def depuis_settings(cls, settings: Settings | None = None) -> "SeuilsCongestion":
-        s = settings or get_settings()
-        return cls(
-            dense=s.tti_seuil_dense,
-            congestionne=s.tti_seuil_congestionne,
-            heure_pointe=s.tti_seuil_heure_pointe,
-        )
-
-
 @dataclass
-class IndicateursCongestion:
-    """Snapshot des indicateurs pour un tronçon sur une fenêtre temporelle."""
+class IndicateursTroncon:
+    """Snapshot d'indicateurs DEESP pour un tronçon sur une fenêtre temporelle.
+
+    Tous les temps sont en **secondes**. Le frontend convertit en minutes
+    pour l'affichage (cf. § 4.5.4 du rapport).
+    """
     troncon_id: int
     troncon_nom: str
     debut_utc: str
     fin_utc: str
-    nb_mesures: int
+
+    # Volumes
+    nb_mesures: int                  # mesures avec duree_trafic_s renseigné
     nb_aberrantes_ignorees: int
+    nb_mesures_congestionnees: int   # mesures avec est_congestionne=True
+    nb_mesures_fluides: int          # mesures avec est_congestionne=False
+    nb_mesures_couleur_indeterminee: int  # est_congestionne IS NULL
 
-    # Temps de référence retenu
-    temps_reference_s: float | None
-    source_temps_reference: SourceTempsReference | None
+    # Temps de référence officiel (rapport, Tableau 1)
+    temps_reference_50kmh_s: float
 
-    # Statistiques de base sur duree_trafic_s
-    moyenne_s: float | None
-    mediane_s: float | None
-    p95_s: float | None
+    # Indicateurs temps DEESP (Tableaux 3-15) — en secondes
     min_s: float | None
+    moyenne_s: float | None
     max_s: float | None
 
-    # Indicateurs FHWA-like
-    tti: float | None
-    pti: float | None
-    bti: float | None
-
-    # Dépassement d'un seuil métier (en secondes)
-    seuil_depassement_s: int | None
-    frequence_depassement: float | None  # part entre 0 et 1
-
-    # Classification
-    classe_congestion: ClasseCongestion
-    seuils_utilises: dict[str, float]
+    # Qualification couleur DEESP — agrégat sur la fenêtre
+    taux_congestion: float | None       # nb_congestionne / nb_total (0..1)
+    classe_congestion: ClasseCongestionDEESP
+    pourcentage_rouge_moyen: float | None
+    pourcentage_orange_moyen: float | None
+    pourcentage_vert_moyen: float | None
 
 
 # ---------------------------------------------------------------------------
-# Helpers internes
+# Helpers
 # ---------------------------------------------------------------------------
 
 
-def _temps_reference(
-    troncon: Troncon,
-    durees_sans_trafic: list[int],
-) -> tuple[float, SourceTempsReference]:
-    """Choisit le temps de référence selon la cascade documentée.
+def _classe_depuis_moyennes(
+    pct_rouge: float | None,
+    pct_orange: float | None,
+    pct_vert: float | None,
+    nb_total: int,
+) -> ClasseCongestionDEESP:
+    """Classe la fenêtre globale à partir des pourcentages moyens couleur.
 
-    Cascade :
-      1. Médiane des `duree_sans_trafic_s` Google sur la fenêtre courante
-         (≥ 1 valeur valide).
-      2. ~~TomTom freeFlow~~ — *retiré* (CLAUDE.md § 2.5). Le hook reste là
-         pour le jour où une seconde source temps réel sera réintroduite.
-      3. Fallback déterministe : `distance_m / (vitesse_ref_kmh / 3.6)`.
+    Si aucune mesure n'a de couleur exploitable → indéterminée.
+    Sinon : on applique la règle DEESP sur la moyenne agrégée.
     """
-    if durees_sans_trafic:
-        return float(statistics.median(durees_sans_trafic)), "google_freeflow_median"
-    # Hook TomTom volontairement absent — la source est retirée du projet.
-    t_ref_50 = troncon.distance_m / (troncon.vitesse_ref_kmh / 3.6)
-    return float(t_ref_50), "vitesse_ref_50kmh"
-
-
-def _percentile(valeurs: list[float], rang: float) -> float | None:
-    """P_rang d'un échantillon (rang ∈ [0,100]). None si série vide."""
-    if not valeurs:
-        return None
-    if len(valeurs) == 1:
-        return float(valeurs[0])
-    # statistics.quantiles avec n=100 expose les 99 points de coupure ;
-    # le P95 correspond à l'index 94 (méthode inclusive — comportement attendu).
-    coupures = statistics.quantiles(valeurs, n=100, method="inclusive")
-    index = max(0, min(98, int(round(rang)) - 1))
-    return float(coupures[index])
-
-
-def classifier_congestion(
-    tti: float | None,
-    seuils: SeuilsCongestion,
-) -> ClasseCongestion:
-    """Retourne la classe de congestion à partir d'un TTI et des seuils."""
-    if tti is None:
+    if nb_total == 0 or (pct_rouge is None and pct_orange is None and pct_vert is None):
         return "indetermine"
-    if tti < seuils.dense:
-        return "fluide"
-    if tti <= seuils.congestionne:
-        return "dense"
-    return "congestionne"
+    return classer_congestion(pct_rouge, pct_orange, pct_vert).classe
 
 
 # ---------------------------------------------------------------------------
@@ -173,19 +130,20 @@ def calcul_indicateurs(
     debut_utc: datetime,
     fin_utc: datetime,
     *,
-    seuil_depassement_s: int | None = None,
-    seuils: SeuilsCongestion | None = None,
     inclure_aberrantes: bool = False,
-) -> IndicateursCongestion:
-    """Calcule l'ensemble des indicateurs pour un tronçon sur [debut, fin]."""
-    seuils = seuils or SeuilsCongestion.depuis_settings()
-    settings = get_settings()
+) -> IndicateursTroncon:
+    """Calcule les indicateurs DEESP pour un tronçon sur [debut, fin].
 
+    Conserve uniquement les indicateurs publiés par le rapport :
+    temps min / moyen / max, taux de congestion (couleur).
+    """
     troncon = db.get(Troncon, troncon_id)
     if troncon is None:
         raise LookupError(f"Tronçon id={troncon_id} introuvable.")
 
-    # Chargement des mesures de la fenêtre (succès uniquement : trous ignorés)
+    t_ref_50 = troncon.distance_m / (troncon.vitesse_ref_kmh / 3.6)
+
+    # Chargement des mesures de la fenêtre (succès uniquement)
     requete = select(Mesure).where(
         Mesure.troncon_id == troncon_id,
         Mesure.horodatage >= debut_utc,
@@ -194,80 +152,78 @@ def calcul_indicateurs(
     )
     mesures: list[Mesure] = list(db.execute(requete).scalars())
 
-    # Séparation aberrantes / valides
     aberrantes = [m for m in mesures if m.aberrante]
     valides = mesures if inclure_aberrantes else [m for m in mesures if not m.aberrante]
 
     if not valides:
-        return IndicateursCongestion(
+        return IndicateursTroncon(
             troncon_id=troncon.id,
             troncon_nom=troncon.nom,
             debut_utc=debut_utc.isoformat(),
             fin_utc=fin_utc.isoformat(),
-            nb_mesures=len(mesures),
+            nb_mesures=0,
             nb_aberrantes_ignorees=len(aberrantes) if not inclure_aberrantes else 0,
-            temps_reference_s=None,
-            source_temps_reference=None,
-            moyenne_s=None, mediane_s=None, p95_s=None, min_s=None, max_s=None,
-            tti=None, pti=None, bti=None,
-            seuil_depassement_s=None,
-            frequence_depassement=None,
+            nb_mesures_congestionnees=0,
+            nb_mesures_fluides=0,
+            nb_mesures_couleur_indeterminee=0,
+            temps_reference_50kmh_s=round(t_ref_50, 2),
+            min_s=None, moyenne_s=None, max_s=None,
+            taux_congestion=None,
             classe_congestion="indetermine",
-            seuils_utilises=asdict(seuils),
+            pourcentage_rouge_moyen=None,
+            pourcentage_orange_moyen=None,
+            pourcentage_vert_moyen=None,
         )
 
-    # Cascade temps de référence (à partir des duree_sans_trafic_s observées)
-    durees_libres = [
-        m.duree_sans_trafic_s for m in valides if m.duree_sans_trafic_s is not None
-    ]
-    t_ref, source_ref = _temps_reference(troncon, durees_libres)
-
     durees = [float(m.duree_trafic_s) for m in valides]
-    moyenne = statistics.fmean(durees)
-    mediane = statistics.median(durees)
-    p95 = _percentile(durees, 95)
-    mini = min(durees)
-    maxi = max(durees)
+    min_s = min(durees)
+    moyenne_s = statistics.fmean(durees)
+    max_s = max(durees)
 
-    # Indicateurs FHWA-like
-    tti = round(moyenne / t_ref, 3) if t_ref > 0 else None
-    pti = round(p95 / t_ref, 3) if (p95 is not None and t_ref > 0) else None
-    bti = round((p95 - moyenne) / moyenne, 3) if (p95 is not None and moyenne > 0) else None
+    # Compteurs par classe DEESP (lecture directe du booléen pré-calculé)
+    nb_congestionne = sum(1 for m in valides if m.est_congestionne is True)
+    nb_fluide = sum(1 for m in valides if m.est_congestionne is False)
+    nb_indetermine = sum(1 for m in valides if m.est_congestionne is None)
 
-    # Seuil de dépassement : priorité au param → puis .env → puis 1,5 × T_ref
-    if seuil_depassement_s is None:
-        seuil_depassement_s = settings.seuil_depassement_s
-    if seuil_depassement_s is None:
-        seuil_depassement_s = int(round(1.5 * t_ref))
-    nb_depassements = sum(1 for d in durees if d > seuil_depassement_s)
-    frequence = round(nb_depassements / len(durees), 3)
+    nb_qualifie = nb_congestionne + nb_fluide
+    taux_congestion = (
+        round(nb_congestionne / nb_qualifie, 3) if nb_qualifie > 0 else None
+    )
 
-    return IndicateursCongestion(
+    # Moyennes des pourcentages couleur (sur les mesures qualifiées)
+    rouges = [m.pourcentage_rouge for m in valides if m.pourcentage_rouge is not None]
+    oranges = [m.pourcentage_orange for m in valides if m.pourcentage_orange is not None]
+    verts = [m.pourcentage_vert for m in valides if m.pourcentage_vert is not None]
+    pct_r_moy = round(statistics.fmean(rouges), 2) if rouges else None
+    pct_o_moy = round(statistics.fmean(oranges), 2) if oranges else None
+    pct_v_moy = round(statistics.fmean(verts), 2) if verts else None
+
+    classe = _classe_depuis_moyennes(pct_r_moy, pct_o_moy, pct_v_moy, nb_qualifie)
+
+    return IndicateursTroncon(
         troncon_id=troncon.id,
         troncon_nom=troncon.nom,
         debut_utc=debut_utc.isoformat(),
         fin_utc=fin_utc.isoformat(),
         nb_mesures=len(mesures),
         nb_aberrantes_ignorees=len(aberrantes) if not inclure_aberrantes else 0,
-        temps_reference_s=round(t_ref, 2),
-        source_temps_reference=source_ref,
-        moyenne_s=round(moyenne, 2),
-        mediane_s=round(mediane, 2),
-        p95_s=round(p95, 2) if p95 is not None else None,
-        min_s=round(mini, 2),
-        max_s=round(maxi, 2),
-        tti=tti,
-        pti=pti,
-        bti=bti,
-        seuil_depassement_s=int(seuil_depassement_s),
-        frequence_depassement=frequence,
-        classe_congestion=classifier_congestion(tti, seuils),
-        seuils_utilises=asdict(seuils),
+        nb_mesures_congestionnees=nb_congestionne,
+        nb_mesures_fluides=nb_fluide,
+        nb_mesures_couleur_indeterminee=nb_indetermine,
+        temps_reference_50kmh_s=round(t_ref_50, 2),
+        min_s=round(min_s, 2),
+        moyenne_s=round(moyenne_s, 2),
+        max_s=round(max_s, 2),
+        taux_congestion=taux_congestion,
+        classe_congestion=classe,
+        pourcentage_rouge_moyen=pct_r_moy,
+        pourcentage_orange_moyen=pct_o_moy,
+        pourcentage_vert_moyen=pct_v_moy,
     )
 
 
 # ---------------------------------------------------------------------------
-# Détection des heures de pointe à partir des profils horaires
+# Heures de pointe (à partir des profils horaires)
 # ---------------------------------------------------------------------------
 
 
@@ -276,22 +232,21 @@ def detecter_heures_pointe(
     troncon_id: int,
     *,
     fenetre_jours: int = 30,
-    seuils: SeuilsCongestion | None = None,
+    facteur_pointe: float = 1.5,
 ) -> dict[str, object]:
     """Pour chaque jour de la semaine, retourne la liste des heures de pointe.
 
-    Méthode : une heure est dite « de pointe » si la moyenne horaire des
-    durées de parcours dépasse `seuils.heure_pointe × T_ref`. T_ref est ici
-    la référence 50 km/h (déterministe, indépendante des données — cohérent
-    pour un seuil structurel).
+    Une heure est dite « de pointe » si la moyenne horaire des durées
+    dépasse `facteur_pointe × T_ref(50 km/h)`. T_ref est la référence
+    50 km/h (déterministe, indépendante des données — cohérent pour un
+    seuil structurel, et c'est la référence du rapport, Tableau 1).
     """
-    seuils = seuils or SeuilsCongestion.depuis_settings()
     troncon = db.get(Troncon, troncon_id)
     if troncon is None:
         raise LookupError(f"Tronçon id={troncon_id} introuvable.")
 
     t_ref_50 = troncon.distance_m / (troncon.vitesse_ref_kmh / 3.6)
-    seuil_pointe_s = seuils.heure_pointe * t_ref_50
+    seuil_pointe_s = facteur_pointe * t_ref_50
 
     profils: list[ProfilHoraire] = list(
         db.execute(
@@ -304,7 +259,6 @@ def detecter_heures_pointe(
         ).scalars()
     )
 
-    # 0 = lundi, libellé FR pour l'affichage
     noms_jours_fr = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
     par_jour: dict[str, list[int]] = {nom: [] for nom in noms_jours_fr}
     for p in profils:
@@ -319,14 +273,13 @@ def detecter_heures_pointe(
         "fenetre_jours": fenetre_jours,
         "temps_reference_50kmh_s": round(t_ref_50, 2),
         "seuil_heure_pointe_s": round(seuil_pointe_s, 2),
-        "seuil_heure_pointe_tti": seuils.heure_pointe,
+        "facteur_pointe": facteur_pointe,
         "heures_de_pointe": par_jour,
     }
 
 
 # ---------------------------------------------------------------------------
-# Série temporelle de l'indicateur « temps de traversée »
-# (article 4 du cahier des charges — évolution dans le temps)
+# Série temporelle (article 4 du cahier des charges — évolution dans le temps)
 # ---------------------------------------------------------------------------
 
 
@@ -341,15 +294,14 @@ def serie_temporelle(
 ) -> dict[str, object]:
     """Renvoie une série temporelle agrégée (heure ou jour) du temps de traversée.
 
-    Chaque point contient : `instant_utc`, `moyenne_s`, `mediane_s`,
-    `p95_s`, `tti`, `classe_congestion`, `nb_mesures`. Le TTI est calculé
-    contre T_ref(50 km/h) pour une comparabilité historique stable.
+    Chaque point contient le min, moyen, max (en secondes) et la classe
+    de congestion DEESP basée sur le taux de mesures congestionnées dans
+    le bucket. Pas de TTI : on est aligné sur les Tableaux 3-15 du rapport.
     """
     troncon = db.get(Troncon, troncon_id)
     if troncon is None:
         raise LookupError(f"Tronçon id={troncon_id} introuvable.")
 
-    seuils = SeuilsCongestion.depuis_settings()
     t_ref_50 = troncon.distance_m / (troncon.vitesse_ref_kmh / 3.6)
     fuseau_local = ZoneInfo(get_settings().tz)
 
@@ -364,41 +316,49 @@ def serie_temporelle(
 
     mesures: list[Mesure] = list(db.execute(requete).scalars())
 
-    # Regroupement en mémoire — volume attendu modeste (qq milliers de points/jour max)
-    # Clé = bucket arrondi à l'heure ou au jour, en heure locale (lisible).
-    buckets: dict[datetime, list[float]] = {}
+    buckets: dict[datetime, list[Mesure]] = defaultdict(list)
     for m in mesures:
         instant_local = m.horodatage.astimezone(fuseau_local)
         if granularite == "hour":
             cle = instant_local.replace(minute=0, second=0, microsecond=0)
-        else:  # "day"
+        else:
             cle = instant_local.replace(hour=0, minute=0, second=0, microsecond=0)
-        buckets.setdefault(cle, []).append(float(m.duree_trafic_s))
+        buckets[cle].append(m)
 
     points = []
     for instant_local in sorted(buckets):
-        durees = buckets[instant_local]
-        moyenne = statistics.fmean(durees)
-        mediane = statistics.median(durees)
-        p95 = _percentile(durees, 95)
-        tti_pt = round(moyenne / t_ref_50, 3) if t_ref_50 > 0 else None
+        seau = buckets[instant_local]
+        durees = [float(m.duree_trafic_s) for m in seau]
+        nb_congestionne = sum(1 for m in seau if m.est_congestionne is True)
+        nb_fluide = sum(1 for m in seau if m.est_congestionne is False)
+        nb_qualifie = nb_congestionne + nb_fluide
+        taux = (
+            round(nb_congestionne / nb_qualifie, 3) if nb_qualifie > 0 else None
+        )
+        # La classe d'un bucket reprend la règle DEESP : congestionné si la
+        # mesure médiane du bucket est congestionnée (majorité).
+        if nb_qualifie == 0:
+            classe: ClasseCongestionDEESP = "indetermine"
+        elif nb_congestionne > nb_fluide:
+            classe = "congestionne"
+        else:
+            classe = "fluide"
         points.append({
             "instant_local": instant_local.isoformat(),
             "instant_utc": instant_local.astimezone(timezone.utc).isoformat(),
-            "moyenne_s": round(moyenne, 2),
-            "mediane_s": round(mediane, 2),
-            "p95_s": round(p95, 2) if p95 is not None else None,
-            "tti": tti_pt,
-            "classe_congestion": classifier_congestion(tti_pt, seuils),
-            "nb_mesures": len(durees),
+            "min_s": round(min(durees), 2),
+            "moyenne_s": round(statistics.fmean(durees), 2),
+            "max_s": round(max(durees), 2),
+            "taux_congestion": taux,
+            "classe_congestion": classe,
+            "nb_mesures": len(seau),
         })
 
     return {
         "troncon_id": troncon.id,
         "troncon_nom": troncon.nom,
         "granularite": granularite,
-        "temps_reference_s": round(t_ref_50, 2),
-        "source_temps_reference": "vitesse_ref_50kmh",
+        "temps_reference_50kmh_s": round(t_ref_50, 2),
         "debut_utc": debut_utc.isoformat(),
         "fin_utc": fin_utc.isoformat(),
         "nb_points": len(points),
@@ -407,7 +367,7 @@ def serie_temporelle(
 
 
 # ---------------------------------------------------------------------------
-# Indicateurs glissants par jour (utile pour /troncons/{id}/indicateurs?jours=7)
+# Indicateurs glissants par jour
 # ---------------------------------------------------------------------------
 
 
@@ -418,7 +378,7 @@ def indicateurs_par_jour(
     nb_jours: int,
     inclure_aberrantes: bool = False,
 ) -> dict[str, object]:
-    """Calcule les indicateurs (TTI + classe) jour par jour sur les N derniers jours.
+    """Calcule les indicateurs DEESP jour par jour sur les N derniers jours.
 
     Format pensé pour un tableau frontend : une ligne par jour calendrier
     local Africa/Abidjan, du plus récent au plus ancien.
@@ -431,7 +391,7 @@ def indicateurs_par_jour(
     maintenant_local = datetime.now(tz=fuseau_local)
     jours: list[dict[str, object]] = []
     for n in range(nb_jours):
-        jour_local = (maintenant_local - timedelta(days=n)).date()
+        jour_local: date = (maintenant_local - timedelta(days=n)).date()
         debut_local = datetime.combine(jour_local, datetime.min.time(), tzinfo=fuseau_local)
         fin_local = datetime.combine(jour_local, datetime.max.time(), tzinfo=fuseau_local)
         snapshot = calcul_indicateurs(
@@ -444,14 +404,12 @@ def indicateurs_par_jour(
         jours.append({
             "date_locale": jour_local.isoformat(),
             "nb_mesures": snapshot.nb_mesures,
+            "min_s": snapshot.min_s,
             "moyenne_s": snapshot.moyenne_s,
-            "p95_s": snapshot.p95_s,
-            "tti": snapshot.tti,
-            "pti": snapshot.pti,
-            "bti": snapshot.bti,
+            "max_s": snapshot.max_s,
+            "taux_congestion": snapshot.taux_congestion,
             "classe_congestion": snapshot.classe_congestion,
-            "temps_reference_s": snapshot.temps_reference_s,
-            "source_temps_reference": snapshot.source_temps_reference,
+            "temps_reference_50kmh_s": snapshot.temps_reference_50kmh_s,
         })
     return {
         "troncon_id": troncon.id,

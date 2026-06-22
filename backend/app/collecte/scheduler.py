@@ -63,7 +63,11 @@ _JOB_ID_AGREGATION = "agregation_profils_horaires"
 class ResultatSource:
     """Issue d'un appel à une source pour un tronçon donné.
 
-    `succes=False` ⇒ on enregistre un trou de mesure (durées NULL).
+    `succes=False` ⇒ on enregistre un trou de mesure (durées + couleurs NULL).
+
+    Les pourcentages couleur (rouge/orange/vert) viennent du critère DEESP
+    (cf. CLAUDE.md § 4.5.2) et restent NULL si Google n'a pas qualifié le
+    tracé via `speedReadingIntervals`.
     """
     source: SourceMesure
     troncon_id: int
@@ -71,6 +75,10 @@ class ResultatSource:
     duree_trafic_s: int | None = None
     duree_sans_trafic_s: int | None = None
     distance_m: int | None = None
+    pourcentage_rouge: float | None = None
+    pourcentage_orange: float | None = None
+    pourcentage_vert: float | None = None
+    est_congestionne: bool | None = None
     message_erreur: str | None = None
 
 
@@ -134,6 +142,10 @@ async def _collecter_google_pour_troncon(troncon: Troncon) -> ResultatSource:
             duree_trafic_s=reponse.duree_trafic_s,
             duree_sans_trafic_s=reponse.duree_sans_trafic_s,
             distance_m=reponse.distance_m,
+            pourcentage_rouge=reponse.pourcentage_rouge,
+            pourcentage_orange=reponse.pourcentage_orange,
+            pourcentage_vert=reponse.pourcentage_vert,
+            est_congestionne=reponse.est_congestionne,
         )
 
     return await _appel_avec_backoff(
@@ -195,10 +207,14 @@ def _persister_mesures(resultats: list[ResultatSource], horodatage_utc: datetime
                     duree_sans_trafic_s=resultat.duree_sans_trafic_s,
                     source=resultat.source,
                     vitesse_moyenne_kmh=vitesse_kmh,
+                    pourcentage_rouge=resultat.pourcentage_rouge,
+                    pourcentage_orange=resultat.pourcentage_orange,
+                    pourcentage_vert=resultat.pourcentage_vert,
+                    est_congestionne=resultat.est_congestionne,
                 )
             else:
                 # Trou de mesure explicite : la ligne existe (preuve qu'on a tenté),
-                # mais aucune valeur n'est inventée — durées et vitesse à NULL.
+                # mais aucune valeur n'est inventée — durées, vitesse et couleurs NULL.
                 mesure = Mesure(
                     troncon_id=resultat.troncon_id,
                     horodatage=horodatage_utc,
@@ -206,6 +222,10 @@ def _persister_mesures(resultats: list[ResultatSource], horodatage_utc: datetime
                     duree_sans_trafic_s=None,
                     source=resultat.source,
                     vitesse_moyenne_kmh=None,
+                    pourcentage_rouge=None,
+                    pourcentage_orange=None,
+                    pourcentage_vert=None,
+                    est_congestionne=None,
                 )
             session.add(mesure)
 

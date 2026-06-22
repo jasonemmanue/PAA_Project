@@ -41,8 +41,10 @@ router_ws = APIRouter(tags=["temps réel (WebSocket)"])
         "Renvoie pour chaque tronçon actif :\n\n"
         "- la **géométrie** (polyline encodée + extrémités) ;\n"
         "- la **dernière mesure** (durée, vitesse, source, horodatage local) ;\n"
-        "- le **TTI**, la **classe de congestion** et la **couleur** Leaflet ;\n"
-        "- le **temps de référence** retenu et sa source dans la cascade.\n\n"
+        "- la **classe de congestion DEESP** (`fluide` / `congestionne` / "
+        "  `indetermine`) lue depuis les couleurs Google Maps ;\n"
+        "- les **pourcentages couleur** (rouge / orange / vert) ;\n"
+        "- la **couleur Leaflet** prête à utiliser pour tracer le tronçon.\n\n"
         "Format identique à celui poussé par le WebSocket `/ws/etat`, pour qu'un "
         "frontend puisse alimenter sa carte indifféremment via HTTP polling ou WS."
     ),
@@ -52,19 +54,30 @@ router_ws = APIRouter(tags=["temps réel (WebSocket)"])
             "content": {"application/json": {"example": {
                 "horodatage_utc": "2026-06-18T19:35:00+00:00",
                 "fuseau_affichage": "Africa/Abidjan",
-                "seuils": {"tti_dense": 1.3, "tti_congestionne": 2.0},
                 "couleurs": {
-                    "fluide": "#2ecc71", "dense": "#f39c12",
-                    "congestionne": "#e74c3c", "indetermine": "#95a5a6",
+                    "fluide": "#2ECC71",
+                    "congestionne": "#E74C3C",
+                    "indetermine": "#95A5A6",
+                },
+                "criteres": {
+                    "source": "Couleurs Google Maps (speedReadingIntervals)",
+                    "regle_congestion": "Congestionné si ROUGE OU ORANGE ≥ 50 % du tronçon.",
+                    "seuil_orange_long_pct": 50.0,
                 },
                 "nb_troncons": 1,
                 "troncons": [{
                     "id": 3,
                     "nom": "Toyota CFAO (Treichville) → Pharmacie Palm Beach",
                     "distance_km": 8.0,
-                    "couleur_etat": "#e74c3c",
-                    "tti": 2.831,
+                    "couleur_etat": "#E74C3C",
                     "classe_congestion": "congestionne",
+                    "libelle_classe": "Congestionné",
+                    "couleur_google": {
+                        "pourcentage_rouge": 12.5,
+                        "pourcentage_orange": 41.0,
+                        "pourcentage_vert": 46.5,
+                    },
+                    "motif_congestion": "Tronçon tracé en rouge sur 12.5 % de sa longueur.",
                     "statut": "mesure_disponible",
                     "polyline": "qnj_@rinW...",
                     "derniere_mesure": {

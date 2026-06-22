@@ -6,6 +6,22 @@ Cette logique est appelée :
 
 Le résultat est un dictionnaire prêt à sérialiser, structuré pour qu'un
 frontend Leaflet puisse l'afficher sans transformation.
+
+Critère de classification — désormais **purement couleur Google Maps**,
+conformément à la méthodologie DEESP (cf. CLAUDE.md § 4.5.2 et le rapport
+*Évaluation du temps de traversée octobre 2025*) :
+
+  - 🔴 Rouge présent OU 🟠 Orange ≥ 50 % du tronçon → **congestionné**
+  - 🟢 Vert + 🟠 Orange court                       → **fluide**
+  - Aucune couleur retournée par Google             → **indéterminé**
+
+Le ratio TTI (`duree_trafic / T_ref`) **n'entre PLUS** dans la qualification.
+Il restait précédemment utilisé comme dégradé "fluide → dense → congestionné",
+mais le rapport ne distingue pas "dense" et utilise exclusivement la lecture
+visuelle des couleurs. Les durées (`duree_trafic_s`) sont conservées dans la
+réponse uniquement pour l'affichage informatif (« Temps actuel ») — elles
+restent essentielles pour les **agrégats** par jour/semaine/mois (Tableaux
+3-15 du rapport).
 """
 
 from __future__ import annotations
@@ -17,33 +33,14 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.analyse.indicateurs import SeuilsCongestion, classifier_congestion
+from app.analyse.congestion import (
+    COULEURS_DEESP,
+    LIBELLES_DEESP_FR,
+    classer_congestion,
+)
 from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.models import Mesure, Troncon
-
-
-# Code couleur métier utilisé par la carte (Leaflet — `color` des Polyline).
-# On distingue 4 états : fluide / dense / congestionné + indéterminé (gris).
-COULEURS_CONGESTION: dict[str, str] = {
-    "fluide":        "#2ecc71",
-    "dense":         "#f39c12",
-    "congestionne":  "#e74c3c",
-    "indetermine":   "#95a5a6",
-}
-
-
-def _temps_reference_s(troncon: Troncon, derniere_mesure: Mesure | None) -> tuple[float, str]:
-    """Cascade T_ref pour l'état carte (snapshot ponctuel).
-
-    Priorité :
-      1. `duree_sans_trafic_s` de la dernière mesure Google si présente.
-      2. ~~TomTom~~ (retiré du projet — CLAUDE.md § 2.5).
-      3. Repli déterministe 50 km/h sur la distance officielle.
-    """
-    if derniere_mesure is not None and derniere_mesure.duree_sans_trafic_s is not None:
-        return float(derniere_mesure.duree_sans_trafic_s), "google_freeflow"
-    return troncon.distance_m / (troncon.vitesse_ref_kmh / 3.6), "vitesse_ref_50kmh"
 
 
 def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
@@ -53,12 +50,13 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
       {
         "horodatage_utc": "...",
         "fuseau_affichage": "Africa/Abidjan",
-        "seuils": {...},
+        "couleurs": { fluide / congestionne / indetermine },
+        "criteres": { description littérale de la règle DEESP },
+        "nb_troncons": N,
         "troncons": [ { ... } x N ]
       }
     """
     settings = get_settings()
-    seuils = SeuilsCongestion.depuis_settings(settings)
     fuseau_local = ZoneInfo(settings.tz)
     instant_utc = datetime.now(tz=timezone.utc)
 
@@ -77,7 +75,6 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
         )
 
         # 2. Dernière mesure par tronçon (1 requête grâce à DISTINCT ON Postgres).
-        #    SQLAlchemy traduit `distinct(col)` en PostgreSQL `SELECT DISTINCT ON (col)`.
         dernieres = list(
             session.execute(
                 select(Mesure)
@@ -88,39 +85,39 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
         )
         dernieres_par_troncon: dict[int, Mesure] = {m.troncon_id: m for m in dernieres}
 
-        # 3. Construction des cartes de tronçons
+        # 3. Construction des cartes de tronçons (critère couleur DEESP)
         etat_troncons: list[dict[str, Any]] = []
         for troncon in troncons:
             derniere = dernieres_par_troncon.get(troncon.id)
-            t_ref_s, source_ref = _temps_reference_s(troncon, derniere)
 
             duree_mesuree: int | None = None
-            tti: float | None = None
             horodatage_iso: str | None = None
             horodatage_local_iso: str | None = None
             vitesse_kmh: float | None = None
             source_mesure: str | None = None
             statut: str = "sans_mesure"
+            pct_rouge: float | None = None
+            pct_orange: float | None = None
+            pct_vert: float | None = None
 
             if derniere is not None:
                 horodatage_iso = derniere.horodatage.isoformat()
                 horodatage_local_iso = derniere.horodatage.astimezone(
                     fuseau_local
                 ).isoformat()
+                source_mesure = derniere.source.value
+                pct_rouge = derniere.pourcentage_rouge
+                pct_orange = derniere.pourcentage_orange
+                pct_vert = derniere.pourcentage_vert
                 if derniere.duree_trafic_s is not None:
                     duree_mesuree = derniere.duree_trafic_s
                     vitesse_kmh = derniere.vitesse_moyenne_kmh
-                    source_mesure = derniere.source.value
-                    if t_ref_s > 0:
-                        tti = round(duree_mesuree / t_ref_s, 3)
                     statut = "mesure_disponible"
                 else:
-                    # Ligne trou de mesure : on a tenté mais sans valeur exploitable
                     statut = "trou_de_mesure"
-                    source_mesure = derniere.source.value
 
-            classe = classifier_congestion(tti, seuils)
-            couleur_etat = COULEURS_CONGESTION[classe]
+            verdict = classer_congestion(pct_rouge, pct_orange, pct_vert)
+            couleur_etat = COULEURS_DEESP[verdict.classe]
 
             etat_troncons.append({
                 "id": troncon.id,
@@ -137,13 +134,14 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                     "lat_destination": troncon.lat_destination,
                     "lon_destination": troncon.lon_destination,
                 },
-                "temps_reference_s": round(t_ref_s, 1),
-                "source_temps_reference": source_ref,
+                "temps_reference_50kmh_s": round(troncon.temps_reference_s(), 1),
                 "statut": statut,
                 "derniere_mesure": (
                     {
                         "horodatage_utc": horodatage_iso,
                         "horodatage_local": horodatage_local_iso,
+                        # Temps observé — informatif uniquement, ne sert pas
+                        # à la qualification congestionné/fluide.
                         "duree_trafic_s": duree_mesuree,
                         "vitesse_moyenne_kmh": vitesse_kmh,
                         "source": source_mesure,
@@ -151,18 +149,31 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                     if derniere is not None
                     else None
                 ),
-                "tti": tti,
-                "classe_congestion": classe,
+                # Critère DEESP — la qualification
+                "classe_congestion": verdict.classe,
+                "libelle_classe": LIBELLES_DEESP_FR[verdict.classe],
+                "motif_congestion": verdict.motif,
+                "couleur_google": {
+                    "pourcentage_rouge": pct_rouge,
+                    "pourcentage_orange": pct_orange,
+                    "pourcentage_vert": pct_vert,
+                },
             })
 
         return {
             "horodatage_utc": instant_utc.isoformat(),
             "fuseau_affichage": settings.tz,
-            "seuils": {
-                "tti_dense": seuils.dense,
-                "tti_congestionne": seuils.congestionne,
+            "couleurs": COULEURS_DEESP,
+            "criteres": {
+                "source": "Couleurs Google Maps (speedReadingIntervals)",
+                "regle_congestion": (
+                    "Congestionné si présence de ROUGE OU si ORANGE couvre "
+                    "≥ 50 % du tronçon. Source : rapport DEESP/DEEF "
+                    "« Évaluation du temps de traversée — octobre 2025 », "
+                    "section METHODOLOGIE."
+                ),
+                "seuil_orange_long_pct": 50.0,
             },
-            "couleurs": COULEURS_CONGESTION,
             "nb_troncons": len(etat_troncons),
             "troncons": etat_troncons,
         }

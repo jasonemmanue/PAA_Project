@@ -51,17 +51,17 @@ class Settings(BaseSettings):
     # === Fuseau horaire de référence du PAA ===
     tz: str = Field(default="Africa/Abidjan", alias="TZ")
 
-    # === Seuils d'analyse (phase P3 — indicateurs de congestion FHWA) ===
-    # Classification par TTI (Travel Time Index = temps_mesuré / temps_référence)
-    #   fluide       : TTI < tti_seuil_dense
-    #   dense        : tti_seuil_dense ≤ TTI ≤ tti_seuil_congestionne
-    #   congestionné : TTI > tti_seuil_congestionne
+    # === Seuils d'analyse — LEGACY P3 ===
+    # ⚠️  Refonte 2026-06-22 : la qualification fluide/congestionné vient
+    # désormais EXCLUSIVEMENT des couleurs Google Maps (cf. CLAUDE.md § 4.5.2
+    # et `app/analyse/congestion.py`), conformément au rapport DEESP. Les
+    # seuils TTI ci-dessous restent chargés depuis l'environnement Railway
+    # pour ne pas casser un déploiement existant mais ne sont plus consommés
+    # par le code d'analyse. Ils pourront être retirés à la prochaine
+    # migration de config.
     tti_seuil_dense: float = Field(default=1.3, alias="TTI_SEUIL_DENSE")
     tti_seuil_congestionne: float = Field(default=2.0, alias="TTI_SEUIL_CONGESTIONNE")
-    # Détection d'une heure de pointe : moyenne(heure) / T_ref > seuil
     tti_seuil_heure_pointe: float = Field(default=1.5, alias="TTI_SEUIL_HEURE_POINTE")
-    # Seuil par défaut pour la fréquence de dépassement (en secondes).
-    # Si non précisé via query param, le code calcule un seuil = 1,5 × T_ref.
     seuil_depassement_s: int | None = Field(default=None, alias="SEUIL_DEPASSEMENT_S")
 
     # === Stockage des relevés terrain GPX (P5) ===

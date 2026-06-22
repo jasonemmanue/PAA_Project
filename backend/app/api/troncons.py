@@ -23,7 +23,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analyse.indicateurs import (
-    SeuilsCongestion,
     calcul_indicateurs,
     indicateurs_par_jour,
 )
@@ -81,16 +80,25 @@ class TronconDetail(TronconResume):
 
 
 class MesurePublique(BaseModel):
-    """Une mesure exposée par l'API (mêmes champs que la table sans le flag interne)."""
+    """Une mesure exposée par l'API (mêmes champs que la table sans le flag interne).
+
+    Le `duree_sans_trafic_s` n'est plus exposé (cf. refonte DEESP) — il
+    n'entre pas dans la qualification couleur du rapport. Les champs
+    couleur (`pourcentage_*`, `est_congestionne`) sont eux exposés car
+    ils déterminent la classe de congestion DEESP.
+    """
     id: int
     troncon_id: int
     horodatage_utc: datetime
     horodatage_local: datetime
     duree_trafic_s: int | None
-    duree_sans_trafic_s: int | None
     vitesse_moyenne_kmh: float | None
     source: str
     aberrante: bool
+    pourcentage_rouge: float | None
+    pourcentage_orange: float | None
+    pourcentage_vert: float | None
+    est_congestionne: bool | None
 
 
 # ---------------------------------------------------------------------------
@@ -104,10 +112,11 @@ class MesurePublique(BaseModel):
     description=(
         "Renvoie tous les tronçons (par défaut actifs uniquement) enrichis de :\n\n"
         "- la **dernière mesure** disponible (horodatage local, durée, source),\n"
-        "- le **TTI** calculé contre le temps de référence (cascade Google → 50 km/h),\n"
-        "- la **classe de congestion** (`fluide`, `dense`, `congestionne`, `indetermine`),\n"
+        "- la **classe de congestion DEESP** (`fluide` / `congestionne` / "
+        "  `indetermine`) lue depuis les couleurs Google Maps,\n"
+        "- les **pourcentages couleur** (rouge / orange / vert),\n"
         "- la **couleur métier** prête à utiliser dans Leaflet.\n\n"
-        "Format identique à `/carte/etat` mais limité au tableau (sans seuils)."
+        "Format identique à `/carte/etat`."
     ),
     responses={
         200: {
@@ -118,9 +127,15 @@ class MesurePublique(BaseModel):
                     "id": 3,
                     "nom": "Toyota CFAO (Treichville) → Pharmacie Palm Beach",
                     "distance_km": 8.0,
-                    "tti": 2.831,
                     "classe_congestion": "congestionne",
-                    "couleur_etat": "#e74c3c",
+                    "libelle_classe": "Congestionné",
+                    "couleur_etat": "#E74C3C",
+                    "couleur_google": {
+                        "pourcentage_rouge": 12.5,
+                        "pourcentage_orange": 41.0,
+                        "pourcentage_vert": 46.5,
+                    },
+                    "motif_congestion": "Tronçon tracé en rouge sur 12.5 % de sa longueur (critère DEESP : rouge → congestionné).",
                     "statut": "mesure_disponible",
                     "derniere_mesure": {
                         "horodatage_local": "2026-06-18T19:19:04+00:00",
@@ -209,15 +224,22 @@ def _parse_periode(periode: str) -> int:
 
 @router.get(
     "/{troncon_id}/indicateurs",
-    summary="Snapshot des indicateurs FHWA sur une période (TTI/PTI/BTI/P95)",
+    summary="Indicateurs DEESP sur une période (min / moyen / max + congestion)",
     description=(
-        "Calcule sur la fenêtre demandée :\n\n"
-        "- **TTI** (Travel Time Index) = moyenne / temps_référence\n"
-        "- **PTI** (Planning Time Index) = P95 / temps_référence\n"
-        "- **BTI** (Buffer Time Index) = (P95 − moyenne) / moyenne\n"
-        "- **Fréquence de dépassement** d'un seuil (configurable ou auto = 1,5 × T_ref)\n"
-        "- **Classe de congestion** (`fluide`, `dense`, `congestionne`)\n\n"
-        "Inclut également la décomposition jour par jour pour tracer une courbe."
+        "Calcule sur la fenêtre demandée, conformément au rapport DEESP "
+        "(cf. CLAUDE.md § 4.5.4) :\n\n"
+        "- **Temps minimal / moyen / maximal** (s) — alimentent les "
+        "  Tableaux 3-15 du rapport.\n"
+        "- **Taux de congestion** — part des mesures qualifiées de "
+        "  congestionnées selon la **couleur Google Maps** (ROUGE OU "
+        "  ORANGE ≥ 50 % du tronçon, cf. § 4.5.2).\n"
+        "- **Classe de congestion** (`fluide` / `congestionne` / "
+        "  `indetermine`) — verdict DEESP appliqué sur la moyenne couleur "
+        "  de la fenêtre.\n\n"
+        "Inclut également la décomposition jour par jour pour tracer une "
+        "courbe d'évolution. Les indicateurs FHWA (TTI/PTI/BTI) ont été "
+        "retirés — la qualification se fait désormais purement à partir "
+        "des couleurs Google Maps comme dans le rapport DEESP."
     ),
     responses={
         200: {"description": "Snapshot + détail jour par jour."},
@@ -316,10 +338,13 @@ async def mesures_du_troncon(
             horodatage_utc=m.horodatage,
             horodatage_local=m.horodatage.astimezone(fuseau_local),
             duree_trafic_s=m.duree_trafic_s,
-            duree_sans_trafic_s=m.duree_sans_trafic_s,
             vitesse_moyenne_kmh=m.vitesse_moyenne_kmh,
             source=m.source.value,
             aberrante=m.aberrante,
+            pourcentage_rouge=m.pourcentage_rouge,
+            pourcentage_orange=m.pourcentage_orange,
+            pourcentage_vert=m.pourcentage_vert,
+            est_congestionne=m.est_congestionne,
         )
         for m in mesures
     ]

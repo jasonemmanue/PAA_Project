@@ -152,8 +152,9 @@ async def get_temps_traversee(
         "- **Règle SEMAINE** : tronçon congestionné si ≥ 4 fois à la même "
         "  heure dans la semaine, tous jours confondus.\n\n"
         "Le critère de congestion d'une mesure individuelle est "
-        "`duree_trafic_s > 1.5 × T_ref_50kmh` (équivalent rouge ou "
-        "orange-long Google Maps)."
+        "Couleur Google Maps lue par tronçon : ROUGE OU ORANGE ≥ 50 % → "
+        "congestionné (cf. rapport DEESP/DEEF oct. 2025, section "
+        "METHODOLOGIE)."
     ),
 )
 async def get_zones_congestionnees(
@@ -166,7 +167,10 @@ async def get_zones_congestionnees(
         "campagne": campagne,
         "nb_entrees": len(cong),
         "regles": {
-            "ratio_congestion_min": rapport_paa.RATIO_CONGESTION_MIN,
+            "critere_mesure": (
+                "Couleur Google Maps : ROUGE OU ORANGE sur ≥ 50 % du tronçon"
+            ),
+            "seuil_orange_long_pct": 50.0,
             "regle_jour_indicatif": "≥ 3 occurrences sur le même jour de la semaine",
             "regle_semaine": "≥ 4 occurrences à la même heure dans la semaine",
         },

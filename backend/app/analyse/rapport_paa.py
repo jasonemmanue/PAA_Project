@@ -16,8 +16,12 @@ tableaux et 12 graphiques attendus par le rapport DEESP :
   - Tableau 17  → récap général des temps de traversée
   - Tableau 19  → comparaison pluriannuelle (2 campagnes)
 
-Critère DEESP de congestion (cf. § 4.5.2) :
-    congestionné ⟺ duree_trafic_s > 1.5 × T_ref_50_kmh
+Critère DEESP de congestion (cf. § 4.5.2 et rapport octobre 2025) :
+    Une mesure est congestionnée ssi Google Maps affiche du ROUGE OU de
+    l'ORANGE sur ≥ 50 % du tronçon. Ce verdict est désormais stocké dans
+    la colonne `mesures.est_congestionne` (alimentée par
+    `app/analyse/congestion.py` à partir des `speedReadingIntervals`
+    Google).
 """
 
 from __future__ import annotations
@@ -40,10 +44,10 @@ from app.models.models import Mesure, SourceMesure, Troncon
 # Types et constantes
 # ---------------------------------------------------------------------------
 
-# Seuils traduisant les couleurs Google Maps (cf. CLAUDE.md § 4.5.2)
-RATIO_FLUIDE_MAX = 1.2          # vert
-RATIO_ORANGE_COURT_MAX = 1.5    # orange court — encore fluide
-RATIO_CONGESTION_MIN = 1.5      # orange long ou rouge → congestionné
+# Critère de congestion : on s'appuie désormais sur `mesures.est_congestionne`
+# (verdict couleur Google Maps, cf. `app/analyse/congestion.py`). Ce booléen
+# remplace l'ancien ratio `duree_trafic / T_ref ≥ 1.5` qui n'était qu'une
+# approximation numérique du critère couleur du rapport.
 
 # Plage horaire DEESP — le rapport officiel ne couvre que 7h-19h, même si
 # notre collecte étend à 24h/24 (cf. CLAUDE.md § 4.5.1 et § 4.5.7).
@@ -276,8 +280,10 @@ def troncons_congestionnes(
 ) -> list[CongestionHoraire]:
     """Applique les règles § 4.5.3 pour identifier les tronçons congestionnés.
 
-    Méthodologie DEESP :
-      1. Pour chaque mesure : congestionné si duree_trafic > 1.5 × T_ref
+    Méthodologie DEESP — désormais fidèle à 100 % au rapport :
+      1. Pour chaque mesure : congestionné ssi la couleur Google Maps
+         indique ROUGE (présent) OU ORANGE sur ≥ 50 % du tronçon. Ce
+         verdict est lu directement dans `mesures.est_congestionne`.
       2. Pour chaque (troncon, jour-semaine, heure) : on cumule le nb
          d'occurrences congestionnées sur la fenêtre.
       3. Règle JOUR : congestionné si ≥ 3 fois sur les lundis (ou mardis…)
@@ -292,11 +298,14 @@ def troncons_congestionnes(
         ).scalars()
     }
 
+    # On ne retient que les mesures dont la couleur Google Maps indique
+    # explicitement « congestionné ». Les NULL (Google n'a pas qualifié
+    # le tracé) sont ignorées — pas d'invention de donnée.
     mesures = list(
         db.execute(
             select(Mesure).where(
                 Mesure.source == SourceMesure.google,
-                Mesure.duree_trafic_s.is_not(None),
+                Mesure.est_congestionne.is_(True),
                 Mesure.aberrante.is_(False),
                 Mesure.horodatage >= debut_utc,
                 Mesure.horodatage <= fin_utc,
@@ -308,20 +317,13 @@ def troncons_congestionnes(
     #        → nb occurrences congestionnées
     occurrences: dict[tuple[int, int, int], int] = defaultdict(int)
     for m in mesures:
-        t = troncons.get(m.troncon_id)
-        if t is None:
+        if m.troncon_id not in troncons:
             continue
-        t_ref = t.temps_reference_s()
-        if t_ref <= 0:
-            continue
-        ratio = m.duree_trafic_s / t_ref
-        if ratio < RATIO_CONGESTION_MIN:
-            continue  # fluide ou orange court → ne compte pas
         local = m.horodatage.astimezone(fuseau_local)
         # Filtre plage DEESP (7h-19h) — voir _dans_plage_deesp.
         if not _dans_plage_deesp(local):
             continue
-        occurrences[(t.id, local.weekday(), local.hour)] += 1
+        occurrences[(m.troncon_id, local.weekday(), local.hour)] += 1
 
     # Agrégation par (troncon, heure) — règle SEMAINE
     par_troncon_heure: dict[tuple[int, int], dict[int, int]] = defaultdict(dict)
