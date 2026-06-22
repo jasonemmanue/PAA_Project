@@ -36,7 +36,8 @@ export function formaterHeureAbidjan(iso: string | null | undefined): string {
   }
 }
 
-/** Libellé court pour la classe de congestion (label affiché à l'utilisateur). */
+/** Libellé court pour la classe de congestion DEESP (3 classes : fluide /
+ *  congestionne / indetermine — cf. rapport DEESP oct. 2025 § METHODOLOGIE). */
 export function libelleClasseCongestion(
   c: ClasseCongestion,
   langue: "fr" | "en" = "fr",
@@ -44,13 +45,11 @@ export function libelleClasseCongestion(
   const labels: Record<"fr" | "en", Record<ClasseCongestion, string>> = {
     fr: {
       fluide: "Fluide",
-      dense: "Dense",
       congestionne: "Congestionné",
       indetermine: "Indéterminé",
     },
     en: {
       fluide: "Free flow",
-      dense: "Dense",
       congestionne: "Congested",
       indetermine: "Unknown",
     },
@@ -58,13 +57,12 @@ export function libelleClasseCongestion(
   return labels[langue][c] ?? c;
 }
 
-/** Couleur hex associée à une classe de congestion (cohérent avec backend). */
+/** Couleur hex associée à une classe de congestion (cohérent avec backend
+ *  `app/analyse/congestion.py` — palette DEESP). */
 export function couleurClasseCongestion(c: ClasseCongestion): string {
   switch (c) {
     case "fluide":
       return "#2ECC71";
-    case "dense":
-      return "#F39C12";
     case "congestionne":
       return "#E74C3C";
     default:

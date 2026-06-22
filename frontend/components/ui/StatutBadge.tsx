@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Badge coloré indiquant un niveau de congestion (fluide / dense /
+ * Badge coloré indiquant un niveau de congestion DEESP (fluide /
  * congestionné / indéterminé) — couleurs identiques à celles utilisées
- * par la carte (cf. tailwind.config.ts > colors.statut).
+ * par la carte. Plus de classe « dense » : le rapport DEESP ne la
+ * distingue pas (cf. CLAUDE.md § 4.5.2).
  */
 
 import clsx from "clsx";
@@ -13,14 +14,12 @@ import { useI18n } from "@/lib/i18n";
 
 const CLASSES: Record<ClasseCongestion, string> = {
   fluide: "bg-statut-fluide text-white",
-  dense: "bg-statut-dense text-white",
   congestionne: "bg-statut-congestionne text-white",
   indetermine: "bg-statut-indetermine text-white",
 };
 
 const KEYS: Record<ClasseCongestion, string> = {
   fluide: "carte.legendFluide",
-  dense: "carte.legendDense",
   congestionne: "carte.legendCongestionne",
   indetermine: "carte.legendIndetermine",
 };

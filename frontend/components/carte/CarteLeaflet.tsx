@@ -41,10 +41,10 @@ const CENTRE_ABIDJAN: [number, number] = [5.29, -4.0];
 const ZOOM_INITIAL = 12;
 
 // Classement des classes de congestion pour identifier le « point chaud »
-// au chargement (utilisé par le zoom intelligent).
+// au chargement (utilisé par le zoom intelligent). Critère DEESP : seul
+// "congestionné" est traité comme point chaud.
 const ORDRE_GRAVITE: Record<string, number> = {
-  congestionne: 3,
-  dense: 2,
+  congestionne: 2,
   fluide: 1,
   indetermine: 0,
 };
@@ -189,18 +189,23 @@ export function CarteLeaflet({
     }
 
     // -- Heatmap des congestions : on échantillonne plusieurs points de chaque
-    // polyline, pondérés par le TTI (plus le trafic est dense, plus le poids est élevé)
+    // polyline congestionnée selon la couleur Google Maps (DEESP). Le poids
+    // est proportionnel à la part de rouge sur le tronçon.
     if (heatLayerRef.current) {
       map.removeLayer(heatLayerRef.current);
       heatLayerRef.current = null;
     }
     const pointsHeat: [number, number, number][] = [];
     for (const troncon of etat.troncons) {
-      if (troncon.classe_congestion === "fluide" || troncon.classe_congestion === "indetermine") {
+      if (troncon.classe_congestion !== "congestionne") {
+        // Critère DEESP : on ne signale comme « chaud » que les tronçons
+        // qualifiés de congestionnés par les couleurs Google Maps.
         continue;
       }
-      const poids =
-        troncon.classe_congestion === "congestionne" ? 1.0 : 0.55;
+      // Poids proportionnel à la part de rouge — un tronçon entièrement
+      // rouge est plus chaud qu'un tronçon avec quelques % de rouge.
+      const pctRouge = troncon.couleur_google?.pourcentage_rouge ?? 0;
+      const poids = Math.min(1.0, 0.55 + pctRouge / 100);
       const points = pointsTroncon(troncon);
       if (points.length < 2) continue;
       // Échantillonnage 1 point sur 5 pour rester léger
@@ -266,15 +271,17 @@ export function CarteLeaflet({
     }
 
     // -- Zoom intelligent : au PREMIER chargement, on centre sur le tronçon
-    //    le plus dégradé (worst classe puis worst TTI) ; si tout est fluide,
-    //    on cadre sur l'ensemble des tronçons surveillés.
+    //    le plus dégradé (worst classe DEESP puis % de rouge le plus élevé) ;
+    //    si tout est fluide, on cadre sur l'ensemble des tronçons surveillés.
     if (!zoomInitialFaitRef.current && etat.troncons.length > 0) {
       const troncons = etat.troncons.slice();
       troncons.sort((a, b) => {
         const ga = ORDRE_GRAVITE[a.classe_congestion] ?? 0;
         const gb = ORDRE_GRAVITE[b.classe_congestion] ?? 0;
         if (ga !== gb) return gb - ga;
-        return (b.tti ?? 0) - (a.tti ?? 0);
+        const ra = a.couleur_google?.pourcentage_rouge ?? 0;
+        const rb = b.couleur_google?.pourcentage_rouge ?? 0;
+        return rb - ra;
       });
       const cible = troncons[0];
       const points = pointsTroncon(cible);
@@ -384,22 +391,36 @@ function construirePopup(t: EtatTronconCarte, locale: "fr" | "en"): string {
   const couleur = couleurClasseCongestion(t.classe_congestion);
   const classe = libelleClasseCongestion(t.classe_congestion, locale);
   const m = t.derniere_mesure;
-  const tti = t.tti !== null ? t.tti.toFixed(2) : "—";
   const dureeTrafic = formaterDuree(m?.duree_trafic_s);
-  const dureeFluide = formaterDuree(m?.duree_sans_trafic_s);
-  const heure = formaterHeureAbidjan(m?.horodatage);
+  const heure = formaterHeureAbidjan(
+    m?.horodatage_local ?? m?.horodatage_utc ?? m?.horodatage,
+  );
   const sourceLib = libelleSource(m?.source);
+
+  const pctR = t.couleur_google?.pourcentage_rouge;
+  const pctO = t.couleur_google?.pourcentage_orange;
+  const pctV = t.couleur_google?.pourcentage_vert;
+  const fmtPct = (v: number | null | undefined): string =>
+    v !== null && v !== undefined ? `${v.toFixed(1)} %` : "—";
 
   const ficheUrl = `/indicateurs?troncon=${t.id}`;
   const labelFiche = locale === "fr" ? "Voir la fiche détaillée →" : "View details →";
-  const labelMesure = locale === "fr" ? "Mesure actuelle" : "Current measurement";
-  const labelFluide = locale === "fr" ? "Temps fluide" : "Free-flow time";
-  const labelTti = locale === "fr" ? "TTI" : "TTI";
+  const labelMesure = locale === "fr" ? "Temps actuel" : "Current time";
   const labelHeure = locale === "fr" ? "Mesurée à" : "Measured at";
   const labelSource = locale === "fr" ? "Source" : "Source";
+  const labelRouge = locale === "fr" ? "🔴 Rouge" : "🔴 Red";
+  const labelOrange = locale === "fr" ? "🟠 Orange" : "🟠 Orange";
+  const labelVert = locale === "fr" ? "🟢 Vert" : "🟢 Green";
+  const motif = t.motif_congestion
+    ? `<div style="margin-top: 6px; padding: 6px 8px; background: #F8FAFC;
+                  border-left: 3px solid ${couleur}; font-size: 11px;
+                  color: #475569; border-radius: 3px;">
+         ${escapeHtml(t.motif_congestion)}
+       </div>`
+    : "";
 
   return `
-    <div style="font-family: Inter, sans-serif; min-width: 230px;">
+    <div style="font-family: Inter, sans-serif; min-width: 240px;">
       <div style="font-weight: 600; font-size: 14px; color: #0B2545; margin-bottom: 6px;">
         ${escapeHtml(t.nom)}
       </div>
@@ -410,11 +431,13 @@ function construirePopup(t: EtatTronconCarte, locale: "fr" | "en"): string {
       </div>
       <table style="width: 100%; font-size: 12px; color: #1F2937;">
         <tr><td style="padding: 2px 0; color: #6B7280;">${labelMesure}</td><td style="text-align: right; font-weight: 600;">${dureeTrafic}</td></tr>
-        <tr><td style="padding: 2px 0; color: #6B7280;">${labelFluide}</td><td style="text-align: right;">${dureeFluide}</td></tr>
-        <tr><td style="padding: 2px 0; color: #6B7280;">${labelTti}</td><td style="text-align: right; font-weight: 600;">${tti}</td></tr>
+        <tr><td style="padding: 2px 0; color: #6B7280;">${labelRouge}</td><td style="text-align: right; font-weight: 600; color: #E74C3C;">${fmtPct(pctR)}</td></tr>
+        <tr><td style="padding: 2px 0; color: #6B7280;">${labelOrange}</td><td style="text-align: right; font-weight: 600; color: #F39C12;">${fmtPct(pctO)}</td></tr>
+        <tr><td style="padding: 2px 0; color: #6B7280;">${labelVert}</td><td style="text-align: right; font-weight: 600; color: #2ECC71;">${fmtPct(pctV)}</td></tr>
         <tr><td style="padding: 2px 0; color: #6B7280;">${labelHeure}</td><td style="text-align: right;">${heure}</td></tr>
         <tr><td style="padding: 2px 0; color: #6B7280;">${labelSource}</td><td style="text-align: right;">${escapeHtml(sourceLib)}</td></tr>
       </table>
+      ${motif}
       <a href="${ficheUrl}" style="display: block; margin-top: 8px;
                 font-size: 12px; font-weight: 600; color: #1F4E79;
                 text-decoration: none;">${labelFiche}</a>

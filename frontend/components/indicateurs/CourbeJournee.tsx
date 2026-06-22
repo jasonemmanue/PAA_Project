@@ -2,9 +2,12 @@
 
 /**
  * Courbe « évolution du temps de traversée » — trois séries superposées :
- *  - Temps avec trafic (orange/rouge selon classe)
- *  - Temps sans trafic (vert)
- *  - Référence 50 km/h (bleu ciel, ligne tirets) — couleur RÉSERVÉE
+ *  - Temps moyen avec trafic (rouge)
+ *  - Temps maximal (orange, en tirets)
+ *  - Référence 50 km/h (bleu ciel, ligne tirets)
+ *
+ * Aligné DEESP : pas de TTI/PTI, on affiche directement les temps en
+ * minutes (Tableaux 3-15 du rapport oct. 2025).
  *
  * Données alimentées par /indicateurs/troncons/{id}/serie (granularité hour).
  */
@@ -24,9 +27,9 @@ import { Card } from "@/components/ui/Card";
 import { useI18n } from "@/lib/i18n";
 import type { PointSerie, SerieTemporelle } from "@/lib/types";
 
-const COULEUR_TRAFIC = "#E74C3C"; // statut.congestionne
-const COULEUR_FLUIDE = "#2ECC71"; // statut.fluide
-const COULEUR_REFERENCE = "#4CC9F0"; // paa.sky — réservé
+const COULEUR_MOYENNE = "#E74C3C";  // temps moyen avec trafic
+const COULEUR_MAX = "#F39C12";      // temps maximal observé
+const COULEUR_REFERENCE = "#4CC9F0"; // référence 50 km/h
 
 function formaterHeureCourte(iso: string): string {
   try {
@@ -43,13 +46,12 @@ function formaterHeureCourte(iso: string): string {
   }
 }
 
-// Convertit secondes en minutes (arrondi à 1 décimale) pour l'affichage Y
-function sToMin(s: number | null): number | null {
-  return s === null ? null : Math.round((s / 60) * 10) / 10;
+function sToMin(s: number | null | undefined): number | null {
+  return s === null || s === undefined ? null : Math.round((s / 60) * 10) / 10;
 }
 
 export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const points: PointSerie[] = Array.isArray(serie?.points) ? serie!.points : [];
 
@@ -66,14 +68,18 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
     );
   }
 
-  const refMin = (serie.temps_reference_s ?? 0) / 60;
+  const refMin = (serie.temps_reference_50kmh_s ?? 0) / 60;
 
   const data = points.map((p) => ({
     heure: formaterHeureCourte(p.instant_local),
-    trafic: sToMin(p.moyenne_s),
-    p95: sToMin(p.p95_s),
+    moyenne: sToMin(p.moyenne_s),
+    max: sToMin(p.max_s),
     nb: p.nb_mesures,
   }));
+
+  const labelMoyenne =
+    locale === "fr" ? "Temps moyen (min)" : "Average time (min)";
+  const labelMax = locale === "fr" ? "Temps maximal (min)" : "Maximum time (min)";
 
   return (
     <Card
@@ -113,8 +119,8 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
               }}
               formatter={(value: unknown, key: string) => {
                 const labels: Record<string, string> = {
-                  trafic: t("indicateurs.courbeTrafic"),
-                  p95: t("indicateurs.pti"),
+                  moyenne: labelMoyenne,
+                  max: labelMax,
                 };
                 return [`${value} min`, labels[key] ?? key];
               }}
@@ -134,9 +140,9 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
             />
             <Line
               type="monotone"
-              dataKey="trafic"
-              name={t("indicateurs.courbeTrafic")}
-              stroke={COULEUR_TRAFIC}
+              dataKey="moyenne"
+              name={labelMoyenne}
+              stroke={COULEUR_MOYENNE}
               strokeWidth={2.5}
               dot={false}
               activeDot={{ r: 5 }}
@@ -144,9 +150,9 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
             />
             <Line
               type="monotone"
-              dataKey="p95"
-              name={t("indicateurs.pti")}
-              stroke={COULEUR_FLUIDE}
+              dataKey="max"
+              name={labelMax}
+              stroke={COULEUR_MAX}
               strokeWidth={1.5}
               strokeDasharray="3 3"
               dot={false}
@@ -158,8 +164,8 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
 
       {/* Légende textuelle sous le graphique */}
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-fluid-xs app-text-muted">
-        <LegendItem color={COULEUR_TRAFIC} label={t("indicateurs.courbeTrafic")} />
-        <LegendItem color={COULEUR_FLUIDE} label={t("indicateurs.pti")} />
+        <LegendItem color={COULEUR_MOYENNE} label={labelMoyenne} />
+        <LegendItem color={COULEUR_MAX} label={labelMax} dashed />
         <LegendItem color={COULEUR_REFERENCE} label={t("indicateurs.courbeReference")} dashed />
       </div>
     </Card>

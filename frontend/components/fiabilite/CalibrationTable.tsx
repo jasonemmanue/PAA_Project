@@ -18,7 +18,11 @@ function couleurEcart(ecart: number | null): string {
   if (ecart === null) return "app-text-muted";
   const abs = Math.abs(ecart);
   if (abs > 0.25) return "text-statut-congestionne font-semibold";
-  if (abs > 0.1) return "text-statut-dense font-semibold";
+  // 10-25 % : écart modéré, on garde une couleur intermédiaire (orange) — la
+  // classification "dense" a été retirée du critère DEESP mais le code
+  // couleur est conservé ici car c'est une jauge de calibration, pas de
+  // congestion.
+  if (abs > 0.1) return "text-amber-600 dark:text-amber-400 font-semibold";
   return "text-statut-fluide font-semibold";
 }
 

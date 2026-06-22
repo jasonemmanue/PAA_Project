@@ -1,18 +1,21 @@
 "use client";
 
 /**
- * Panneau latéral de la page Carte. Trois zones :
+ * Panneau latéral de la page Carte — version DEESP (couleurs Google Maps).
  *
- *   1. **Bandeau KPI** — compteurs par classe (fluide / dense / congestionné)
- *      + nombre total surveillé. Donne l'état d'ensemble en un coup d'œil.
+ *   1. **Bandeau KPI** — compteurs par classe DEESP :
+ *        • Fluide (vert)
+ *        • Congestionné (rouge)
+ *        • Indéterminé (gris) — Google n'a pas qualifié le tracé
  *
- *   2. **Point chaud** — encart mettant en valeur le tronçon le plus dégradé
- *      du moment (worst classe, puis worst TTI). Permet à l'opérateur PAA de
- *      voir immédiatement où la situation appelle attention.
+ *   2. **Point chaud** — encart mettant en valeur le tronçon
+ *      le plus dégradé du moment. Critère : « congestionné » selon la
+ *      couleur Google Maps (rouge ou orange long).
  *
- *   3. **Liste des tronçons surveillés** — triée du plus dégradé au plus fluide, chaque
- *      ligne cliquable déclenche un recentrage animé de la carte. Le tronçon
- *      sélectionné est marqué d'un bord coloré et d'un fond contrasté.
+ *   3. **Liste des tronçons surveillés** — triée du plus dégradé au plus fluide,
+ *      chaque ligne cliquable déclenche un recentrage animé de la carte.
+ *      Affiche pour chaque tronçon les pourcentages de rouge / orange / vert
+ *      (lecture directe des couleurs Google Maps).
  */
 
 import clsx from "clsx";
@@ -28,8 +31,7 @@ import { useI18n } from "@/lib/i18n";
 import type { CarteEtat, ClasseCongestion } from "@/lib/types";
 
 const ORDRE_GRAVITE: Record<ClasseCongestion, number> = {
-  congestionne: 3,
-  dense: 2,
+  congestionne: 2,
   fluide: 1,
   indetermine: 0,
 };
@@ -51,21 +53,28 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
     );
   }
 
-  // KPI counts
+  // KPI counts (3 classes DEESP)
   const compteurs: Record<ClasseCongestion, number> = {
-    fluide: 0, dense: 0, congestionne: 0, indetermine: 0,
+    fluide: 0,
+    congestionne: 0,
+    indetermine: 0,
   };
   for (const tr of etat.troncons) compteurs[tr.classe_congestion]++;
 
-  // Tri par gravité décroissante pour la liste + détection du point chaud
+  // Tri par gravité décroissante : congestionnés (worst rouge%) en tête
   const tronconsTries = etat.troncons.slice().sort((a, b) => {
     const ga = ORDRE_GRAVITE[a.classe_congestion];
     const gb = ORDRE_GRAVITE[b.classe_congestion];
     if (ga !== gb) return gb - ga;
-    return (b.tti ?? 0) - (a.tti ?? 0);
+    const ra = a.couleur_google?.pourcentage_rouge ?? 0;
+    const rb = b.couleur_google?.pourcentage_rouge ?? 0;
+    if (ra !== rb) return rb - ra;
+    const oa = a.couleur_google?.pourcentage_orange ?? 0;
+    const ob = b.couleur_google?.pourcentage_orange ?? 0;
+    return ob - oa;
   });
   const pointChaud = tronconsTries.find(
-    (tr) => tr.classe_congestion === "congestionne" || tr.classe_congestion === "dense",
+    (tr) => tr.classe_congestion === "congestionne",
   );
 
   return (
@@ -74,8 +83,8 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
       <div className="paa-card p-3">
         <p className="mb-2 text-fluid-xs font-medium app-text-muted">
           {locale === "fr"
-            ? `État des ${etat.nb_troncons} tronçons`
-            : `Status of the ${etat.nb_troncons} segments`}
+            ? `État des ${etat.nb_troncons} tronçons (couleurs Google Maps)`
+            : `Status of the ${etat.nb_troncons} segments (Google Maps colours)`}
         </p>
         <div className="grid grid-cols-3 gap-2">
           <KpiCompteur
@@ -84,14 +93,14 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
             couleur="#2ECC71"
           />
           <KpiCompteur
-            valeur={compteurs.dense}
-            libelle={libelleClasseCongestion("dense", locale)}
-            couleur="#F39C12"
-          />
-          <KpiCompteur
             valeur={compteurs.congestionne}
             libelle={libelleClasseCongestion("congestionne", locale)}
             couleur="#E74C3C"
+          />
+          <KpiCompteur
+            valeur={compteurs.indetermine}
+            libelle={libelleClasseCongestion("indetermine", locale)}
+            couleur="#95A5A6"
           />
         </div>
       </div>
@@ -121,10 +130,14 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
               {pointChaud.nom}
             </p>
             <p className="text-fluid-xs app-text-muted">
-              {libelleClasseCongestion(pointChaud.classe_congestion, locale)}
-              {pointChaud.tti !== null && ` · TTI ${pointChaud.tti.toFixed(2)}`}
+              {pointChaud.couleur_google?.pourcentage_rouge !== null &&
+                pointChaud.couleur_google?.pourcentage_rouge !== undefined &&
+                `🔴 ${pointChaud.couleur_google.pourcentage_rouge.toFixed(1)}% `}
+              {pointChaud.couleur_google?.pourcentage_orange !== null &&
+                pointChaud.couleur_google?.pourcentage_orange !== undefined &&
+                `· 🟠 ${pointChaud.couleur_google.pourcentage_orange.toFixed(1)}% `}
               {pointChaud.derniere_mesure?.duree_trafic_s &&
-                ` · ${formaterDuree(pointChaud.derniere_mesure.duree_trafic_s)}`}
+                `· ${formaterDuree(pointChaud.derniere_mesure.duree_trafic_s)}`}
             </p>
           </div>
         </button>
@@ -143,6 +156,12 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
             const couleur = couleurClasseCongestion(tr.classe_congestion);
             const dureeTrafic = formaterDuree(tr.derniere_mesure?.duree_trafic_s);
             const actif = selectionId === tr.id;
+            const pctR = tr.couleur_google?.pourcentage_rouge;
+            const pctO = tr.couleur_google?.pourcentage_orange;
+            const pctV = tr.couleur_google?.pourcentage_vert;
+            const horoMesure = tr.derniere_mesure?.horodatage_local
+              ?? tr.derniere_mesure?.horodatage_utc
+              ?? tr.derniere_mesure?.horodatage;
 
             return (
               <li key={tr.id}>
@@ -169,7 +188,7 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
                     </div>
                     <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-fluid-xs app-text-muted">
                       <span className="font-semibold" style={{ color: couleur }}>
-                        {libelleClasseCongestion(tr.classe_congestion, locale)}
+                        {tr.libelle_classe ?? libelleClasseCongestion(tr.classe_congestion, locale)}
                       </span>
                       <span>
                         {locale === "fr" ? "Temps actuel " : "Current "}
@@ -177,15 +196,38 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
                           {dureeTrafic}
                         </span>
                       </span>
-                      <span>
-                        {tr.tti !== null
-                          ? `ITP ${tr.tti.toFixed(2)}`
-                          : "ITP —"}
-                      </span>
                     </div>
+                    {/* Barre couleur Google Maps : rouge / orange / vert */}
+                    {(pctR !== null && pctR !== undefined) ||
+                    (pctO !== null && pctO !== undefined) ? (
+                      <>
+                        <div className="mt-1.5 flex h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                          <div
+                            style={{ width: `${pctR ?? 0}%`, backgroundColor: "#E74C3C" }}
+                          />
+                          <div
+                            style={{ width: `${pctO ?? 0}%`, backgroundColor: "#F39C12" }}
+                          />
+                          <div
+                            style={{ width: `${pctV ?? 0}%`, backgroundColor: "#2ECC71" }}
+                          />
+                        </div>
+                        <div className="mt-1 flex gap-2 text-fluid-xs app-text-muted">
+                          {pctR !== null && pctR !== undefined && (
+                            <span style={{ color: "#E74C3C" }}>🔴 {pctR.toFixed(1)}%</span>
+                          )}
+                          {pctO !== null && pctO !== undefined && (
+                            <span style={{ color: "#F39C12" }}>🟠 {pctO.toFixed(1)}%</span>
+                          )}
+                          {pctV !== null && pctV !== undefined && (
+                            <span style={{ color: "#2ECC71" }}>🟢 {pctV.toFixed(1)}%</span>
+                          )}
+                        </div>
+                      </>
+                    ) : null}
                     <div className="mt-1 text-fluid-xs app-text-muted truncate">
                       {libelleSource(tr.derniere_mesure?.source)} ·{" "}
-                      {formaterHeureAbidjan(tr.derniere_mesure?.horodatage)}
+                      {formaterHeureAbidjan(horoMesure)}
                     </div>
                   </div>
                 </button>

@@ -141,7 +141,7 @@ export function PageIndicateurs() {
       {/* Barre de pilotage : collecte + exports */}
       <BarrePilotage tronconId={tronconId} />
 
-      {/* KPIs (compteurs + TTI/PTI/BTI) */}
+      {/* KPIs (temps min/moyen/max + verdict couleur DEESP) */}
       <KpiCards snapshot={indicateurs?.snapshot ?? null} />
 
       {/* Graphiques principaux : courbe + heatmap côte à côte en desktop */}

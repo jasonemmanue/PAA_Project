@@ -41,7 +41,7 @@ export function TableauZonesCongestionnees({
                     </span>
                   )}
                   {e.regle_semaine && (
-                    <span className="inline-block rounded bg-statut-dense/20 px-2 py-0.5 text-xs text-statut-dense">
+                    <span className="inline-block rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
                       ≥ 4 / semaine
                     </span>
                   )}

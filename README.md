@@ -11,6 +11,7 @@
 ## Sommaire
 
 - [Carnet d'exécution du hackathon](#-carnet-dexécution-du-hackathon)
+- [Refonte critère congestion — couleurs Google Maps DEESP (2026-06-22)](#-refonte-critère-congestion--couleurs-google-maps-deesp-2026-06-22)
 0. [Audit de conformité aux 5 étapes du brief jury](#0--audit-de-conformité-aux-5-étapes-du-brief-jury)
    - [0bis. Polylines des tronçons : 2 niveaux de rendu](#0bis--polylines-des-tronçons--2-niveaux-de-rendu)
 1. [À quoi ça sert ?](#1--à-quoi-ça-sert-)
@@ -50,6 +51,106 @@ Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-21 :
 
 ---
 
+## 🎨 Refonte critère congestion — couleurs Google Maps DEESP (2026-06-22)
+
+> **TL;DR** — Avant cette date, on classait un tronçon « congestionné » via un
+> ratio approximatif `duree_trafic / T_ref ≥ 1.5`. Depuis le 2026-06-22, on
+> applique **à la lettre** le critère du rapport DEESP : on lit la couleur
+> Google Maps de chaque segment du tracé et on en déduit le verdict. La règle
+> n'est plus inventée, elle vient de Google directement.
+
+### Citation exacte du rapport (`rapport_oct2025.docx`, section METHODOLOGIE)
+
+> *« Avec l'application « GOOGLE MAPS », ont été considérés comme tronçons
+> embouteillés, les tronçons tracés en **ROUGE** et ceux tracés en **ORANGE
+> sur une longue distance (moitié du tronçon concerné)**. Il a été constaté,
+> après que les équipes aient parcouru les différents axes, que les tronçons
+> tracés en orange sur une courte distance ne sont pas liés à des
+> embouteillages mais à des arrêts dus aux feux tricolores ou à certaines
+> manœuvres. »*
+
+### Implémentation
+
+| Couche | Avant | Après |
+|---|---|---|
+| **Source Google** | `duration` + `staticDuration` | + `routes.travelAdvisory.speedReadingIntervals` (segments colorés NORMAL / SLOW / TRAFFIC_JAM) |
+| **Verdict mesure** | ratio `duree_trafic / T_ref ≥ 1.5` | rouge présent OU orange ≥ 50 % du tracé → congestionné |
+| **Classes** | fluide / dense / congestionne / indetermine | fluide / congestionne / **indetermine** (plus de "dense" car le rapport ne le distingue pas) |
+| **Indicateurs publiés** | TTI / PTI / BTI + min/moyen/max | **min / moyen / max** + **taux de congestion** + **% rouge moyen** + **% orange moyen** |
+| **Stockage** | `duree_trafic_s`, `duree_sans_trafic_s` | + 4 colonnes : `pourcentage_rouge`, `pourcentage_orange`, `pourcentage_vert`, `est_congestionne` (migration 0008) |
+
+### Cas indéterminé
+
+Si Google ne renvoie pas `speedReadingIntervals` pour un tronçon (zone sans
+données trafic), les 4 colonnes restent NULL, le tronçon s'affiche en **gris**
+sur la carte avec le libellé « Indéterminé » et **aucun verdict n'est
+inventé** (conformément à la règle d'or « ne jamais fabriquer de donnée »).
+
+### Ce qui est conservé : les temps
+
+`duree_trafic_s` reste alimenté à chaque cycle et alimente les Tableaux 3-15
+du rapport DEESP : **temps minimal / temps moyen / temps maximal** par axe ×
+sens × type-jour, par jour / semaine / mois (cf. § 4.5.4 de CLAUDE.md).
+`duree_sans_trafic_s` reste en base mais n'est plus exposé publiquement —
+il servait au TTI, qui n'est plus calculé.
+
+### Fichiers concernés
+
+**Backend** :
+- `backend/app/sources/google_routes.py` — étend le FieldMask + parse les couleurs
+- `backend/app/sources/polyline.py` — nouveau : décodeur polyline + distances cumulées
+- `backend/app/analyse/congestion.py` — **nouveau** : module central, fonction `classer_congestion(pct_rouge, pct_orange, pct_vert)`
+- `backend/app/analyse/indicateurs.py` — refonte : `IndicateursTroncon` n'a plus de TTI / PTI / BTI
+- `backend/app/analyse/rapport_paa.py` — Tableau 16 filtre sur `est_congestionne IS TRUE`
+- `backend/app/etat/carte.py` — `/carte/etat` renvoie 3 couleurs + motif humain
+- `backend/app/collecte/scheduler.py` — persiste les 4 nouvelles colonnes à chaque cycle
+- `backend/app/models/models.py` — `Mesure` reçoit 4 colonnes
+- `backend/alembic/versions/0008_couleurs_congestion.py` — **nouvelle migration**
+
+**Frontend** :
+- `frontend/lib/types.ts` — `ClasseCongestion = "fluide" | "congestionne" | "indetermine"`
+- `frontend/components/carte/{CarteLeaflet,PanneauTroncons,LegendeCarte}.tsx` — popups + KPI 3 classes + barre couleur 3 segments
+- `frontend/components/indicateurs/{KpiCards,CourbeJournee}.tsx` — KPI temps + couleur, plus de TTI
+- `frontend/messages/{fr,en}.json`, `frontend/components/ui/StatutBadge.tsx`, `frontend/tailwind.config.ts` — nettoyés
+- `frontend/components/{rapport,fiabilite}/*.tsx` — adaptations des classes Tailwind résiduelles
+
+### Procédure de bascule (déjà exécutée)
+
+```bash
+# 1. Local — commit + déploiement
+git add backend/ frontend/
+git commit -m "Refonte critere congestion : couleurs Google Maps DEESP"
+railway up --service backend
+
+# 2. Console Railway — migration + vidage des données legacy
+alembic upgrade head
+
+# Vide les mesures legacy (pourcentage_rouge IS NULL) pour qu'elles ne
+# polluent pas le taux de congestion sur les 7/30/90 prochains jours.
+python -c "
+from app.db.session import SessionLocal
+from app.models.models import Mesure
+from sqlalchemy import delete
+db = SessionLocal()
+n = db.execute(
+    delete(Mesure).where(Mesure.pourcentage_rouge.is_(None))
+).rowcount
+db.commit()
+print(f'{n} mesures legacy supprimees')
+"
+
+# 3. Vérification — un tronçon doit avoir les nouveaux champs renseignés
+curl -s 'https://backend-production-6cbf.up.railway.app/troncons/1/mesures?limite=1' | python -m json.tool
+
+# 4. Frontend — build + démarrage
+cd frontend
+npm run build && npm start
+```
+
+> 📚 Détails complets côté backend : [CLAUDE.md § 4.5.2bis](CLAUDE.md).
+
+---
+
 ## 0 · Audit de conformité aux 5 étapes du brief jury
 
 > Tableau croisé entre chaque livrable demandé et son implémentation actuelle.
@@ -78,7 +179,7 @@ Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-21 :
 | ↳ Affichage réel des zones | ✅ | Tuiles OSM live + polylines colorées par classe de congestion + heatmap |
 | ↳ Système de zoom avancé | ✅ | Zoom intelligent au chargement vers le point chaud + `flyToBounds` au clic sur un tronçon |
 | ↳ Marqueurs intelligents | ✅ | 4 markers POI (`C`/`T`/`S`/`P`) sur la page Carte + markers début/fin sur la page Fiabilité dédupés par libellé |
-| ↳ Tableau de bord analytique | ✅ | Page Indicateurs avec 4 compteurs + 3 cartes FHWA (ITP/IPT/IMT) + sélecteurs tronçon et période |
+| ↳ Tableau de bord analytique | ✅ | Page Indicateurs alignée DEESP : 4 compteurs (temps moyen / min / max / nb mesures) + 3 cartes couleur (taux de congestion / % rouge moyen / % orange moyen) + sélecteurs tronçon et période |
 | ↳ Graphiques dynamiques | ✅ | Recharts : courbe série temporelle, heatmap horaire 7×24, évolution pluriannuelle, écart Fiabilité |
 
 ### Étape 3 — Développement de l'interface interactive
@@ -90,7 +191,7 @@ Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-21 :
 | Choix dynamique des tronçons | ✅ | Dropdown sur la page Indicateurs + panneau latéral cliquable sur la page Carte |
 | Zoom sur les zones critiques | ✅ | Au chargement (worst classe) + au clic (`flyToBounds`) — cf. § P4.1 |
 | Affichage des temps de parcours | ✅ | 3 endroits : popup carte au clic, panneau latéral avec « Temps actuel », KPI page Indicateurs |
-| Statistiques de congestion | ✅ | Indicateurs FHWA (ITP / IPT / IMT), classification fluide/dense/congestionné, fréquence de dépassement |
+| Statistiques de congestion | ✅ | Indicateurs DEESP : temps min / moyen / max, taux de congestion couleur, % rouge moyen, % orange moyen. Classification fluide / congestionné lue depuis Google Maps. |
 | Tableaux de données exportables | ✅ | Boutons **Export CSV** et **Export Excel** dans la barre de pilotage de la page Indicateurs |
 | Observation visuelle de la circulation | ✅ | Couleur des polylines temps réel + heatmap géographique |
 
@@ -101,7 +202,7 @@ Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-21 :
 | Connexion APIs cartographiques | ✅ | OpenStreetMap (tuiles) + OSRM (auto-hébergé, routage) + Google Routes (trafic) |
 | Récupération **temps de parcours** | ✅ | Scheduler APScheduler toutes les 20 min, 7h–19h Africa/Abidjan |
 | Récupération **distances** | ✅ | Stockées en base via `seed_troncons` (officielles) + OSRM (réelles routière) |
-| Récupération **niveaux de congestion** | ✅ | TTI calculé à chaque cycle → classification fluide/dense/congestionné |
+| Récupération **niveaux de congestion** | ✅ | Couleur Google Maps (`speedReadingIntervals`) lue à chaque cycle → classification fluide / congestionné (critère DEESP officiel — cf. § Refonte ci-dessus). |
 | Récupération **itinéraires** | 🟡 | Polylines OSRM stockées dans `troncons.polyline` quand OSRM est accessible. Sur Railway (où OSRM n'est pas exposé), **fallback** via `python -m app.complete_sans_osrm` : segments droits encodés, pas de routage réel mais visualisation possible. **Procédure complète de déploiement OSRM permanent sur Oracle Cloud Free Tier** documentée dans [CLAUDE.md § 8.7](CLAUDE.md) (45-60 min de setup, 0 € récurrent). |
 | Récupération **données de circulation** | ✅ | **Collecte 24h/24 toutes les heures** (144 req/jour ≪ 250 quota Google), persistée et accessible via `/mesures`, `/troncons/{id}/mesures`, etc. Le filtre DEESP officiel (7h-19h) est appliqué côté analyse pour les Tableaux 3-15 et le Tableau 16. |
 | Zoom dynamique | ✅ | `flyToBounds` animé, niveau adaptatif `maxZoom 15` |
@@ -398,53 +499,65 @@ la distribution, et toute valeur trop éloignée est **marquée comme aberrante*
 
 ### Ce qui n'est **pas encore** fait à la fin de P2
 
-- ❌ Pas encore d'**indicateurs FHWA** (TTI, PTI, BTI) — *arrive en P3*
+- ❌ Pas encore d'**indicateurs de congestion** (couleur Google Maps + temps min/moyen/max) — *arrive en P3*
 - ❌ Pas encore de **carte** ni de **graphiques** visibles — *arrive en P4*
 
 ---
 
-## 5 · Ce qui est livré dans la phase P3
+## 5 · Ce qui est livré dans la phase P3 *(refondu 2026-06-22)*
 
 > **L'idée en une phrase :** les mesures brutes sont transformées en
-> **indicateurs internationaux de congestion** (norme FHWA), et l'API est
-> **restructurée** pour que le futur tableau de bord puisse l'utiliser
-> facilement, **avec une mise à jour en temps réel**.
+> **indicateurs DEESP officiels** (couleurs Google Maps + temps min/moyen/max),
+> et l'API est **restructurée** pour que le tableau de bord puisse les afficher
+> **en temps réel** sans transformation.
+>
+> 📌 **Note historique** : initialement, P3 livrait des indicateurs FHWA (TTI /
+> PTI / BTI) calculés à partir d'un ratio numérique. Depuis le **2026-06-22**,
+> cette logique est remplacée par la lecture directe des couleurs Google Maps,
+> conformément au rapport DEESP (cf. § « Refonte critère congestion » en haut
+> de ce README).
 
-### ✅ Trois indicateurs normalisés calculés pour chaque tronçon
+### ✅ Trois pourcentages couleur lus pour chaque tronçon
 
-Les services routiers du monde entier utilisent les mêmes 3 indicateurs (norme
-**FHWA** — *Federal Highway Administration*). Le projet les calcule
-automatiquement :
+À chaque cycle de collecte, Google Routes renvoie pour chaque segment du
+tracé un enum `Speed` (`NORMAL` / `SLOW` / `TRAFFIC_JAM`). On somme les
+distances par couleur et on en déduit 3 pourcentages :
 
-| Indicateur | Nom complet            | Formule                              | Ce qu'il dit                                                            |
-|------------|------------------------|--------------------------------------|-------------------------------------------------------------------------|
-| **TTI**    | Travel Time Index      | moyenne ÷ temps de référence         | « En moyenne, on met **X fois** le temps fluide. »                      |
-| **PTI**    | Planning Time Index    | P95 ÷ temps de référence             | « Pour être à l'heure 95 % du temps, il faut prévoir **X fois** le fluide. » |
-| **BTI**    | Buffer Time Index      | (P95 − moyenne) ÷ moyenne            | « En plus de la moyenne, prévoyez **+X %** de marge tampon. »           |
+| Champ | Couleur Google | Sens |
+|---|---|---|
+| `pourcentage_rouge`  | 🔴 TRAFFIC_JAM | Embouteillage sévère |
+| `pourcentage_orange` | 🟠 SLOW | Trafic ralenti |
+| `pourcentage_vert`   | 🟢 NORMAL | Circulation fluide |
 
-Le **temps de référence** suit une cascade automatique :
+### ✅ Classification immédiatement lisible — règle DEESP
 
-1. **Médiane Google `duree_sans_trafic_s`** observée sur la fenêtre courante
-   (ce que Google estime quand la route est complètement fluide).
-2. ~~TomTom~~ — *retiré du projet (cf. CLAUDE.md § 2.5).*
-3. **Repli déterministe** : distance officielle ÷ 50 km/h.
+Le rapport oct. 2025 n'utilise que **3 classes** (pas de "dense"
+intermédiaire) :
 
-### ✅ Une classification de congestion immédiatement lisible
+| Cas | Classe | Couleur sur la carte | Interprétation |
+|---|---|---|---|
+| `pourcentage_rouge > 0` | **congestionné** | 🔴 rouge (`#E74C3C`) | « Au moins une portion en bouchon sévère » |
+| `pourcentage_orange ≥ 50 %` | **congestionné** | 🔴 rouge | « Orange long → embouteillage selon le rapport » |
+| Sinon, vert + orange court | **fluide** | 🟢 vert (`#2ECC71`) | « Circulation OK ; orange court = feux/manœuvres » |
+| Aucune couleur retournée | **indéterminé** | ⚪ gris (`#95A5A6`) | « Google n'a pas qualifié le tracé. **Aucun verdict inventé.** » |
 
-À partir du TTI, chaque tronçon reçoit une **classe** (les seuils sont
-**configurables** dans `.env`, valeurs par défaut FHWA) :
+> **Exemple chiffré (Toyota CFAO → Palm Beach, hypothétique) :**
+> Google renvoie 12.5 % du tracé en rouge, 41 % en orange, 46.5 % en vert.
+> Règle DEESP → rouge > 0 → **classe = congestionné** 🔴. Le motif affiché
+> dans le popup Leaflet : *« Tronçon tracé en rouge sur 12.5 % de sa
+> longueur (critère DEESP : rouge → congestionné). »*
 
-| TTI               | Classe          | Couleur sur la carte | Interprétation                                    |
-|-------------------|-----------------|----------------------|---------------------------------------------------|
-| < 1,3             | **fluide**      | 🟢 vert (`#2ecc71`)  | « Trafic normal, pas de bouchon. »                |
-| 1,3 ≤ TTI ≤ 2,0   | **dense**       | 🟠 orange (`#f39c12`)| « Circulation ralentie, présence visible de trafic. » |
-| > 2,0             | **congestionné**| 🔴 rouge (`#e74c3c`) | « Bouchon sévère, double du temps normal ou plus. » |
-| (sans mesure)     | indéterminé     | ⚪ gris (`#95a5a6`)  | « Pas de donnée pour conclure. »                  |
+### ✅ Temps de référence — repli déterministe simple
 
-> **Exemple chiffré (Toyota CFAO → Palm Beach, mesure du 18/06/2026 à 19h19) :**
-> Temps réel observé = **1 642 s** (≈ 27 min). Temps de référence Google = 580 s
-> (≈ 9 min 40 s). **TTI = 1 642 / 580 = 2,83** → classe **congestionné** 🔴.
-> Le véhicule met **presque 3 fois** le temps qu'il mettrait à vide.
+Le rapport DEESP utilise le **temps théorique à 50 km/h** comme référence
+unique (Tableau 1 du rapport) :
+
+```
+T_ref_50kmh = distance_m / (50 km/h × 1000 / 3600)  # en secondes
+```
+
+Plus de cascade Google freeflow → TomTom → 50 km/h : seul le 50 km/h est
+utilisé pour les comparaisons, exactement comme dans le rapport.
 
 ### ✅ Détection automatique des heures de pointe
 
@@ -475,20 +588,33 @@ aura besoin pour afficher la carte avec le bon code couleur :
 
 ```json
 {
-  "horodatage_utc": "2026-06-18T19:35:00+00:00",
+  "horodatage_utc": "2026-06-22T15:35:00+00:00",
   "fuseau_affichage": "Africa/Abidjan",
-  "seuils": { "tti_dense": 1.3, "tti_congestionne": 2.0 },
-  "couleurs": { "fluide": "#2ecc71", "dense": "#f39c12",
-                "congestionne": "#e74c3c", "indetermine": "#95a5a6" },
+  "couleurs": {
+    "fluide":       "#2ECC71",
+    "congestionne": "#E74C3C",
+    "indetermine":  "#95A5A6"
+  },
+  "criteres": {
+    "source": "Couleurs Google Maps (speedReadingIntervals)",
+    "regle_congestion": "Congestionné si ROUGE OU ORANGE ≥ 50 % du tronçon.",
+    "seuil_orange_long_pct": 50.0
+  },
   "nb_troncons": 6,
   "troncons": [{
     "id": 3,
     "nom": "Toyota CFAO (Treichville) → Pharmacie Palm Beach",
     "polyline": "qnj_@rinW...",
-    "tti": 2.831,
     "classe_congestion": "congestionne",
-    "couleur_etat": "#e74c3c",
-    "derniere_mesure": { "duree_trafic_s": 1642, "source": "google", ... }
+    "libelle_classe": "Congestionné",
+    "couleur_etat": "#E74C3C",
+    "couleur_google": {
+      "pourcentage_rouge": 12.5,
+      "pourcentage_orange": 41.0,
+      "pourcentage_vert":  46.5
+    },
+    "motif_congestion": "Tronçon tracé en rouge sur 12.5 % de sa longueur (critère DEESP : rouge → congestionné).",
+    "derniere_mesure": { "duree_trafic_s": 1642, "source": "google", "...": "..." }
   }]
 }
 ```
@@ -657,10 +783,10 @@ Une **palette dérivée du bleu marine institutionnel** du Port Autonome d'Abidj
 | Surfaces secondaires | Bleus clairs | `#D9E2F3`, `#EFF4FA` | En-têtes de tableaux, lignes alternées |
 | Boutons / accents | Navy soutenu | `#1F4E79` | Boutons primaires, focus, sélection |
 | **Référence 50 km/h** | **Bleu ciel** | **`#4CC9F0`** | **Réservé EXCLUSIVEMENT à la ligne de référence sur les graphes** (norme du cahier des charges) |
-| Fluide | Vert | `#2ECC71` | Tronçon sans bouchon |
-| Dense | Orange | `#F39C12` | Trafic ralenti |
-| Congestionné | Rouge | `#E74C3C` | Bouchon sévère |
-| Indéterminé | Gris | `#95A5A6` | Pas de mesure |
+| Fluide | Vert | `#2ECC71` | Tronçon sans bouchon (vert ou orange court Google Maps) |
+| Congestionné | Rouge | `#E74C3C` | Bouchon sévère (rouge OU orange long Google Maps) |
+| Indéterminé | Gris | `#95A5A6` | Google n'a pas qualifié le tracé |
+| ~~Dense~~ | ~~Orange `#F39C12`~~ | *Alias couleur conservé pour warnings hors-congestion (jauges de calibration P5, avertissements de prédicteur).* La **classe de congestion "dense" a été retirée** le 2026-06-22 — le rapport DEESP n'en distingue pas. |
 
 Définie dans [`frontend/tailwind.config.ts`](frontend/tailwind.config.ts), réutilisée
 **partout** : tronçons sur la carte, badges, courbes Recharts, heatmaps.
@@ -779,12 +905,12 @@ embarque **Leaflet** + **OpenStreetMap** centré sur la zone portuaire d'Abidjan
 | **6 tronçons polylines** colorés selon la classe de congestion (vert/orange/rouge) | Décodage du format Google Polyline (OSRM) côté client, repli sur segment droit origine → destination si polyline absente |
 | **WebSocket `/ws/etat`** | Connexion automatique avec reconnexion exponentielle (1 s → 30 s) ; chaque mise à jour rafraîchit les couleurs des polylines sans recréer la carte |
 | **Heatmap géographique** des congestions | Plugin `leaflet.heat` ; gradient orange → rouge ; échantillonnage des points le long des polylines pondéré par le niveau de congestion |
-| **Popup détaillé** au clic | Tronçon, classe, temps actuel, temps fluide, TTI, heure de mesure, source (Google / interne / référence), lien vers la fiche détaillée |
-| **Zoom intelligent au chargement** | Sur le premier rendu, la carte se centre automatiquement sur le **tronçon le plus dégradé** (worst classe FHWA puis worst TTI). Si tous sont fluides, repli sur un cadrage global des 6 tronçons. |
+| **Popup détaillé** au clic | Tronçon, classe, temps actuel, **% rouge / orange / vert** (couleur Google Maps), heure de mesure, source, **motif DEESP humain** (« Tronçon tracé en rouge sur 12.5 % de sa longueur »), lien vers la fiche détaillée |
+| **Zoom intelligent au chargement** | Sur le premier rendu, la carte se centre sur le **tronçon le plus dégradé** (worst classe DEESP puis worst % rouge). Si tous sont fluides, repli sur un cadrage global des 6 tronçons. |
 | **Zoom intelligent au clic** sur la liste | `map.flyToBounds()` animé avec `fitBounds` autour du tronçon sélectionné |
 | **Marqueurs POI** (`C`, `T`, `S`, `P`) | 4 pastilles colorées et étiquetées aux extrémités stratégiques : **C**ARENA (bleu), **T**oyota CFAO (rouge), **S**ODECI (vert), **P**alm Beach (navy). Tooltip au survol avec le libellé court. |
-| **Panneau latéral enrichi** | Bandeau KPI (compteurs *fluide / dense / congestionné*) + carte « **Point chaud actuel** » avec liseré coloré, libellé du tronçon le plus dégradé, sa classe + son TTI + sa durée. La liste sous le bandeau est triée du plus dégradé au plus fluide. |
-| **Panneau liste** (droite desktop, sous la carte mobile) | Les 6 tronçons avec couleur, nom, temps actuel, TTI, source et horodatage |
+| **Panneau latéral enrichi** | Bandeau KPI (3 compteurs DEESP : *fluide / congestionné / indéterminé*) + carte « **Point chaud actuel** » avec liseré coloré, pourcentages rouge et orange, durée actuelle. La liste sous le bandeau est triée du plus dégradé au plus fluide. |
+| **Panneau liste** (droite desktop, sous la carte mobile) | Les 6 tronçons avec couleur, nom, **barre couleur 3 segments rouge/orange/vert** (proportion Google Maps), temps actuel, source et horodatage |
 | **Légende** | Codes couleur + ligne référence 50 km/h en bleu ciel |
 | **Indicateur WebSocket** | Petit badge en haut à droite de la carte (`● temps réel` / `○ connexion…`) |
 
@@ -801,8 +927,8 @@ combine plusieurs visualisations :
 | **Sélecteurs** | Dropdown tronçon + boutons radio 24h / 7j / 30j / 90j | `getTroncons()` |
 | **Barre de pilotage** | Badge « Mode planifié » avec **pastille à 3 états** (vert qui pulse en plage active / **bleu calme en veille la nuit** / gris arrêté) + libellé fidèle (« Collecte active / en veille / arrêtée ») + lignes **Plage active : 7h–19h (Africa/Abidjan)** et **Prochain cycle : aujourd'hui 18:40** ou **demain 07:00** + boutons **Démarrer / Arrêter la collecte** + boutons **Export CSV** et **Export Excel** | `collecteStatus`, `collecteStart`, `collecteStop`, `urlExportMesures` |
 | **4 compteurs** | Temps moyen, minimum, maximum, nombre de mesures sur la période | `getIndicateursTroncon` |
-| **3 cartes FHWA en français** | **ITP** (Indice de Temps de Parcours), **IPT** (Indice de Planification du Temps), **IMT** (Indice de Marge Tampon) — mappés sur les acronymes internationaux TTI/PTI/BTI dans le code et l'API | idem |
-| **Courbe Recharts** | 3 séries superposées : **temps avec trafic** (rouge), **P95** (vert tirets), **ligne référence 50 km/h en bleu ciel** | `getSerieTemporelle` |
+| **3 cartes verdict couleur DEESP** | **Taux de congestion** (part de mesures congestionnées sur la période) + **% rouge moyen** (TRAFFIC_JAM) + **% orange moyen** (SLOW). Remplace les anciennes cartes FHWA TTI/PTI/BTI depuis le 2026-06-22. | idem |
+| **Courbe Recharts** | 2 séries superposées : **temps moyen** (rouge plein), **temps maximal** (orange tirets), + **ligne référence 50 km/h en bleu ciel** | `getSerieTemporelle` |
 | **Heatmap horaire jour × heure** | Grille 7 × 24 colorée du vert (fluide) au rouge (congestionné) selon le ratio temps observé / temps fluide ; survol → valeur précise | 7 appels parallèles à `getProfilHoraire(jour, fenetre=90j)` |
 | **Évolution pluriannuelle** | Diagramme à barres comparant les temps min / moyen / max entre les campagnes officielles (`oct_2025` vs `fev_2026`) avec toggle **Jours ouvrables / Week-ends** | `getEvolution()` (table `evolution_indicateur` issue de P6.1) |
 
@@ -819,7 +945,7 @@ combine plusieurs visualisations :
 > plusieurs jours d'historique** (collecte démarrée le 19/06/2026), les quatre
 > sélecteurs renvoient donc **le même contenu** : uniquement les mesures de la
 > journée en cours. Les 2 016 mesures historiques de février 2025 (importées en
-> P6.1) ne sont **pas** mélangées au TTI temps réel — règle d'or du
+> P6.1) ne sont **pas** mélangées aux indicateurs temps réel — règle d'or du
 > [CLAUDE.md § 2.5](CLAUDE.md) — mais elles alimentent en revanche la **heatmap
 > horaire** et le **graphique d'évolution pluriannuelle** ci-dessus,
 > indépendamment du sélecteur. Les écarts entre 7 j / 30 j / 90 j deviendront
@@ -1089,13 +1215,16 @@ public** :
 
 | Page | Pour qui | Indicateurs publiés | Fréquence de consultation |
 |------|----------|--------------------|---------------------------|
-| **`/indicateurs`** (norme FHWA) | **Opérateur du dispatch** qui suit la fluidité temps réel | ITP / IPT / IMT (TTI / PTI / BTI internationalisés) | Plusieurs fois par jour |
-| **`/rapport`** (norme DEESP/DEEF) | **DEESP/DEEF + direction PAA** qui rédigent les rapports semestriels | Temps min / moyen / max en minutes par axe × sens × type-jour | À chaque clôture mensuelle |
+| **`/indicateurs`** | **Opérateur du dispatch** qui suit la fluidité temps réel | Temps min / moyen / max sur la fenêtre choisie + verdict couleur DEESP (taux de congestion, % rouge moyen, % orange moyen) | Plusieurs fois par jour |
+| **`/rapport`** (norme DEESP/DEEF officielle) | **DEESP/DEEF + direction PAA** qui rédigent les rapports semestriels | Temps min / moyen / max en minutes par axe × sens × type-jour, Tableau 16 des zones congestionnées | À chaque clôture mensuelle |
 
-→ La page Indicateurs sert au **monitoring continu** (statut instantané, TTI
-courant, classification fluide/dense/congestionné). La page Rapport sert à la
-**production réglementaire** (les chiffres qui finissent dans les comptes
-rendus officiels remontés à la Direction Générale et au Ministère).
+→ La page Indicateurs sert au **monitoring continu** (statut instantané basé
+sur la couleur Google Maps actuelle, classification fluide / congestionné /
+indéterminé). La page Rapport sert à la **production réglementaire** (les
+chiffres qui finissent dans les comptes rendus officiels remontés à la
+Direction Générale et au Ministère). **Les deux utilisent désormais la
+même règle de congestion** (couleur Google Maps), depuis la refonte du
+2026-06-22.
 
 ### Le principe de fonctionnement en 3 étages
 
@@ -1111,7 +1240,8 @@ rendus officiels remontés à la Direction Générale et au Ministère).
 │    Ne garde que les mesures entre 7h et 19h            │
 │    (conformité au rapport officiel)                    │
 │    Distingue jour_ouvrable (lun-ven) vs week_end       │
-│    Critère congestion : ratio > 1.5 × T_ref_50kmh      │
+│    Critère congestion : est_congestionne = TRUE        │
+│    (lu depuis la couleur Google Maps — § 4.5.2bis)     │
 └──────────────────────────┬──────────────────────────────┘
                            ▼
 ┌─────────────────────────────────────────────────────────┐
@@ -1421,26 +1551,29 @@ nb_lignes_profils     : 18   ← 6 buckets × 3 fenêtres (30/60/90 j)
 fenetres_jours        : {90, 60, 30}
 ```
 
-### Test 9 — Les indicateurs FHWA sont calculés (phase P3)
+### Test 9 — Les indicateurs DEESP sont calculés (phase P3, refondue 2026-06-22)
 
 ```powershell
 $r = irm "http://localhost:8081/troncons/3/indicateurs?periode=7j"
 $r.snapshot
 ```
 
-✅ Attendu : un objet contenant `tti`, `pti`, `bti`, `classe_congestion`
-(`fluide` / `dense` / `congestionne`), `temps_reference_s`, et la
-`source_temps_reference` (`google_freeflow_median` ou `vitesse_ref_50kmh`).
+✅ Attendu : un objet contenant `min_s`, `moyenne_s`, `max_s`,
+`taux_congestion`, `classe_congestion` (`fluide` / `congestionne` /
+`indetermine`), `pourcentage_rouge_moyen`, `pourcentage_orange_moyen`,
+`pourcentage_vert_moyen`, `temps_reference_50kmh_s`. **Plus de
+`tti` / `pti` / `bti`** (cf. section « Refonte critère congestion »).
 
-### Test 10 — L'état temps réel de la carte est prêt (phase P3)
+### Test 10 — L'état temps réel de la carte est prêt (phase P3, refondue)
 
 ```powershell
 irm http://localhost:8081/carte/etat | ConvertTo-Json -Depth 4
 ```
 
 ✅ Attendu : un objet `troncons` contenant **6 entrées** avec, pour chacune :
-géométrie (`polyline`, extrémités), `derniere_mesure`, `tti`,
-`classe_congestion` et `couleur_etat` (code hexadécimal prêt pour Leaflet).
+géométrie (`polyline`, extrémités), `derniere_mesure`, `classe_congestion`,
+`couleur_etat`, **`couleur_google.{pourcentage_rouge,orange,vert}`** et
+`motif_congestion` (phrase humaine prête à afficher dans un popup Leaflet).
 
 ### Test 11 — Les exports Excel s'ouvrent correctement (phase P2)
 
@@ -1484,10 +1617,10 @@ paa-traverse/
 │   ├── Dockerfile         ← recette pour fabriquer l'image Docker du backend
 │   ├── requirements.txt   ← liste des bibliothèques Python utilisées
 │   ├── alembic/           ← scripts de création/évolution de la base de données
-│   │   └── versions/      ← migrations 0001 (initial), 0002 (P2 : aberrante + fenetre)
+│   │   └── versions/      ← migrations 0001 → 0008 (la 0008 ajoute les pourcentages couleur DEESP)
 │   └── app/
 │       ├── main.py        ← point d'entrée de l'API (lifespan + 9 routeurs)
-│       ├── core/config.py ← chargement des variables d'environnement + seuils P3
+│       ├── core/config.py ← chargement des variables d'environnement (seuils TTI marqués legacy depuis 2026-06-22)
 │       ├── db/session.py  ← connexion à PostgreSQL
 │       ├── models/        ← description des 4 tables (en Python)
 │       ├── sources/       ← appels vers Google Routes et OSRM
@@ -1495,8 +1628,10 @@ paa-traverse/
 │       │   └── scheduler.py        ← jobs collecte (20 min) + agrégation (23h)
 │       ├── agregation/    ← (P2) recalcul nocturne des profils horaires
 │       │   └── profils.py          ← IQR + fenêtres glissantes 30/60/90 j
-│       ├── analyse/       ← (P3) indicateurs FHWA
-│       │   └── indicateurs.py      ← TTI, PTI, BTI, P95, heures de pointe
+│       ├── analyse/       ← (P3) indicateurs DEESP — refondus 2026-06-22
+│       │   ├── congestion.py        ← NOUVEAU : règles couleur DEESP (rouge OU orange ≥ 50 %)
+│       │   ├── indicateurs.py       ← min/moyen/max + taux congestion + % rouge / orange moyens
+│       │   └── rapport_paa.py       ← Tableaux 1-19 du rapport DEESP officiel
 │       ├── etat/          ← (P3) construction d'états métier réutilisables
 │       │   └── carte.py            ← état temps réel (HTTP + WebSocket)
 │       ├── realtime/      ← (P3) diffusion temps réel
@@ -1544,9 +1679,10 @@ paa-traverse/
 | **IQR**              | *Interquartile Range* — méthode statistique pour détecter les valeurs très éloignées du reste (P2).            |
 | **Fenêtre glissante**| Période qui « avance » avec le temps : « les 30 derniers jours » se redéfinit chaque jour (P2).               |
 | **Profil horaire**   | Statistiques agrégées par (tronçon, jour de la semaine, heure) — sert à dire « le mardi à 8h c'est X » (P2).  |
-| **FHWA**             | *Federal Highway Administration* (USA) — agence dont les 3 indicateurs (TTI, PTI, BTI) sont la norme mondiale. |
-| **TTI / PTI / BTI**  | Travel Time Index / Planning Time Index / Buffer Time Index — voir le tableau en section 5 (P3).               |
-| **Temps de référence** | Temps « idéal » à comparer au temps réel : Google sans trafic (priorité) ou 50 km/h théorique (repli) (P3). |
+| **FHWA**             | *Federal Highway Administration* (USA). Norme TTI / PTI / BTI **retirée du projet le 2026-06-22** au profit du critère couleur DEESP officiel. |
+| **TTI / PTI / BTI**  | *Legacy* — Travel Time Index / Planning Time Index / Buffer Time Index. **Plus calculés** depuis le 2026-06-22 (cf. section « Refonte critère congestion »). |
+| **`speedReadingIntervals`** | Champ Google Routes (`travelAdvisory.speedReadingIntervals`) qui donne pour chaque portion de la polyline un enum `Speed` (NORMAL/SLOW/TRAFFIC_JAM) = vert/orange/rouge sur Maps. C'est **la source officielle** des couleurs DEESP. |
+| **Temps de référence** | Temps théorique à 50 km/h calculé depuis la distance officielle du tronçon (Tableau 1 du rapport DEESP). |
 | **WebSocket**        | Connexion permanente entre serveur et navigateur, par où le serveur peut **pousser** des messages (P3).        |
 | **Polling**          | Inverse du WebSocket : le client demande régulièrement « du nouveau ? ». Plus lourd et plus lent.              |
 | **Swagger / OpenAPI**| Page web auto-générée qui documente l'API et permet de tester chaque route depuis le navigateur (`/docs`).     |

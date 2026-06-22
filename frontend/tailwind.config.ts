@@ -57,10 +57,15 @@ const config: Config = {
           sky: "#4CC9F0",
         },
         statut: {
-          fluide: "#2ECC71",        // vert  — TTI < 1,3
-          dense: "#F39C12",         // orange — 1,3 ≤ TTI ≤ 2,0
-          congestionne: "#E74C3C",  // rouge  — TTI > 2,0
-          indetermine: "#95A5A6",   // gris   — pas de mesure
+          // Palette DEESP — rapport oct. 2025 § METHODOLOGIE (cf. CLAUDE.md § 4.5.2).
+          // Plus de classe "dense" : la qualification ne distingue que
+          // fluide / congestionné selon la couleur Google Maps. `dense` est
+          // conservé comme alias couleur pour les usages non-congestion
+          // (warnings, jauges de calibration).
+          fluide: "#2ECC71",        // vert — vert + orange court
+          dense: "#F39C12",         // orange — usage warnings uniquement
+          congestionne: "#E74C3C",  // rouge — ROUGE ou ORANGE long
+          indetermine: "#95A5A6",   // gris — pas de couleur Google Maps
         },
       },
       fontFamily: {

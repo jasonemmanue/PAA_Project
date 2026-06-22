@@ -13,9 +13,16 @@ export type SourceMesure =
   | "interne"
   | "historique_paa_2025";
 
+/**
+ * Classification couleur DEESP (rapport oct. 2025 § METHODOLOGIE) :
+ *   - "fluide"        → vert / orange court : circulation OK
+ *   - "congestionne"  → rouge présent OU orange long (≥ 50 % du tronçon)
+ *   - "indetermine"   → Google n'a pas qualifié le tracé pour ce cycle
+ *
+ * Plus de classe "dense" intermédiaire — le rapport ne la distingue pas.
+ */
 export type ClasseCongestion =
   | "fluide"
-  | "dense"
   | "congestionne"
   | "indetermine";
 
@@ -33,30 +40,45 @@ export interface Troncon {
   actif: boolean;
 }
 
+/**
+ * Mesure publique exposée par l'API.
+ *
+ * `duree_sans_trafic_s` n'est plus exposé (cf. refonte DEESP : la
+ * qualification fluide/congestionné ne dépend plus du ratio
+ * trafic/freeflow mais des couleurs Google Maps).
+ *
+ * Les champs `pourcentage_*` et `est_congestionne` portent le verdict
+ * couleur tel que stocké côté backend.
+ */
 export interface Mesure {
   id: number;
   troncon_id: number;
-  horodatage: string;
+  horodatage?: string;
+  horodatage_local?: string;
+  horodatage_utc?: string;
   duree_trafic_s: number | null;
-  duree_sans_trafic_s: number;
   source: SourceMesure;
   vitesse_moyenne_kmh: number | null;
   aberrante?: boolean;
+  pourcentage_rouge: number | null;
+  pourcentage_orange: number | null;
+  pourcentage_vert: number | null;
+  est_congestionne: boolean | null;
 }
 
-export interface IndicateursTroncon {
-  tti: number | null;
-  pti: number | null;
-  bti: number | null;
-  classe_congestion: ClasseCongestion;
-  temps_reference_s: number;
-  source_temps_reference: string;
-  nb_mesures: number;
+/** Pourcentages couleur Google Maps embarqués dans la dernière mesure d'un
+ *  tronçon, prêts pour l'affichage (popups, panneau latéral). */
+export interface CouleurGoogle {
+  pourcentage_rouge: number | null;
+  pourcentage_orange: number | null;
+  pourcentage_vert: number | null;
 }
 
 export interface EtatTronconCarte {
   id: number;
   nom: string;
+  distance_m?: number;
+  distance_km?: number;
   polyline: string | null;
   /**
    * Géométrie nichée — c'est sous cette clé que le backend
@@ -76,18 +98,22 @@ export interface EtatTronconCarte {
   lon_destination?: number | null;
   couleur_etat: string;
   classe_congestion: ClasseCongestion;
-  tti: number | null;
+  libelle_classe?: string;
+  motif_congestion?: string;
+  couleur_google?: CouleurGoogle;
+  statut?: string;
   derniere_mesure: Mesure | null;
 }
 
 export interface CarteEtat {
   horodatage_utc: string;
   fuseau_affichage: string;
-  seuils: {
-    tti_dense: number;
-    tti_congestionne: number;
-  };
   couleurs: Record<ClasseCongestion, string>;
+  criteres?: {
+    source: string;
+    regle_congestion: string;
+    seuil_orange_long_pct: number;
+  };
   nb_troncons: number;
   troncons: EtatTronconCarte[];
 }
@@ -148,13 +174,14 @@ export interface ProfilHoraire {
 }
 
 // ---------------------------------------------------------------------------
-// Série temporelle (courbe d'évolution journalière)
+// Série temporelle (courbe d'évolution journalière) — refonte DEESP
 // ---------------------------------------------------------------------------
 export interface PointSerie {
   instant_local: string;
+  min_s: number | null;
   moyenne_s: number | null;
-  p95_s: number | null;
-  tti: number | null;
+  max_s: number | null;
+  taux_congestion: number | null;
   classe_congestion: ClasseCongestion;
   nb_mesures: number;
 }
@@ -163,28 +190,28 @@ export interface SerieTemporelle {
   troncon_id: number;
   troncon_nom: string;
   granularite: "hour" | "day";
-  temps_reference_s: number;
+  temps_reference_50kmh_s: number;
   nb_points: number;
   points: PointSerie[];
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot d'indicateurs + détail par jour (pour les KPI cards)
+// Snapshot d'indicateurs DEESP + détail par jour (KPI cards)
 // ---------------------------------------------------------------------------
 export interface SnapshotIndicateurs {
   nb_mesures: number;
-  moyenne_s: number | null;
-  mediane_s: number | null;
+  nb_mesures_congestionnees: number;
+  nb_mesures_fluides: number;
+  nb_mesures_couleur_indeterminee: number;
   min_s: number | null;
+  moyenne_s: number | null;
   max_s: number | null;
-  p95_s: number | null;
-  tti: number | null;
-  pti: number | null;
-  bti: number | null;
+  taux_congestion: number | null;
   classe_congestion: ClasseCongestion;
-  temps_reference_s: number;
-  source_temps_reference: string;
-  frequence_depassement: number | null;
+  pourcentage_rouge_moyen: number | null;
+  pourcentage_orange_moyen: number | null;
+  pourcentage_vert_moyen: number | null;
+  temps_reference_50kmh_s: number;
 }
 
 export interface IndicateursPeriode {
@@ -194,9 +221,11 @@ export interface IndicateursPeriode {
   snapshot: SnapshotIndicateurs;
   evolution_par_jour: Array<{
     date_locale: string;
+    min_s: number | null;
     moyenne_s: number | null;
-    p95_s: number | null;
-    tti: number | null;
+    max_s: number | null;
+    taux_congestion: number | null;
+    classe_congestion: ClasseCongestion;
     nb_mesures: number;
   }>;
 }

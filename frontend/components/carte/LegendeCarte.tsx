@@ -10,12 +10,15 @@
 
 import { useI18n } from "@/lib/i18n";
 
+// Légende DEESP : 2 classes seulement + indéterminé. Le rapport « Évaluation
+// du temps de traversée octobre 2025 » ne distingue pas de classe "dense"
+// intermédiaire — congestionné = rouge OU orange long ; tout le reste est
+// fluide.
 const CLASSES: Array<{
   cle: string;
   couleur: string;
 }> = [
   { cle: "carte.legendFluide", couleur: "#2ECC71" },
-  { cle: "carte.legendDense", couleur: "#F39C12" },
   { cle: "carte.legendCongestionne", couleur: "#E74C3C" },
   { cle: "carte.legendIndetermine", couleur: "#95A5A6" },
 ];
