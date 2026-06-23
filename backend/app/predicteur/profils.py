@@ -43,9 +43,15 @@ from app.models.models import (
 
 
 SourcePrediction = Literal[
-    "google_routes", "predicteur_profils_60j", "vitesse_ref_50kmh"
+    "google_routes", "mesures_jour_type_7j", "vitesse_ref_50kmh"
 ]
 TypeJour = Literal["jour_ouvrable", "week_end"]
+
+
+# Fenêtre du niveau 2 (mesures Google récentes par type de jour).
+# 7 jours glissants = 5 occurrences de jours ouvrables + 2 week-ends en moyenne,
+# ce qui suffit pour stabiliser min/moyen/max sans trainer d'historique stale.
+FENETRE_JOUR_TYPE_JOURS = 7
 
 
 @dataclass(frozen=True)
@@ -246,46 +252,93 @@ def _prediction_google(
     )
 
 
-def _prediction_profils(
+def _prediction_jour_type(
     db: Session,
     troncon: Troncon,
     instant_utc: datetime,
-    fenetre_jours: int = 60,
+    fenetre_jours: int = FENETRE_JOUR_TYPE_JOURS,
 ) -> Prediction | None:
-    """Prédiction par profils horaires agrégés + calibration terrain (si réelle)."""
+    """Niveau 2 — mesures Google récentes du même type de jour.
+
+    Approche **temps réel** : on n'utilise plus les profils horaires
+    historiques (60 j × créneau heure × jour-semaine). On agrège
+    directement les mesures Google des `fenetre_jours` derniers jours
+    en filtrant uniquement par `type_jour` (jour_ouvrable / week_end).
+    Pas de filtre par heure : le bloc « Temps actuel » donne la fourchette
+    min/moyen/max observée sur le type de jour courant, peu importe le
+    créneau horaire.
+
+    Retourne None s'il n'y a aucune mesure exploitable.
+    Calibration terrain (GPX réels) appliquée si disponible — cf.
+    `calculer_calibration()`.
+    """
     fuseau = ZoneInfo(get_settings().tz)
     instant_local = instant_utc.astimezone(fuseau)
-    stats = _stats_profils(
-        db, troncon.id, instant_local.weekday(), instant_local.hour,
-        fenetre_jours=fenetre_jours,
+    type_jour_cible = _type_jour(instant_local.date())
+
+    # Fenêtre récente — utilise les mesures temps réel des derniers jours
+    fin_utc = instant_utc
+    debut_utc = fin_utc - timedelta(days=fenetre_jours)
+
+    rows = list(
+        db.execute(
+            select(Mesure.duree_trafic_s, Mesure.horodatage).where(
+                Mesure.troncon_id == troncon.id,
+                Mesure.source == SourceMesure.google,
+                Mesure.duree_trafic_s.is_not(None),
+                Mesure.aberrante.is_(False),
+                Mesure.horodatage >= debut_utc,
+                Mesure.horodatage <= fin_utc,
+            )
+        ).all()
     )
-    if stats is None:
+
+    # Filtrage par type de jour de chaque mesure (en heure locale)
+    durees_s: list[float] = []
+    for duree_s, horodatage in rows:
+        if duree_s is None:
+            continue
+        h_local = (
+            horodatage.astimezone(fuseau)
+            if horodatage.tzinfo
+            else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+        )
+        if _type_jour(h_local.date()) == type_jour_cible:
+            durees_s.append(float(duree_s))
+
+    if not durees_s:
         return None
 
-    # Calibration ciblée sur le type de jour de l'instant prédit (alignement DEESP)
-    type_jour_cible = _type_jour(instant_local.date())
     calibration, avertissement = calculer_calibration(
         db, troncon.id, type_jour_cible=type_jour_cible,
     )
-    facteur = 1.0 + calibration  # ε = (T_terrain - T_api) / T_api → terrain = api × (1+ε)
+    facteur = 1.0 + calibration  # ε = (T_terrain − T_api) / T_api → terrain = api × (1+ε)
 
     def to_mn(secondes: float) -> int:
         return int(round((secondes * facteur) / 60))
+
+    min_s = min(durees_s)
+    max_s = max(durees_s)
+    moyenne_s = statistics.fmean(durees_s)
+    mediane_s = statistics.median(durees_s)
+    p95_s = (
+        statistics.quantiles(durees_s, n=20)[18]
+        if len(durees_s) >= 20 else max_s
+    )
 
     return Prediction(
         troncon_id=troncon.id,
         troncon_nom=troncon.nom,
         instant_local=instant_local.isoformat(),
-        type_jour=_type_jour(instant_local.date()),
-        min_mn=to_mn(stats["min_s"]),
-        mediane_mn=to_mn(stats["mediane_s"]),
-        moyen_mn=to_mn(stats["moyenne_s"]),
-        max_mn=to_mn(stats["max_s"]),
-        p95_mn=to_mn(stats["p95_s"]),
-        # Pas de quartiles dans profils_horaires → approximation min-mediane
-        fourchette_p25_p75_mn=(to_mn(stats["min_s"]), to_mn(stats["p95_s"])),
-        source="predicteur_profils_60j",
-        confiance=_confiance_depuis_nb(int(stats["nb_mesures"])),
+        type_jour=type_jour_cible,
+        min_mn=to_mn(min_s),
+        mediane_mn=to_mn(mediane_s),
+        moyen_mn=to_mn(moyenne_s),
+        max_mn=to_mn(max_s),
+        p95_mn=to_mn(p95_s),
+        fourchette_p25_p75_mn=(to_mn(min_s), to_mn(p95_s)),
+        source="mesures_jour_type_7j",
+        confiance=_confiance_depuis_nb(len(durees_s)),
         calibration_appliquee=round(calibration, 4),
         avertissement=avertissement,
     )
@@ -309,11 +362,11 @@ def _prediction_50kmh(troncon: Troncon, instant_utc: datetime) -> Prediction:
         p95_mn=t_ref_mn,
         fourchette_p25_p75_mn=(t_ref_mn, t_ref_mn),
         source="vitesse_ref_50kmh",
-        confiance=0.3,  # déterministe mais peu d'info — confiance modérée
+        confiance=0.3,
         calibration_appliquee=0.0,
         avertissement=(
-            "Aucun profil historique pour ce créneau — repli sur le temps "
-            "de référence 50 km/h."
+            "Aucune mesure Google pour ce type de jour sur les 7 derniers "
+            "jours — repli sur le temps de référence 50 km/h."
         ),
     )
 
@@ -349,8 +402,8 @@ def predire(
         if pred is not None:
             return pred
 
-    # Niveau 2 — Prédicteur par profils horaires
-    pred = _prediction_profils(db, troncon, instant_utc)
+    # Niveau 2 — Mesures Google récentes du même type de jour (7 j glissants)
+    pred = _prediction_jour_type(db, troncon, instant_utc)
     if pred is not None:
         return pred
 
@@ -417,65 +470,4 @@ def _stats_mesures_periode(
         "jour_ouvrable": _calc(par_type["jour_ouvrable"]),
         "week_end": _calc(par_type["week_end"]),
         "nb_mesures_total": len(rows),
-    }
-
-
-def evaluer_qualite(db: Session, nb_jours: int = 7) -> dict:
-    """Renvoie la MAE du prédicteur en minutes sur la fenêtre récente.
-
-    Méthode : pour chaque mesure Google des 7 derniers jours, on retire
-    cette mesure et on demande au prédicteur de profils sa valeur. On
-    compare. Cela évalue l'écart « prédicteur seul » vs « observation réelle ».
-    """
-    fuseau = ZoneInfo(get_settings().tz)
-    fin_utc = datetime.now(tz=timezone.utc)
-    debut_utc = fin_utc - timedelta(days=nb_jours)
-
-    mesures = list(
-        db.execute(
-            select(Mesure).where(
-                Mesure.source == SourceMesure.google,
-                Mesure.duree_trafic_s.is_not(None),
-                Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_utc,
-                Mesure.horodatage <= fin_utc,
-            )
-        ).scalars()
-    )
-
-    erreurs_par_tj: dict[str, list[float]] = {"jour_ouvrable": [], "week_end": []}
-    troncons = {
-        t.id: t for t in db.execute(
-            select(Troncon).where(Troncon.actif.is_(True))
-        ).scalars()
-    }
-
-    for m in mesures:
-        troncon = troncons.get(m.troncon_id)
-        if troncon is None:
-            continue
-        instant_local = m.horodatage.astimezone(fuseau)
-        pred = _prediction_profils(db, troncon, m.horodatage)
-        if pred is None or pred.moyen_mn is None:
-            continue
-        valeur_reelle_mn = m.duree_trafic_s / 60
-        erreur = abs(pred.moyen_mn - valeur_reelle_mn)
-        erreurs_par_tj[_type_jour(instant_local.date())].append(erreur)
-
-    return {
-        "fenetre_jours": nb_jours,
-        "mae_minutes": {
-            "jour_ouvrable": (
-                round(statistics.fmean(erreurs_par_tj["jour_ouvrable"]), 2)
-                if erreurs_par_tj["jour_ouvrable"] else None
-            ),
-            "week_end": (
-                round(statistics.fmean(erreurs_par_tj["week_end"]), 2)
-                if erreurs_par_tj["week_end"] else None
-            ),
-        },
-        "nb_observations": {
-            "jour_ouvrable": len(erreurs_par_tj["jour_ouvrable"]),
-            "week_end": len(erreurs_par_tj["week_end"]),
-        },
     }

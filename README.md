@@ -13,6 +13,7 @@
 - [Carnet d'exécution du hackathon](#-carnet-dexécution-du-hackathon)
 - [Refonte critère congestion — couleurs Google Maps DEESP (2026-06-22)](#-refonte-critère-congestion--couleurs-google-maps-deesp-2026-06-22)
 0. [Audit de conformité aux 5 étapes du brief jury](#0--audit-de-conformité-aux-5-étapes-du-brief-jury)
+   - [0ter. Pourquoi un modèle ML serait un vrai gain (P6.5)](#0ter--pourquoi-un-modèle-de-machine-learning-serait-un-vrai-gain-p65)
    - [0bis. Polylines des tronçons : 2 niveaux de rendu](#0bis--polylines-des-tronçons--2-niveaux-de-rendu)
 1. [À quoi ça sert ?](#1--à-quoi-ça-sert-)
 2. [Comment ça marche en images](#2--comment-ça-marche-en-images)
@@ -203,11 +204,11 @@ npm run build && npm start
 | Récupération **temps de parcours** | ✅ | Scheduler APScheduler toutes les 20 min, 7h–19h Africa/Abidjan |
 | Récupération **distances** | ✅ | Stockées en base via `seed_troncons` (officielles) + OSRM (réelles routière) |
 | Récupération **niveaux de congestion** | ✅ | Couleur Google Maps (`speedReadingIntervals`) lue à chaque cycle → classification fluide / congestionné (critère DEESP officiel — cf. § Refonte ci-dessus). |
-| Récupération **itinéraires** | 🟡 | Polylines OSRM stockées dans `troncons.polyline` quand OSRM est accessible. Sur Railway (où OSRM n'est pas exposé), **fallback** via `python -m app.complete_sans_osrm` : segments droits encodés, pas de routage réel mais visualisation possible. **Procédure complète de déploiement OSRM permanent sur Oracle Cloud Free Tier** documentée dans [CLAUDE.md § 8.7](CLAUDE.md) (45-60 min de setup, 0 € récurrent). |
+| Récupération **itinéraires** | 🟡 | Polylines OSRM stockées dans `troncons.polyline` quand OSRM est accessible. Sur Railway (où OSRM n'est pas exposé), la polyline reste NULL tant que `python -m app.complete_troncons` n'est pas exécuté avec un tunnel OSRM temporaire. **Procédure complète de déploiement OSRM permanent sur Oracle Cloud Free Tier** documentée dans [CLAUDE.md § 8.7](CLAUDE.md) (45-60 min de setup, 0 € récurrent). |
 | Récupération **données de circulation** | ✅ | **Collecte 24h/24 toutes les heures** (144 req/jour ≪ 250 quota Google), persistée et accessible via `/mesures`, `/troncons/{id}/mesures`, etc. Le filtre DEESP officiel (7h-19h) est appliqué côté analyse pour les Tableaux 3-15 et le Tableau 16. |
 | Zoom dynamique | ✅ | `flyToBounds` animé, niveau adaptatif `maxZoom 15` |
 | Recentrage automatique | ✅ | `fitBounds` global au chargement si tout est fluide, sinon centré sur le point chaud |
-| Visualisation réelle de la zone sélectionnée | 🟡 | Polylines en pointillés droits sur Railway (polyline NULL avant `complete_sans_osrm`). Polylines OSRM réelles seulement en local. **Limitation documentée** dans [CLAUDE.md § 8.5.1](CLAUDE.md). Mitigation : script `complete_sans_osrm.py` à jouer sur Railway → segments droits visibles. |
+| Visualisation réelle de la zone sélectionnée | 🟡 | Polylines OSRM réelles seulement après `python -m app.complete_troncons` avec OSRM accessible. **Limitation documentée** dans [CLAUDE.md § 8.5.1](CLAUDE.md). |
 
 ### Étape 5 — Tests, optimisation et déploiement
 
@@ -244,9 +245,78 @@ npm run build && npm start
 ### Synthèse pour le pitch jury
 
 - **8 / 9 sous-exigences livrées** à 100 % sur les Étapes 1-4
-- **1 nuance importante** : « visualisation réelle de la zone » dépend d'OSRM en prod (mitigation immédiate avec `complete_sans_osrm.py`)
+- **1 nuance importante** : « visualisation réelle de la zone » dépend d'OSRM en prod (script `complete_troncons` à lancer ponctuellement avec un tunnel OSRM)
 - **Étape 5** : 5/7 livrés à 100 %, 2 partiels (tests + stabilité) — couverture suffisante pour un prototype hackathon
 - **6 manquants** identifiés, tous déjà planifiés dans la feuille de route P6 / P7
+
+---
+
+## 0ter · Pourquoi un modèle de Machine Learning serait un vrai gain (P6.5)
+
+> **Cette section met en avant l'apport potentiel d'un modèle ML — non
+> livré dans le périmètre actuel mais identifié comme la prochaine étape
+> à fort impact si le projet se poursuit après le hackathon.**
+
+### Limites du prédicteur actuel (niveau 2 de la cascade)
+
+Le niveau 2 (`mesures_jour_type_7j`) calcule **min / moyen / max des mesures
+Google des 7 derniers jours** sur le même type de jour (jour_ouvrable ou
+week_end). C'est une statistique descriptive — pas un modèle prédictif.
+Conséquences :
+
+| Capacité                                                            | Cascade actuelle | Modèle ML (Random Forest / Gradient Boosting) |
+|---------------------------------------------------------------------|------------------|------------------------------------------------|
+| Biais constant par tronçon (calibration GPX)                        | ✅ Oui           | ✅ Oui (et plus fin)                           |
+| Variations **par heure de la journée** (rush 7h–9h vs creux 14h)    | ❌ Tout est moyenné | ✅ Feature `heure` discrète                    |
+| Variations **par jour de la semaine** (lundi rentrée vs vendredi soir) | ❌ On agrège juste jour_ouvrable | ✅ Feature `weekday` |
+| Effet **saison des pluies** (juin–octobre → +20 à +40 % de temps)   | ❌                | ✅ Feature `mois` + précipitations             |
+| Effet **événements** (rentrée scolaire, jours fériés ivoiriens, fêtes locales) | ❌ | ✅ Avec un calendrier injecté |
+| Effet **propagation de congestion** (saturation pont Houphouët-Boigny → axe Marcory) | ❌ | ✅ Features croisées entre tronçons |
+| **Non-linéarités** (la vitesse ne baisse pas linéairement avec le volume) | ❌ Une seule moyenne | ✅ Arbres = non-linéaire par nature |
+| **Intervalle de prédiction calibré** (≠ simple min/max observé)     | ❌                | ✅ Quantile regression possible                |
+
+### Architecture cible (P6.5 — optionnel post-hackathon)
+
+```
+Features in :  heure (0-23) + weekday (0-6) + mois (1-12)
+               + troncon_id (one-hot) + type_jour
+               + congestion observée 1h avant (sur ce tronçon ET les voisins)
+               + pluie_dernière_heure (API meteo gratuite)
+               + jour_férié_ivoirien (calendrier static)
+               + nb_mesures_dernier_créneau (proxy de la confiance)
+↓
+Random Forest Regressor (sklearn) → temps_traversee_mn
++ Quantile Regressor → intervalle [p10, p90]
+↓
+Output : { min_mn, moyen_mn, max_mn, intervalle_confiance_90 }
+```
+
+### Pré-requis et chemin de mise en œuvre
+
+1. **Données minimales** : 2-3 mois de collecte Google continue + 20+ vrais
+   GPX par tronçon (calibration honnête).
+2. **Split train/test** propre — séries temporelles, donc **pas de
+   randomisation** des dates. Train = 60 % des semaines anciennes, test = 20 %
+   intermédiaires, validation = 20 % les plus récentes.
+3. **Baseline à battre** : la cascade actuelle (`mesures_jour_type_7j`)
+   avec calibration GPX. Si le RF gagne ≥ 1 min de MAE → adoption. Sinon
+   c'est juste du bruit → on garde la cascade.
+4. **Coût opérationnel** : ré-entraînement nocturne (1 fois/24h) en parallèle
+   du job d'agrégation des profils. Inférence en mémoire (RF de 50 arbres
+   ≈ 5 MB), pas de GPU.
+
+### Pourquoi c'est REPOUSSÉ et pas livré
+
+Pour le hackathon : **pas assez de données réelles** (collecte démarrée
+2026-06-19, à peine 5 jours). Le ML sur 5 jours de données overfitterait
+sur le bruit. La cascade `mesures_jour_type_7j` actuelle est la **bonne
+décision pour la livraison du hackathon** — simple, déterministe,
+calibrable par GPX, alignée DEESP.
+
+Le ML devient pertinent **après 2-3 mois en production** quand on disposera
+d'un vrai dataset. À ce moment-là, P6.5 est une journée de travail (le
+backend est déjà structuré pour exposer `source=ml_random_forest` comme
+un 4e niveau de cascade).
 
 ---
 
@@ -257,8 +327,13 @@ Pour comprendre ce qui s'affiche sur la carte selon votre setup :
 | Setup | Polylines obtenues | Rendu visuel | Quand l'utiliser |
 |-------|--------------------|--------------|------------------|
 | **Aucun script lancé** | `NULL` en base | **Rien** ne s'affiche (carte vide) | Jamais — bug |
-| `python -m app.complete_sans_osrm` (✅ sans OSRM) | Segment droit 2 points encodé en Google polyline | 6 traits droits qui **coupent la lagune Ébrié** — moche mais visible | Démo express, Railway tant qu'OSRM n'est pas exposé |
-| `python -m app.complete_troncons` (❌ besoin OSRM accessible) | Polyline ~600-1000 caractères suivant les routes | 6 vraies polylines **suivant boulevard de Marseille, pont Houphouët-Boigny, etc.** | Production, démo finale, dès qu'OSRM est exposé |
+| `python -m app.complete_troncons` (❌ besoin OSRM accessible) | Polyline ~600-1000 caractères suivant les routes | 6 vraies polylines **suivant boulevard de Marseille, pont Houphouët-Boigny, etc.** | Production, démo finale, dès qu'OSRM est exposé (ngrok ponctuel suffit) |
+
+> Le script `complete_sans_osrm.py` (segments droits) a été **supprimé**
+> le 2026-06-23 — il a été jugé esthétiquement trop pauvre pour le jury.
+> Lancer OSRM en local + ngrok 5 minutes le temps d'exécuter
+> `complete_troncons` une seule fois, puis couper. Les polylines persistent
+> en base.
 
 ### Ce que demande chaque script
 
@@ -266,7 +341,6 @@ Pour comprendre ce qui s'affiche sur la carte selon votre setup :
 |--------|---------------|--------------|--------|
 | `seed_troncons` | ❌ | ✅ | Insère les 6 lignes (noms, distance officielle). Coords et polyline restent `NULL`. |
 | `set_coords_depuis_seed` | ❌ | ✅ | Pose **uniquement** les coords depuis `coordonnees.py`. Polyline et distance inchangées. |
-| **`complete_sans_osrm`** | ❌ | ✅ | Pose coords + **polyline = segment droit encodé**. Distance officielle conservée. |
 | `complete_troncons` | ✅ | ✅ | Pose coords + **polyline réelle routière** + distance recalculée par OSRM. |
 
 ### Workflow recommandé pour Railway
@@ -275,9 +349,8 @@ Pour comprendre ce qui s'affiche sur la carte selon votre setup :
 # Sur la Console Railway, juste après le premier déploiement :
 alembic upgrade head          # appliquer les migrations
 python -m app.seed_troncons   # insérer les 6 tronçons
-python -m app.complete_sans_osrm   # polylines droites (fallback)
 
-# Plus tard, dès qu'OSRM sera accessible (ngrok ou Oracle Cloud) :
+# Avec un tunnel OSRM temporaire (ngrok local, 5 min) :
 python -m app.complete_troncons   # écrase les polylines droites par les vraies routières
 ```
 
@@ -406,7 +479,6 @@ qui existent à ce stade :
 | URL                                       | Ce qu'elle fait                                                  |
 |-------------------------------------------|------------------------------------------------------------------|
 | `GET /health`                             | Dit simplement « je suis en ligne » — sert au monitoring         |
-| `GET /diag/osrm/{id}`                     | Donne la distance OSRM et le **temps idéal à 50 km/h** d'un tronçon |
 | `GET /diag/google/{id}`                   | Donne le temps actuel **en direct** d'après Google (avec/sans trafic) |
 
 > Une documentation interactive auto-générée est disponible : http://localhost:8081/docs
@@ -1470,19 +1542,7 @@ docker compose exec db psql -U paa -d paa_traffic -c "SELECT id, nom, distance_m
 
 ✅ Attendu : 6 lignes (CARENA, Toyota CFAO, SODECI, et leurs retours respectifs).
 
-### Test 3 — OSRM répond et calcule un temps de référence
-
-```powershell
-curl http://localhost:8081/diag/osrm/3
-```
-
-Le `3` = tronçon Toyota CFAO → Palm Beach (référence du cahier des charges).
-
-✅ Attendu : un JSON contenant `"temps_reference_min_s":"12 min 00 s"` et la
-distance en mètres. Ce **temps de référence** est calculé en imaginant qu'on
-roule à 50 km/h **sans aucun bouchon** — c'est notre point de comparaison.
-
-### Test 4 — Google Routes répond en direct
+### Test 3 — Google Routes répond en direct
 
 ```powershell
 curl http://localhost:8081/diag/google/3

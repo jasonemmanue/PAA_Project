@@ -386,7 +386,7 @@ export interface RapportGraphique {
 
 export type SourcePrediction =
   | "google_routes"
-  | "predicteur_profils_60j"
+  | "mesures_jour_type_7j"
   | "vitesse_ref_50kmh";
 
 export interface StatsPeriode {

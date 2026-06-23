@@ -21,13 +21,13 @@ import type { ResumePrediction, SourcePrediction, StatsPeriode, Troncon } from "
 
 const COULEUR_SOURCE: Record<SourcePrediction, string> = {
   google_routes: "#2ECC71",
-  predicteur_profils_60j: "#3498DB",
+  mesures_jour_type_7j: "#3498DB",
   vitesse_ref_50kmh: "#95A5A6",
 };
 
 const LIBELLE_SOURCE: Record<SourcePrediction, string> = {
   google_routes: "Mesure Google temps réel",
-  predicteur_profils_60j: "Profils historiques 60 j (calibré GPX)",
+  mesures_jour_type_7j: "Mesures récentes même type de jour (7 j, calibré GPX)",
   vitesse_ref_50kmh: "Référence 50 km/h",
 };
 

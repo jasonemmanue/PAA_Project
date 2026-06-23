@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.models import Troncon
-from app.sources import google_routes, osrm
+from app.sources import google_routes
 from app.sources.coordonnees import PointGPS
 
 
@@ -78,48 +78,6 @@ def _temps_reference_s(distance_m: int, vitesse_ref_kmh: float) -> float:
     if vitesse_ref_kmh <= 0:
         raise ValueError("vitesse_ref_kmh doit être > 0")
     return distance_m / (vitesse_ref_kmh / 3.6)
-
-
-# ---------------------------------------------------------------------------
-# /diag/osrm/{troncon_id}
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/osrm/{troncon_id}",
-    summary="Diagnostic OSRM (distance, polyline, durée fluide, T_ref)",
-)
-async def diag_osrm(troncon_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
-    troncon = _charger_troncon(troncon_id, db)
-    origine, destination = _points_du_troncon(troncon)
-
-    try:
-        reponse = await osrm.route(origine, destination)
-    except Exception as exc:
-        return {
-            "source": "osrm",
-            "troncon_id": troncon.id,
-            "troncon_nom": troncon.nom,
-            "statut": "erreur",
-            "message": str(exc),
-        }
-
-    t_ref_s = _temps_reference_s(reponse.distance_m, troncon.vitesse_ref_kmh)
-
-    return {
-        "source": "osrm",
-        "troncon_id": troncon.id,
-        "troncon_nom": troncon.nom,
-        "statut": "ok",
-        "donnees": {
-            "distance_m": reponse.distance_m,
-            "duree_sans_trafic_s": reponse.duree_sans_trafic_s,
-            "vitesse_ref_kmh": troncon.vitesse_ref_kmh,
-            "temps_reference_s": round(t_ref_s, 1),
-            "temps_reference_min_s": _format_minutes_secondes(t_ref_s),
-            "polyline_taille_caracteres": len(reponse.polyline_encodee),
-        },
-    }
 
 
 # ---------------------------------------------------------------------------
