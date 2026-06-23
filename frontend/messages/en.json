@@ -84,7 +84,7 @@
   },
   "fiabilite": {
     "title": "Source reliability",
-    "subtitle": "Weekly cross-check of Google Routes durations against GPX field recordings.",
+    "subtitle": "Import your GPX field sub-sections — travel time precision improves with each session.",
     "lastSession": "Last field session",
     "ecartMoyen": "Mean field/API gap",
     "tronconsValides": "Validated segments (|ε| ≤ 10%)",

@@ -20,8 +20,9 @@ import { useMemo, useState } from "react";
 
 import { Card } from "@/components/ui/Card";
 import { api } from "@/lib/api";
+import { parserGpxFichier, type TraceGpx } from "@/lib/gpxClient";
 import { useI18n } from "@/lib/i18n";
-import type { ResumeSegments, SegmentImporte, Troncon } from "@/lib/types";
+import type { SegmentImporte, Troncon } from "@/lib/types";
 
 interface ResultatFichier {
   nomFichier: string;
@@ -32,6 +33,8 @@ interface ResultatFichier {
 interface ImportSegmentsGpxProps {
   troncons: Troncon[];
   onImporte?: () => void;
+  /** Appelé dès la sélection de fichiers — fournit les traces parsées pour la carte. */
+  onTracesChange?: (traces: TraceGpx[]) => void;
 }
 
 function formaterDureeS(s: number): string {
@@ -40,7 +43,7 @@ function formaterDureeS(s: number): string {
   return `${mn}:${String(sec).padStart(2, "0")} min`;
 }
 
-export function ImportSegmentsGpx({ troncons, onImporte }: ImportSegmentsGpxProps) {
+export function ImportSegmentsGpx({ troncons, onImporte, onTracesChange }: ImportSegmentsGpxProps) {
   const { t } = useI18n();
   const [fichiers, setFichiers] = useState<File[]>([]);
   const [tronconId, setTronconId] = useState<string>("");
@@ -165,9 +168,22 @@ export function ImportSegmentsGpx({ troncons, onImporte }: ImportSegmentsGpxProp
             type="file"
             accept=".gpx,application/gpx+xml"
             multiple
-            onChange={(e) => {
-              setFichiers(e.target.files ? Array.from(e.target.files) : []);
+            onChange={async (e) => {
+              const nouveaux = e.target.files ? Array.from(e.target.files) : [];
+              setFichiers(nouveaux);
               setResultats([]);
+              // Parse immédiatement côté client pour afficher les traces sur la carte
+              if (onTracesChange && nouveaux.length > 0) {
+                const traces: TraceGpx[] = [];
+                await Promise.all(
+                  nouveaux.map(async (f) => {
+                    try {
+                      traces.push(await parserGpxFichier(f));
+                    } catch { /* GPX mal formé — ignoré silencieusement */ }
+                  }),
+                );
+                onTracesChange(traces);
+              }
             }}
             className="block w-full text-fluid-sm text-paa-navy-700 dark:text-paa-blue-100
                        file:mr-3 file:rounded-md file:border-0 file:bg-paa-navy-700 file:px-3

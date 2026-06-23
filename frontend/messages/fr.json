@@ -84,7 +84,7 @@
   },
   "fiabilite": {
     "title": "Fiabilité des sources de mesure",
-    "subtitle": "Confrontation hebdomadaire des durées Google Routes avec les relevés terrain GPX.",
+    "subtitle": "Importez vos découpages GPX terrain — la précision des temps de traversée s'améliore à chaque session.",
     "lastSession": "Dernière session terrain",
     "ecartMoyen": "Écart moyen terrain / Google",
     "tronconsValides": "Tronçons validés (|ε| ≤ 10 %)",
