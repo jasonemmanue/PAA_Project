@@ -27,7 +27,7 @@ import {
   libelleSource,
 } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
-import type { CarteEtat, EtatTronconCarte } from "@/lib/types";
+import type { CarteEtat, EtatSousTronconCarte, EtatTronconCarte } from "@/lib/types";
 import { useWsCarteEtat } from "@/lib/ws";
 
 const TUILE_URL =
@@ -77,6 +77,8 @@ export function CarteLeaflet({
   const conteneurRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const lignesRef = useRef<Map<number, LeafletPolyline>>(new Map());
+  // Polylines des sous-tronçons (clef = "p<parent_id>_s<sous_id>")
+  const lignesSousRef = useRef<Map<string, LeafletPolyline>>(new Map());
   const heatLayerRef = useRef<any>(null);
   const LRef = useRef<typeof import("leaflet") | null>(null);
   const onSelectionnerRef = useRef(onSelectionner);
@@ -155,36 +157,72 @@ export function CarteLeaflet({
     const map = mapRef.current;
     if (!L || !map || !etat) return;
 
-    // -- Polylines : si la ligne existe déjà, on actualise sa couleur ; sinon on la crée
+    // -- Polylines : on dessine chaque tronçon parent. Si le parent a des
+    // sous-tronçons, on trace ces derniers avec leur propre couleur DEESP
+    // et on dessine le parent en pointillé léger pour la lisibilité de l'axe.
     for (const troncon of etat.troncons) {
       const points = pointsTroncon(troncon);
-      if (points.length < 2) {
-        // Géométrie inutilisable (polyline non décodée + coordonnées manquantes)
-        continue;
-      }
+      if (points.length < 2) continue;
 
+      const aDesSous = (troncon.sous_troncons?.length ?? 0) > 0;
       const couleur = couleurClasseCongestion(troncon.classe_congestion);
+
       const existante = lignesRef.current.get(troncon.id);
+      const style = aDesSous
+        ? { color: couleur, weight: 3, opacity: 0.35, dashArray: "6 8" }
+        : { color: couleur, weight: 5, opacity: 0.85 };
       if (existante) {
         existante.setLatLngs(points);
-        existante.setStyle({ color: couleur, weight: 5, opacity: 0.85 });
+        existante.setStyle(style);
       } else {
         const ligne = L.polyline(points, {
-          color: couleur,
-          weight: 5,
-          opacity: 0.85,
-          lineCap: "round",
-          lineJoin: "round",
+          ...style, lineCap: "round", lineJoin: "round",
         });
-        ligne.on("click", () => {
-          onSelectionnerRef.current?.(troncon.id);
-        });
+        ligne.on("click", () => onSelectionnerRef.current?.(troncon.id));
         ligne.bindPopup(() => construirePopup(troncon, locale), {
-          maxWidth: 300,
-          className: "paa-popup",
+          maxWidth: 300, className: "paa-popup",
         });
         ligne.addTo(map);
         lignesRef.current.set(troncon.id, ligne);
+      }
+
+      // Sous-tronçons — un polyline coloré par sous-tronçon
+      for (const sous of troncon.sous_troncons ?? []) {
+        const ptsSous = pointsSousTroncon(sous);
+        if (ptsSous.length < 2) continue;
+        const couleurSous = couleurClasseCongestion(sous.classe_congestion);
+        const cle = `p${troncon.id}_s${sous.id}`;
+        const existS = lignesSousRef.current.get(cle);
+        const styleSous = { color: couleurSous, weight: 6, opacity: 0.95 };
+        if (existS) {
+          existS.setLatLngs(ptsSous);
+          existS.setStyle(styleSous);
+        } else {
+          const ligneS = L.polyline(ptsSous, {
+            ...styleSous, lineCap: "round", lineJoin: "round",
+          });
+          ligneS.on("click", () => onSelectionnerRef.current?.(troncon.id));
+          ligneS.bindPopup(
+            () => construirePopupSousTroncon(troncon.nom, sous, locale),
+            { maxWidth: 300, className: "paa-popup" },
+          );
+          ligneS.addTo(map);
+          lignesSousRef.current.set(cle, ligneS);
+        }
+      }
+    }
+
+    // Cleanup des sous-tronçons archivés (présents avant mais plus dans l'état)
+    const clesActuelles = new Set<string>();
+    for (const tr of etat.troncons) {
+      for (const s of tr.sous_troncons ?? []) {
+        clesActuelles.add(`p${tr.id}_s${s.id}`);
+      }
+    }
+    for (const [cle, ligne] of lignesSousRef.current.entries()) {
+      if (!clesActuelles.has(cle)) {
+        map.removeLayer(ligne);
+        lignesSousRef.current.delete(cle);
       }
     }
 
@@ -508,4 +546,55 @@ function estCoordonneeValide(p: [number, number]): boolean {
     Math.abs(p[0]) <= 90 &&
     Math.abs(p[1]) <= 180
   );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers sous-tronçons
+// ---------------------------------------------------------------------------
+function pointsSousTroncon(s: EtatSousTronconCarte): [number, number][] {
+  if (typeof s.polyline === "string" && s.polyline.length > 0) {
+    const decodes = decoderPolyline(s.polyline);
+    if (decodes.length >= 2 && decodes.every(estCoordonneeValide)) return decodes;
+  }
+  const latD = s.geometrie?.lat_debut ?? NaN;
+  const lonD = s.geometrie?.lon_debut ?? NaN;
+  const latF = s.geometrie?.lat_fin ?? NaN;
+  const lonF = s.geometrie?.lon_fin ?? NaN;
+  const segment: [number, number][] = [
+    [latD as number, lonD as number],
+    [latF as number, lonF as number],
+  ];
+  return segment.every(estCoordonneeValide) ? segment : [];
+}
+
+function construirePopupSousTroncon(
+  nomParent: string,
+  s: EtatSousTronconCarte,
+  locale: "fr" | "en",
+): string {
+  const couleur = s.couleur_etat;
+  const libelle = s.libelle_classe ?? s.classe_congestion;
+  const km = s.distance_km ?? (s.distance_m ? Math.round(s.distance_m / 10) / 100 : null);
+  const tempsRef = s.temps_reference_50kmh_s
+    ? Math.round(s.temps_reference_50kmh_s / 60)
+    : null;
+  const tempsObs = s.derniere_mesure?.duree_trafic_s
+    ? Math.round(s.derniere_mesure.duree_trafic_s / 60)
+    : null;
+  const motif = s.motif_congestion ? `<div class="text-xs opacity-80 mt-1">${s.motif_congestion}</div>` : "";
+  const labelTempsRef = locale === "fr" ? "Référence 50 km/h" : "Reference 50 km/h";
+  const labelTempsObs = locale === "fr" ? "Temps actuel" : "Current time";
+  return `
+    <div class="font-sans">
+      <div class="text-xs opacity-70">${nomParent}</div>
+      <div class="font-bold text-base">${s.code} — ${s.nom_court}</div>
+      <div class="mt-1 inline-block px-2 py-0.5 rounded text-white text-xs" style="background:${couleur}">${libelle}</div>
+      ${motif}
+      <div class="mt-2 text-xs">
+        ${km !== null ? `${km} km · ` : ""}
+        ${tempsRef !== null ? `${labelTempsRef} : ${tempsRef} min` : ""}
+      </div>
+      ${tempsObs !== null ? `<div class="text-xs">${labelTempsObs} : <strong>${tempsObs} min</strong></div>` : ""}
+    </div>
+  `;
 }

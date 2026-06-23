@@ -271,6 +271,11 @@ class CongestionHoraire:
     nb_total_semaine: int  # toutes occurrences toutes journées confondues
     regle_jour_indicatif: bool  # ≥ 3 fois sur un jour-type donné
     regle_semaine: bool  # ≥ 4 fois la même heure n'importe quel jour
+    # Renseignés UNIQUEMENT si la mesure portait sur un sous-tronçon
+    # (codification DEESP T1A, T1B…). Sinon None.
+    sous_troncon_id: int | None = None
+    sous_troncon_code: str | None = None
+    sous_troncon_nom: str | None = None
 
 
 def troncons_congestionnes(
@@ -284,18 +289,23 @@ def troncons_congestionnes(
       1. Pour chaque mesure : congestionné ssi la couleur Google Maps
          indique ROUGE (présent) OU ORANGE sur ≥ 50 % du tronçon. Ce
          verdict est lu directement dans `mesures.est_congestionne`.
-      2. Pour chaque (troncon, jour-semaine, heure) : on cumule le nb
-         d'occurrences congestionnées sur la fenêtre.
+      2. Granularité : si la mesure porte sur un sous-tronçon (T1A, T1B…),
+         on évalue les règles AU NIVEAU SOUS-TRONÇON. Sinon au niveau axe.
       3. Règle JOUR : congestionné si ≥ 3 fois sur les lundis (ou mardis…)
       4. Règle SEMAINE : congestionné si ≥ 4 fois à cette heure dans la
          semaine, peu importe le jour.
     """
+    from app.models.models import SousTroncon  # import paresseux pour éviter cycle
+
     fuseau_local = ZoneInfo(get_settings().tz)
 
     troncons = {
         t.id: t for t in db.execute(
             select(Troncon).where(Troncon.actif.is_(True))
         ).scalars()
+    }
+    sous_troncons = {
+        s.id: s for s in db.execute(select(SousTroncon)).scalars()
     }
 
     # On ne retient que les mesures dont la couleur Google Maps indique
@@ -313,35 +323,33 @@ def troncons_congestionnes(
         ).scalars()
     )
 
-    # Clé : (troncon_id, weekday[0=lundi...6=dimanche], heure_locale)
-    #        → nb occurrences congestionnées
-    occurrences: dict[tuple[int, int, int], int] = defaultdict(int)
+    # Clé : (troncon_id, sous_troncon_id|None, weekday, heure_locale) → nb
+    occurrences: dict[tuple[int, int | None, int, int], int] = defaultdict(int)
     for m in mesures:
         if m.troncon_id not in troncons:
             continue
         local = m.horodatage.astimezone(fuseau_local)
-        # Filtre plage DEESP (7h-19h) — voir _dans_plage_deesp.
         if not _dans_plage_deesp(local):
             continue
-        occurrences[(m.troncon_id, local.weekday(), local.hour)] += 1
+        occurrences[
+            (m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)
+        ] += 1
 
-    # Agrégation par (troncon, heure) — règle SEMAINE
-    par_troncon_heure: dict[tuple[int, int], dict[int, int]] = defaultdict(dict)
-    for (tid, wd, h), nb in occurrences.items():
-        par_troncon_heure[(tid, h)][wd] = nb
+    # Agrégation par (troncon, sous_troncon, heure) — règle SEMAINE
+    par_cle_heure: dict[tuple[int, int | None, int], dict[int, int]] = defaultdict(dict)
+    for (tid, sid, wd, h), nb in occurrences.items():
+        par_cle_heure[(tid, sid, h)][wd] = nb
 
     NOMS_JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
     resultats: list[CongestionHoraire] = []
-    for (tid, h), par_jour in par_troncon_heure.items():
-        # Règle JOUR : un jour-indicatif a ≥ 3 occurrences sur la fenêtre
+    for (tid, sid, h), par_jour in par_cle_heure.items():
         regle_jour = any(nb >= 3 for nb in par_jour.values())
-        # Règle SEMAINE : sur la semaine on a ≥ 4 occurrences toutes journées
-        # confondues à cette heure
         nb_total = sum(par_jour.values())
         regle_sem = nb_total >= 4
         if not (regle_jour or regle_sem):
             continue
         t = troncons[tid]
+        s = sous_troncons.get(sid) if sid is not None else None
         resultats.append(CongestionHoraire(
             troncon_id=tid,
             troncon_nom=t.nom,
@@ -352,9 +360,12 @@ def troncons_congestionnes(
             nb_total_semaine=nb_total,
             regle_jour_indicatif=regle_jour,
             regle_semaine=regle_sem,
+            sous_troncon_id=sid,
+            sous_troncon_code=s.code if s else None,
+            sous_troncon_nom=s.nom_court if s else None,
         ))
-    # Trie : par troncon puis par heure
-    resultats.sort(key=lambda r: (r.troncon_id, r.heure))
+    # Trie : par troncon, sous-tronçon (None d'abord), heure
+    resultats.sort(key=lambda r: (r.troncon_id, r.sous_troncon_id or 0, r.heure))
     return resultats
 
 

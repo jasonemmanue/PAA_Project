@@ -234,6 +234,7 @@ npm run build && npm start
 - ✅ **Page Temps de traversée** (P6.2 refondu 2026-06-23) — `GET /predire/resume?troncon_id=` + UI 3 blocs (temps actuel, ce mois, cette semaine), précision calibrée par les GPX terrain. Cf. CLAUDE.md § 4.7.
 - ❌ ~~**Module Heure optimale de départ**~~ (P6.3) — **retiré du périmètre le 2026-06-23** (code backend + UI supprimés)
 - ✅ **Page Administration** (P6.4) — ajout/édition de tronçons via UI + **sous-tronçons codifiés** (T1A, T1B, T1C…) comme dans le rapport DEESP
+- ✅ **Mesure au niveau sous-tronçon** (P6.4bis, 2026-06-23) — chaque T1A/T1B/T1C a sa propre mesure Google ; scheduler étendu, migration 0009 (`mesures.sous_troncon_id`), carte Accueil + Fiabilité dessinent chaque sous-tronçon avec sa couleur DEESP, Tableau 16 ventilé par sous-tronçon. Cf. CLAUDE.md § 4.8.
 - ❌ **ML niveau 3** (P6.5, optionnel) — Random Forest avec évaluation honnête vs profils horaires
 - ❌ **Frontend déployé sur Vercel** — actuellement servi par `npm start` local
 - ❌ **OSRM exposé en production** — nécessaire pour `confiance_matching` (P5) et vraies polylines (procédure complète CLAUDE.md § 8.7 Oracle Cloud)

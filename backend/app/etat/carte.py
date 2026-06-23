@@ -40,7 +40,7 @@ from app.analyse.congestion import (
 )
 from app.core.config import get_settings
 from app.db.session import SessionLocal
-from app.models.models import Mesure, Troncon
+from app.models.models import Mesure, SousTroncon, Troncon
 
 
 def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
@@ -74,20 +74,96 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
             ).scalars()
         )
 
-        # 2. Dernière mesure par tronçon (1 requête grâce à DISTINCT ON Postgres).
+        # 2a. Dernière mesure par tronçon parent (mesures sans sous-tronçon).
         dernieres = list(
             session.execute(
                 select(Mesure)
-                .where(Mesure.troncon_id.in_([t.id for t in troncons]))
+                .where(
+                    Mesure.troncon_id.in_([t.id for t in troncons]),
+                    Mesure.sous_troncon_id.is_(None),
+                )
                 .distinct(Mesure.troncon_id)
                 .order_by(Mesure.troncon_id, Mesure.horodatage.desc())
             ).scalars()
         )
         dernieres_par_troncon: dict[int, Mesure] = {m.troncon_id: m for m in dernieres}
 
+        # 2b. Sous-tronçons actifs des tronçons listés, avec leur dernière mesure
+        sous_troncons: list[SousTroncon] = list(
+            session.execute(
+                select(SousTroncon).where(
+                    SousTroncon.actif.is_(True),
+                    SousTroncon.troncon_id.in_([t.id for t in troncons]),
+                ).order_by(SousTroncon.troncon_id, SousTroncon.ordre)
+            ).scalars()
+        )
+        dernieres_par_sous: dict[int, Mesure] = {}
+        if sous_troncons:
+            ms_sous = list(
+                session.execute(
+                    select(Mesure)
+                    .where(Mesure.sous_troncon_id.in_([s.id for s in sous_troncons]))
+                    .distinct(Mesure.sous_troncon_id)
+                    .order_by(Mesure.sous_troncon_id, Mesure.horodatage.desc())
+                ).scalars()
+            )
+            dernieres_par_sous = {m.sous_troncon_id: m for m in ms_sous if m.sous_troncon_id is not None}
+
+        # Index des sous-tronçons par parent pour insertion dans la réponse
+        sous_par_parent: dict[int, list[SousTroncon]] = {}
+        for s in sous_troncons:
+            sous_par_parent.setdefault(s.troncon_id, []).append(s)
+
+        def _serialiser_mesure(m: Mesure | None) -> dict[str, Any] | None:
+            if m is None:
+                return None
+            return {
+                "horodatage_utc": m.horodatage.isoformat(),
+                "horodatage_local": m.horodatage.astimezone(fuseau_local).isoformat(),
+                "duree_trafic_s": m.duree_trafic_s,
+                "vitesse_moyenne_kmh": m.vitesse_moyenne_kmh,
+                "source": m.source.value,
+            }
+
+        def _carte_sous_troncon(s: SousTroncon) -> dict[str, Any]:
+            m = dernieres_par_sous.get(s.id)
+            pct_rouge = m.pourcentage_rouge if m is not None else None
+            pct_orange = m.pourcentage_orange if m is not None else None
+            pct_vert = m.pourcentage_vert if m is not None else None
+            verdict_s = classer_congestion(pct_rouge, pct_orange, pct_vert)
+            statut_s = "sans_mesure"
+            if m is not None:
+                statut_s = "mesure_disponible" if m.duree_trafic_s is not None else "trou_de_mesure"
+            return {
+                "id": s.id,
+                "code": s.code,
+                "nom_court": s.nom_court,
+                "ordre": s.ordre,
+                "distance_m": s.distance_m,
+                "distance_km": round(s.distance_m / 1000.0, 2),
+                "polyline": s.polyline,
+                "geometrie": {
+                    "lat_debut": s.lat_debut, "lon_debut": s.lon_debut,
+                    "lat_fin": s.lat_fin, "lon_fin": s.lon_fin,
+                },
+                "temps_reference_50kmh_s": round(s.temps_reference_s(), 1),
+                "statut": statut_s,
+                "derniere_mesure": _serialiser_mesure(m),
+                "classe_congestion": verdict_s.classe,
+                "libelle_classe": LIBELLES_DEESP_FR[verdict_s.classe],
+                "couleur_etat": COULEURS_DEESP[verdict_s.classe],
+                "motif_congestion": verdict_s.motif,
+                "couleur_google": {
+                    "pourcentage_rouge": pct_rouge,
+                    "pourcentage_orange": pct_orange,
+                    "pourcentage_vert": pct_vert,
+                },
+            }
+
         # 3. Construction des cartes de tronçons (critère couleur DEESP)
         etat_troncons: list[dict[str, Any]] = []
         for troncon in troncons:
+            sous_du_parent = sous_par_parent.get(troncon.id, [])
             derniere = dernieres_par_troncon.get(troncon.id)
 
             duree_mesuree: int | None = None
@@ -116,7 +192,22 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 else:
                     statut = "trou_de_mesure"
 
-            verdict = classer_congestion(pct_rouge, pct_orange, pct_vert)
+            sous_serialises = [_carte_sous_troncon(s) for s in sous_du_parent]
+
+            # Si le parent n'a pas de mesure directe mais a des sous-tronçons,
+            # on agrège leur classe DEESP : congestionné si AU MOINS UN sous
+            # est congestionné, sinon fluide si AU MOINS UN est fluide, sinon
+            # indéterminé. Pas d'invention de pourcentages couleur.
+            if derniere is None and sous_serialises:
+                classes_sous = [s["classe_congestion"] for s in sous_serialises]
+                if "congestionne" in classes_sous:
+                    verdict = classer_congestion(1.0, 0.0, 99.0)  # force congestionne
+                elif "fluide" in classes_sous:
+                    verdict = classer_congestion(0.0, 0.0, 100.0)  # force fluide
+                else:
+                    verdict = classer_congestion(None, None, None)
+            else:
+                verdict = classer_congestion(pct_rouge, pct_orange, pct_vert)
             couleur_etat = COULEURS_DEESP[verdict.classe]
 
             etat_troncons.append({
@@ -128,6 +219,7 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 "couleur_base": troncon.couleur,
                 "couleur_etat": couleur_etat,
                 "polyline": troncon.polyline,
+                "sous_troncons": sous_serialises,
                 "geometrie": {
                     "lat_origine": troncon.lat_origine,
                     "lon_origine": troncon.lon_origine,

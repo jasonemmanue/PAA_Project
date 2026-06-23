@@ -41,7 +41,7 @@ from app.agregation.profils import executer_agregation
 from app.core.config import Settings, get_settings
 from app.db.session import SessionLocal
 from app.etat.carte import construire_etat_carte
-from app.models.models import Mesure, SourceMesure, Troncon
+from app.models.models import Mesure, SourceMesure, SousTroncon, Troncon
 from app.realtime.diffusion import get_diffuseur
 from app.sources import google_routes
 from app.sources.coordonnees import PointGPS
@@ -61,17 +61,22 @@ _JOB_ID_AGREGATION = "agregation_profils_horaires"
 
 @dataclass
 class ResultatSource:
-    """Issue d'un appel à une source pour un tronçon donné.
+    """Issue d'un appel à une source pour un tronçon (ou sous-tronçon).
 
     `succes=False` ⇒ on enregistre un trou de mesure (durées + couleurs NULL).
 
     Les pourcentages couleur (rouge/orange/vert) viennent du critère DEESP
     (cf. CLAUDE.md § 4.5.2) et restent NULL si Google n'a pas qualifié le
     tracé via `speedReadingIntervals`.
+
+    `sous_troncon_id` est renseigné quand la mesure porte sur une portion
+    fine (codification DEESP T1A, T1B…). `troncon_id` est TOUJOURS celui
+    du parent — par cohérence d'historique.
     """
     source: SourceMesure
     troncon_id: int
     succes: bool
+    sous_troncon_id: int | None = None
     duree_trafic_s: int | None = None
     duree_sans_trafic_s: int | None = None
     distance_m: int | None = None
@@ -127,7 +132,7 @@ async def _appel_avec_backoff(
 
 
 async def _collecter_google_pour_troncon(troncon: Troncon) -> ResultatSource:
-    """Interroge Google Routes pour un tronçon et renvoie un ResultatSource."""
+    """Interroge Google Routes pour un tronçon parent (axe complet)."""
 
     async def _operation() -> ResultatSource:
         origine = PointGPS(lat=troncon.lat_origine, lon=troncon.lon_origine)
@@ -155,6 +160,44 @@ async def _collecter_google_pour_troncon(troncon: Troncon) -> ResultatSource:
     )
 
 
+async def _collecter_google_pour_sous_troncon(
+    sous_troncon: SousTroncon,
+) -> ResultatSource:
+    """Interroge Google Routes pour un sous-tronçon (portion fine T1A, T1B…).
+
+    Le `troncon_id` retourné est celui du parent — par cohérence d'historique
+    et pour faciliter l'agrégation au niveau axe.
+    """
+
+    async def _operation() -> ResultatSource:
+        origine = PointGPS(lat=sous_troncon.lat_debut, lon=sous_troncon.lon_debut)
+        destination = PointGPS(
+            lat=sous_troncon.lat_fin, lon=sous_troncon.lon_fin
+        )
+        reponse = await google_routes.calcul_itineraire(origine, destination)
+        return ResultatSource(
+            source=SourceMesure.google,
+            troncon_id=sous_troncon.troncon_id,
+            sous_troncon_id=sous_troncon.id,
+            succes=True,
+            duree_trafic_s=reponse.duree_trafic_s,
+            duree_sans_trafic_s=reponse.duree_sans_trafic_s,
+            distance_m=reponse.distance_m,
+            pourcentage_rouge=reponse.pourcentage_rouge,
+            pourcentage_orange=reponse.pourcentage_orange,
+            pourcentage_vert=reponse.pourcentage_vert,
+            est_congestionne=reponse.est_congestionne,
+        )
+
+    # On utilise un id "virtuel" négatif pour les logs (le sous-tronçon n'a
+    # pas son propre champ dans ResultatSource utilisé par _appel_avec_backoff).
+    return await _appel_avec_backoff(
+        _operation,
+        source=SourceMesure.google,
+        troncon_id=sous_troncon.troncon_id,
+    )
+
+
 # Map source → adaptateur. Ajouter ici toute nouvelle source temps réel.
 # TomTom retiré (CLAUDE.md § 2.5) — la chaîne ne contient plus que Google.
 _ADAPTATEURS_SOURCES: dict[SourceMesure, Callable[[Troncon], Awaitable[ResultatSource]]] = {
@@ -172,36 +215,49 @@ def _persister_mesures(resultats: list[ResultatSource], horodatage_utc: datetime
 
     - Succès : durées renseignées + vitesse moyenne calculée.
     - Échec  : ligne créée avec source connue et durées NULL → trou explicite.
-    Les distances sont prises sur la réponse de la source si disponible,
-    sinon sur `troncon.distance_m` (référence officielle) pour le calcul vitesse.
+    - Si `sous_troncon_id` est posé : la distance officielle vient du
+      `SousTroncon.distance_m` (portion fine), pas du parent.
     """
     if not resultats:
         return
 
     session = SessionLocal()
     try:
-        # On précharge les distances officielles pour le calcul de vitesse
-        ids = list({r.troncon_id for r in resultats})
+        # Préchargement des distances officielles (parents ET sous-tronçons)
+        ids_troncons = list({r.troncon_id for r in resultats if r.sous_troncon_id is None})
+        ids_sous = list({r.sous_troncon_id for r in resultats if r.sous_troncon_id is not None})
+
         distances_par_troncon = {
             t.id: t.distance_m
             for t in session.execute(
-                select(Troncon).where(Troncon.id.in_(ids))
+                select(Troncon).where(Troncon.id.in_(ids_troncons))
             ).scalars()
-        }
+        } if ids_troncons else {}
+        distances_par_sous = {
+            s.id: s.distance_m
+            for s in session.execute(
+                select(SousTroncon).where(SousTroncon.id.in_(ids_sous))
+            ).scalars()
+        } if ids_sous else {}
 
         for resultat in resultats:
+            # Distance de référence pour le calcul vitesse — priorité au
+            # niveau le plus fin (sous-tronçon si présent).
+            if resultat.sous_troncon_id is not None:
+                distance_officielle = distances_par_sous.get(resultat.sous_troncon_id)
+            else:
+                distance_officielle = distances_par_troncon.get(resultat.troncon_id)
+
             if resultat.succes and resultat.duree_trafic_s and resultat.duree_trafic_s > 0:
-                distance_m = resultat.distance_m or distances_par_troncon.get(
-                    resultat.troncon_id
-                )
+                distance_m = resultat.distance_m or distance_officielle
                 vitesse_kmh: float | None = None
                 if distance_m is not None and resultat.duree_trafic_s > 0:
-                    # vitesse = (m / s) × 3.6
                     vitesse_kmh = round(
                         (distance_m / resultat.duree_trafic_s) * 3.6, 2
                     )
                 mesure = Mesure(
                     troncon_id=resultat.troncon_id,
+                    sous_troncon_id=resultat.sous_troncon_id,
                     horodatage=horodatage_utc,
                     duree_trafic_s=resultat.duree_trafic_s,
                     duree_sans_trafic_s=resultat.duree_sans_trafic_s,
@@ -213,10 +269,10 @@ def _persister_mesures(resultats: list[ResultatSource], horodatage_utc: datetime
                     est_congestionne=resultat.est_congestionne,
                 )
             else:
-                # Trou de mesure explicite : la ligne existe (preuve qu'on a tenté),
-                # mais aucune valeur n'est inventée — durées, vitesse et couleurs NULL.
+                # Trou de mesure explicite — durées et couleurs NULL.
                 mesure = Mesure(
                     troncon_id=resultat.troncon_id,
+                    sous_troncon_id=resultat.sous_troncon_id,
                     horodatage=horodatage_utc,
                     duree_trafic_s=None,
                     duree_sans_trafic_s=None,
@@ -245,13 +301,18 @@ def _persister_mesures(resultats: list[ResultatSource], horodatage_utc: datetime
 async def cycle_de_collecte() -> dict[str, int]:
     """Un cycle complet : appels parallèles + persistance + journalisation.
 
-    Retourne un résumé `{nb_succes, nb_trous, nb_troncons, nb_appels}` utile
-    pour les endpoints de status et pour les tests manuels.
+    Règle DEESP : si un tronçon parent a au moins un sous-tronçon actif,
+    on mesure **uniquement** les sous-tronçons (granularité fine, codification
+    T1A/T1B/T1C…). Sinon on mesure le parent dans son intégralité.
+
+    Retourne un résumé `{nb_succes, nb_trous, nb_troncons, nb_sous_troncons,
+    nb_appels}` utile pour les endpoints de status.
     """
     horodatage_utc = datetime.now(tz=timezone.utc)
     settings = get_settings()
 
-    # 1. Chargement des tronçons actifs (avec coordonnées résolues)
+    # 1. Chargement des tronçons actifs (avec coordonnées résolues) ET de leurs
+    #    sous-tronçons actifs.
     session = SessionLocal()
     try:
         troncons_actifs: list[Troncon] = list(
@@ -265,12 +326,27 @@ async def cycle_de_collecte() -> dict[str, int]:
                 )
             ).scalars()
         )
+        sous_troncons_actifs: list[SousTroncon] = list(
+            session.execute(
+                select(SousTroncon).where(SousTroncon.actif.is_(True))
+            ).scalars()
+        )
     finally:
         session.close()
 
-    if not troncons_actifs:
-        logger.warning("Cycle de collecte : aucun tronçon actif et résolu.")
-        return {"nb_succes": 0, "nb_trous": 0, "nb_troncons": 0, "nb_appels": 0}
+    if not troncons_actifs and not sous_troncons_actifs:
+        logger.warning("Cycle de collecte : aucun tronçon/sous-tronçon actif.")
+        return {
+            "nb_succes": 0, "nb_trous": 0,
+            "nb_troncons": 0, "nb_sous_troncons": 0, "nb_appels": 0,
+        }
+
+    # Quels parents ont déjà des sous-tronçons actifs ? Ces parents seront
+    # exclus du cycle (la granularité fine prend le relais).
+    parents_avec_sous = {st.troncon_id for st in sous_troncons_actifs}
+    troncons_a_mesurer = [
+        t for t in troncons_actifs if t.id not in parents_avec_sous
+    ]
 
     # 2. Décision des sources interrogées
     sources_actives: list[SourceMesure] = []
@@ -282,24 +358,30 @@ async def cycle_de_collecte() -> dict[str, int]:
             "trous de mesure pour ce cycle."
         )
 
-    # 3. Construction et exécution des tâches en parallèle
+    # 3. Construction des tâches : parents seuls + sous-tronçons
     taches: list[Awaitable[ResultatSource]] = []
-    for troncon in troncons_actifs:
+    for troncon in troncons_a_mesurer:
         for src in sources_actives:
             adaptateur = _ADAPTATEURS_SOURCES[src]
             taches.append(adaptateur(troncon))
+    for sous in sous_troncons_actifs:
+        if SourceMesure.google in sources_actives:
+            taches.append(_collecter_google_pour_sous_troncon(sous))
 
-    # Si aucune source n'est dispo, on génère quand même des trous pour la traçabilité
+    # Si aucune source n'est dispo, on génère quand même des trous
     if not sources_actives:
-        resultats: list[ResultatSource] = [
-            ResultatSource(
-                source=SourceMesure.google,
-                troncon_id=t.id,
-                succes=False,
+        resultats: list[ResultatSource] = []
+        for t in troncons_a_mesurer:
+            resultats.append(ResultatSource(
+                source=SourceMesure.google, troncon_id=t.id, succes=False,
                 message_erreur="aucune source temps réel configurée",
-            )
-            for t in troncons_actifs
-        ]
+            ))
+        for s in sous_troncons_actifs:
+            resultats.append(ResultatSource(
+                source=SourceMesure.google,
+                troncon_id=s.troncon_id, sous_troncon_id=s.id, succes=False,
+                message_erreur="aucune source temps réel configurée",
+            ))
     else:
         resultats = list(await asyncio.gather(*taches, return_exceptions=False))
 
@@ -309,9 +391,11 @@ async def cycle_de_collecte() -> dict[str, int]:
     nb_succes = sum(1 for r in resultats if r.succes)
     nb_trous = len(resultats) - nb_succes
     logger.info(
-        "Cycle terminé à %s — %d tronçons, %d appels, %d réussites, %d trous.",
+        "Cycle terminé à %s — %d tronçons + %d sous-tronçons, "
+        "%d appels, %d réussites, %d trous.",
         horodatage_utc.isoformat(),
-        len(troncons_actifs),
+        len(troncons_a_mesurer),
+        len(sous_troncons_actifs),
         len(resultats),
         nb_succes,
         nb_trous,
@@ -331,7 +415,8 @@ async def cycle_de_collecte() -> dict[str, int]:
     return {
         "nb_succes": nb_succes,
         "nb_trous": nb_trous,
-        "nb_troncons": len(troncons_actifs),
+        "nb_troncons": len(troncons_a_mesurer),
+        "nb_sous_troncons": len(sous_troncons_actifs),
         "nb_appels": len(resultats),
     }
 
@@ -345,13 +430,16 @@ async def cycle_de_collecte() -> dict[str, int]:
 QUOTA_GOOGLE_JOUR_MAX = 250
 
 
-def estimer_requetes_par_jour(settings: Settings, nb_troncons_actifs: int) -> int:
-    """Estime le nombre de requêtes Google par jour pour la config courante."""
+def estimer_requetes_par_jour(settings: Settings, nb_entites_mesurees: int) -> int:
+    """Estime le nombre de requêtes Google par jour pour la config courante.
+
+    `nb_entites_mesurees` = (nb_troncons sans sous-tronçon) + (nb_sous_troncons).
+    """
     nb_heures_actives = max(0, settings.collect_end_hour - settings.collect_start_hour)
     if settings.collect_interval_minutes <= 0 or nb_heures_actives <= 0:
         return 0
     nb_cycles = (nb_heures_actives * 60) // settings.collect_interval_minutes
-    return nb_cycles * nb_troncons_actifs
+    return nb_cycles * nb_entites_mesurees
 
 
 def _verifier_quota_au_demarrage() -> None:
@@ -359,9 +447,23 @@ def _verifier_quota_au_demarrage() -> None:
     settings = get_settings()
     session = SessionLocal()
     try:
-        nb_actifs = session.scalar(
-            select(func.count(Troncon.id)).where(Troncon.actif.is_(True))
+        # Compte les parents actifs qui n'ont PAS de sous-tronçon actif +
+        # tous les sous-tronçons actifs (granularité réelle de mesure).
+        parents_avec_sous = {
+            tid for (tid,) in session.execute(
+                select(SousTroncon.troncon_id).where(SousTroncon.actif.is_(True)).distinct()
+            ).all()
+        }
+        ids_parents_actifs = [
+            tid for (tid,) in session.execute(
+                select(Troncon.id).where(Troncon.actif.is_(True))
+            ).all()
+        ]
+        nb_parents_a_mesurer = sum(1 for t in ids_parents_actifs if t not in parents_avec_sous)
+        nb_sous_actifs = session.scalar(
+            select(func.count(SousTroncon.id)).where(SousTroncon.actif.is_(True))
         ) or 0
+        nb_actifs = nb_parents_a_mesurer + nb_sous_actifs
     finally:
         session.close()
 

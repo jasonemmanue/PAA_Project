@@ -74,18 +74,36 @@ export interface CouleurGoogle {
   pourcentage_vert: number | null;
 }
 
+export interface EtatSousTronconCarte {
+  id: number;
+  code: string;
+  nom_court: string;
+  ordre: number;
+  distance_m?: number;
+  distance_km?: number;
+  polyline: string | null;
+  geometrie?: {
+    lat_debut: number | null;
+    lon_debut: number | null;
+    lat_fin: number | null;
+    lon_fin: number | null;
+  };
+  temps_reference_50kmh_s?: number;
+  couleur_etat: string;
+  classe_congestion: ClasseCongestion;
+  libelle_classe?: string;
+  motif_congestion?: string;
+  couleur_google?: CouleurGoogle;
+  statut?: string;
+  derniere_mesure: Mesure | null;
+}
+
 export interface EtatTronconCarte {
   id: number;
   nom: string;
   distance_m?: number;
   distance_km?: number;
   polyline: string | null;
-  /**
-   * Géométrie nichée — c'est sous cette clé que le backend
-   * (`construire_etat_carte`) expose vraiment les coordonnées des extrémités.
-   * Les champs top-level ci-dessous (lat_origine etc.) sont conservés en
-   * fallback pour la compatibilité ; ils peuvent être absents en pratique.
-   */
   geometrie?: {
     lat_origine: number | null;
     lon_origine: number | null;
@@ -103,6 +121,7 @@ export interface EtatTronconCarte {
   couleur_google?: CouleurGoogle;
   statut?: string;
   derniere_mesure: Mesure | null;
+  sous_troncons?: EtatSousTronconCarte[];
 }
 
 export interface CarteEtat {
@@ -346,6 +365,9 @@ export interface RapportTempsTraversee {
 export interface EntreeCongestion {
   troncon_id: number;
   troncon_nom: string;
+  sous_troncon_id: number | null;
+  sous_troncon_code: string | null;
+  sous_troncon_nom: string | null;
   heure: number;
   tranche: string;
   nb_par_jour_semaine: Record<string, number>;

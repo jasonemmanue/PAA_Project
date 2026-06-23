@@ -21,7 +21,8 @@ export function TableauZonesCongestionnees({
         <table className="min-w-full text-fluid-sm">
           <thead className="bg-paa-navy-700 text-white dark:bg-paa-navy-800">
             <tr>
-              <Th>TRONÇON</Th>
+              <Th>AXE</Th>
+              <Th>SOUS-TRONÇON</Th>
               <Th>TRANCHE HORAIRE</Th>
               <Th className="text-right">NB / SEMAINE</Th>
               <Th>RÈGLE DÉCLENCHÉE</Th>
@@ -30,8 +31,18 @@ export function TableauZonesCongestionnees({
           </thead>
           <tbody>
             {(rapport?.entrees ?? []).map((e) => (
-              <tr key={`${e.troncon_id}-${e.heure}`} className="border-t app-border">
+              <tr key={`${e.troncon_id}-${e.sous_troncon_id ?? "p"}-${e.heure}`} className="border-t app-border">
                 <Td>{e.troncon_nom}</Td>
+                <Td>
+                  {e.sous_troncon_code ? (
+                    <div className="flex flex-col">
+                      <span className="font-mono font-semibold">{e.sous_troncon_code}</span>
+                      <span className="text-fluid-xs app-text-muted">{e.sous_troncon_nom}</span>
+                    </div>
+                  ) : (
+                    <span className="text-fluid-xs app-text-muted italic">axe entier</span>
+                  )}
+                </Td>
                 <Td className="font-mono">{e.tranche}</Td>
                 <Td className="text-right font-semibold">{e.nb_total_semaine}</Td>
                 <Td>
@@ -62,7 +73,7 @@ export function TableauZonesCongestionnees({
             ))}
             {(rapport?.entrees ?? []).length === 0 && (
               <tr>
-                <Td colSpan={5}>
+                <Td colSpan={6}>
                   <span className="app-text-muted">
                     {rapport
                       ? "Aucun tronçon congestionné sur cette campagne — conforme aux observations DEESP de la zone portuaire."

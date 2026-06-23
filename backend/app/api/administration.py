@@ -110,7 +110,7 @@ class SousTronconMaj(BaseModel):
     ),
     status_code=status.HTTP_201_CREATED,
 )
-def creer_troncon(
+async def creer_troncon(
     payload: TronconCreer,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -129,8 +129,30 @@ def creer_troncon(
         *payload.waypoints,
         (payload.lat_destination, payload.lon_destination),
     ]
-    polyline = encoder_polyline(points)
-    distance = payload.distance_m if payload.distance_m is not None else distance_cumulee_m(points)
+
+    # OSRM si disponible → polyline qui suit les vraies routes + distance réelle
+    polyline: str
+    distance: int
+    settings = get_settings()
+    if settings.osrm_base_url and not payload.waypoints:
+        # OSRM ne prend que 2 points ; en présence de waypoints, on les respecte
+        # tels quels (Google Polyline). Sinon on délègue à OSRM.
+        try:
+            from app.sources import osrm
+            from app.sources.coordonnees import PointGPS
+            rep = await osrm.route(
+                PointGPS(lat=payload.lat_origine, lon=payload.lon_origine),
+                PointGPS(lat=payload.lat_destination, lon=payload.lon_destination),
+            )
+            polyline = rep.polyline_encodee
+            distance = payload.distance_m if payload.distance_m is not None else rep.distance_m
+        except Exception:
+            polyline = encoder_polyline(points)
+            distance = payload.distance_m if payload.distance_m is not None else distance_cumulee_m(points)
+    else:
+        polyline = encoder_polyline(points)
+        distance = payload.distance_m if payload.distance_m is not None else distance_cumulee_m(points)
+
     if distance <= 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -257,9 +279,14 @@ def lister_sous_troncons(
 @router.post(
     "/troncons/{troncon_id}/sous-troncons",
     summary="Créer un sous-tronçon codifié (T1A, T1B...)",
+    description=(
+        "Crée un sous-tronçon. Si OSRM est configuré (OSRM_BASE_URL), la "
+        "polyline et la distance suivent les vraies routes (boulevard, "
+        "pont, etc.). Sinon repli sur un segment droit + distance Haversine."
+    ),
     status_code=status.HTTP_201_CREATED,
 )
-def creer_sous_troncon(
+async def creer_sous_troncon(
     troncon_id: int,
     payload: SousTronconCreer,
     db: Session = Depends(get_db),
@@ -298,20 +325,44 @@ def creer_sous_troncon(
     else:
         ordre = payload.ordre
 
-    distance = distance_haversine_m(
-        payload.lat_debut, payload.lon_debut,
-        payload.lat_fin, payload.lon_fin,
-    )
+    # OSRM si disponible → polyline qui suit les vraies routes + distance réelle
+    polyline: str
+    distance: int
+    settings = get_settings()
+    if settings.osrm_base_url:
+        try:
+            from app.sources import osrm
+            from app.sources.coordonnees import PointGPS
+            rep = await osrm.route(
+                PointGPS(lat=payload.lat_debut, lon=payload.lon_debut),
+                PointGPS(lat=payload.lat_fin, lon=payload.lon_fin),
+            )
+            polyline = rep.polyline_encodee
+            distance = rep.distance_m
+        except Exception as exc:  # OSRM indispo → repli silencieux
+            polyline = encoder_polyline([
+                (payload.lat_debut, payload.lon_debut),
+                (payload.lat_fin, payload.lon_fin),
+            ])
+            distance = distance_haversine_m(
+                payload.lat_debut, payload.lon_debut,
+                payload.lat_fin, payload.lon_fin,
+            )
+    else:
+        polyline = encoder_polyline([
+            (payload.lat_debut, payload.lon_debut),
+            (payload.lat_fin, payload.lon_fin),
+        ])
+        distance = distance_haversine_m(
+            payload.lat_debut, payload.lon_debut,
+            payload.lat_fin, payload.lon_fin,
+        )
+
     if distance <= 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="La distance entre début et fin est nulle.",
         )
-
-    polyline = encoder_polyline([
-        (payload.lat_debut, payload.lon_debut),
-        (payload.lat_fin, payload.lon_fin),
-    ])
 
     sous = SousTroncon(
         troncon_id=troncon_id,
@@ -423,9 +474,22 @@ def _resume_adoption_collecte(db: Session) -> dict[str, Any]:
     relit la liste des tronçons actifs à chaque tick.
     """
     settings = get_settings()
-    nb_actifs = db.execute(
-        select(func.count(Troncon.id)).where(Troncon.actif.is_(True))
+    # Granularité réelle de mesure : parents sans sous-tronçon actif + sous-tronçons actifs.
+    parents_avec_sous = {
+        tid for (tid,) in db.execute(
+            select(SousTroncon.troncon_id).where(SousTroncon.actif.is_(True)).distinct()
+        ).all()
+    }
+    ids_parents_actifs = [
+        tid for (tid,) in db.execute(
+            select(Troncon.id).where(Troncon.actif.is_(True))
+        ).all()
+    ]
+    nb_parents_a_mesurer = sum(1 for tid in ids_parents_actifs if tid not in parents_avec_sous)
+    nb_sous_actifs = db.execute(
+        select(func.count(SousTroncon.id)).where(SousTroncon.actif.is_(True))
     ).scalar_one() or 0
+    nb_actifs = nb_parents_a_mesurer + nb_sous_actifs
     estimation = estimer_requetes_par_jour(settings, nb_actifs)
     avertissement: str | None = None
     if estimation > QUOTA_GOOGLE_JOUR_MAX:

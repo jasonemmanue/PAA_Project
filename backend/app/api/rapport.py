@@ -178,6 +178,9 @@ async def get_zones_congestionnees(
             {
                 "troncon_id": c.troncon_id,
                 "troncon_nom": c.troncon_nom,
+                "sous_troncon_id": c.sous_troncon_id,
+                "sous_troncon_code": c.sous_troncon_code,
+                "sous_troncon_nom": c.sous_troncon_nom,
                 "heure": c.heure,
                 "tranche": f"{c.heure:02d}h-{c.heure + 1:02d}h",
                 "nb_par_jour_semaine": c.nb_jours_congestionnes_par_type,

@@ -138,6 +138,15 @@ class Mesure(Base):
     troncon_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("troncons.id", ondelete="RESTRICT"), nullable=False
     )
+    # Sous-tronçon optionnel (codification DEESP T1A, T1B, …).
+    # Quand renseigné, la mesure porte sur la portion fine définie par le
+    # SousTroncon ; sinon elle porte sur le tronçon parent dans son
+    # intégralité (comportement P1-P6.1). Cf. migration 0009.
+    sous_troncon_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("sous_troncons.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     # Stocké en UTC ; le fuseau Africa/Abidjan est appliqué à l'affichage
     horodatage: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
@@ -176,12 +185,16 @@ class Mesure(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
-    # Relation
+    # Relations
     troncon: Mapped["Troncon"] = relationship("Troncon", back_populates="mesures")
+    sous_troncon: Mapped["SousTroncon | None"] = relationship(
+        "SousTroncon", back_populates="mesures",
+    )
 
     def __repr__(self) -> str:
         return (
             f"<Mesure id={self.id} troncon_id={self.troncon_id} "
+            f"sous_troncon_id={self.sous_troncon_id} "
             f"source={self.source.value} horodatage={self.horodatage}>"
         )
 
@@ -463,9 +476,12 @@ class SousTroncon(Base):
         DateTime(timezone=True), server_default="now()", nullable=False,
     )
 
-    # Relation
+    # Relations
     troncon: Mapped["Troncon"] = relationship(
         "Troncon", back_populates="sous_troncons",
+    )
+    mesures: Mapped[list["Mesure"]] = relationship(
+        "Mesure", back_populates="sous_troncon",
     )
 
     def temps_reference_s(self) -> float:

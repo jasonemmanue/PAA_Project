@@ -22,9 +22,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.db.session import SessionLocal
-from app.models.models import Troncon
+from app.models.models import SousTroncon, Troncon
 from app.sources import osrm
-from app.sources.coordonnees import origine_destination
+from app.sources.coordonnees import PointGPS, origine_destination
 
 
 async def completer_tous() -> None:
@@ -40,12 +40,24 @@ async def completer_tous() -> None:
         echecs = 0
 
         for troncon in troncons:
-            try:
-                point_origine, point_destination = origine_destination(troncon.nom)
-            except (KeyError, ValueError) as exc:
-                print(f"  [ignoré] id={troncon.id}  {troncon.nom!r} — {exc}")
-                echecs += 1
-                continue
+            # Coords : d'abord celles en base (créées via Admin), sinon mapping par nom
+            point_origine: PointGPS | None = None
+            point_destination: PointGPS | None = None
+            if (
+                troncon.lat_origine is not None and troncon.lon_origine is not None
+                and troncon.lat_destination is not None and troncon.lon_destination is not None
+            ):
+                point_origine = PointGPS(lat=troncon.lat_origine, lon=troncon.lon_origine)
+                point_destination = PointGPS(
+                    lat=troncon.lat_destination, lon=troncon.lon_destination,
+                )
+            else:
+                try:
+                    point_origine, point_destination = origine_destination(troncon.nom)
+                except (KeyError, ValueError) as exc:
+                    print(f"  [ignoré] id={troncon.id}  {troncon.nom!r} — {exc}")
+                    echecs += 1
+                    continue
 
             try:
                 reponse = await osrm.route(point_origine, point_destination)
@@ -68,6 +80,28 @@ async def completer_tous() -> None:
                 f"            distance : {distance_avant} m → {reponse.distance_m} m "
                 f"({ecart_m:+d} m), polyline : {len(reponse.polyline_encodee)} caractères"
             )
+
+        # Sous-tronçons : on a leurs coords explicites (lat_debut/fin) en base,
+        # donc on peut systématiquement appeler OSRM pour la polyline.
+        sous = db.query(SousTroncon).filter(SousTroncon.actif.is_(True)).order_by(SousTroncon.id).all()
+        if sous:
+            print(f"\nComplétion via OSRM de {len(sous)} sous-tronçons…\n")
+            for s in sous:
+                try:
+                    reponse_s = await osrm.route(
+                        PointGPS(lat=s.lat_debut, lon=s.lon_debut),
+                        PointGPS(lat=s.lat_fin, lon=s.lon_fin),
+                    )
+                    distance_avant_s = s.distance_m
+                    s.polyline = reponse_s.polyline_encodee
+                    s.distance_m = reponse_s.distance_m
+                    print(
+                        f"  [OK]      id={s.id}  {s.code} — {s.nom_court}\n"
+                        f"            distance : {distance_avant_s} m → {reponse_s.distance_m} m, "
+                        f"polyline : {len(reponse_s.polyline_encodee)} car."
+                    )
+                except Exception as exc:
+                    print(f"  [erreur] sous-tronçon id={s.id} {s.code} — {exc}")
 
         db.commit()
         print(

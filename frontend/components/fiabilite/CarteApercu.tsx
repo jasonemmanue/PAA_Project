@@ -156,6 +156,50 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
         ligne.addTo(map);
         ligne.bindTooltip(tr.nom, { sticky: true });
         polylinesTroncons.current.push(ligne);
+
+        // Sous-tronçons : lignes pleines, plus épaisses, colorées par classe DEESP.
+        for (const sous of tr.sous_troncons ?? []) {
+          let coordsSous: [number, number][] = [];
+          if (typeof sous.polyline === "string" && sous.polyline.length > 0) {
+            try {
+              coordsSous = decoderPolyline(sous.polyline);
+            } catch {
+              coordsSous = [];
+            }
+          }
+          if (coordsSous.length < 2) {
+            const latS = sous.geometrie?.lat_debut ?? null;
+            const lonS = sous.geometrie?.lon_debut ?? null;
+            const latF = sous.geometrie?.lat_fin ?? null;
+            const lonF = sous.geometrie?.lon_fin ?? null;
+            if (
+              Number.isFinite(latS) && Number.isFinite(lonS)
+              && Number.isFinite(latF) && Number.isFinite(lonF)
+            ) {
+              coordsSous = [
+                [latS as number, lonS as number],
+                [latF as number, lonF as number],
+              ];
+            }
+          }
+          const coordsSousValides = coordsSous.filter(
+            (pt) => Array.isArray(pt) && pt.length === 2
+              && Number.isFinite(pt[0]) && Number.isFinite(pt[1]),
+          );
+          if (coordsSousValides.length < 2) continue;
+
+          const ligneSous = L.polyline(coordsSousValides, {
+            color: sous.couleur_etat ?? "#888",
+            weight: 5,
+            opacity: 0.9,
+          });
+          ligneSous.addTo(map);
+          ligneSous.bindTooltip(
+            `${sous.code} — ${sous.nom_court}`,
+            { sticky: true },
+          );
+          polylinesTroncons.current.push(ligneSous);
+        }
       } catch (err) {
         // Un tronçon mal formé ne doit pas faire planter toute la carte
         // eslint-disable-next-line no-console
