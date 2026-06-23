@@ -1031,15 +1031,72 @@ tronçons + sous-tronçons actifs en une seule commande. Le script accepte
 maintenant les tronçons créés via Admin (utilise leurs coords en base)
 en plus des 6 axes officiels mappés par nom dans `coordonnees.py`.
 
-#### Procédure « OSRM local le temps de complete_troncons »
+#### Procédure « Ajouter un tronçon/sous-tronçon avec tracé routier réel »
 
-1. Lancer OSRM en local : `docker compose up -d osrm`
-2. Tunnel public temporaire : `ngrok http 5000`
-3. Sur Railway : `railway variables --set "OSRM_BASE_URL=https://xxxx.ngrok-free.app" --service backend`
-4. Console Railway : `python -m app.complete_troncons`
-5. Nettoyer : `railway variables --unset "OSRM_BASE_URL" --service backend` puis stopper ngrok.
+> À faire chaque fois que vous créez un nouveau tronçon ou sous-tronçon via
+> la page Administration et que vous voulez qu'il s'affiche avec le tracé
+> réel sur la carte (pas une ligne droite).
 
-Les polylines persistent en base après ces 4 étapes.
+**Durée totale : ~10 minutes.**
+
+**Étape 1 — Créer le tronçon via la page Administration**
+
+Remplissez le formulaire (nom, coordonnées origine + destination).
+Le tronçon apparaît immédiatement sur la carte en **ligne droite** — c'est
+normal, OSRM n'a pas encore calculé le tracé routier.
+
+**Étape 2 — Démarrer OSRM en local** (Windows PowerShell)
+
+```powershell
+# Dans le dossier du projet
+docker compose up -d osrm
+# Attendre ~30 secondes que le service démarre
+docker compose logs osrm --tail 5
+# → doit afficher "running and waiting for requests"
+```
+
+**Étape 3 — Créer un tunnel Cloudflare** (nouvelle fenêtre PowerShell)
+
+```powershell
+# cloudflared-windows-amd64.exe doit être dans le dossier du projet
+.\cloudflared-windows-amd64.exe tunnel --url http://localhost:5000
+# → affiche une URL du type : https://xxxx-yyyy-zzzz.trycloudflare.com
+# Laisser cette fenêtre ouverte pendant toute la procédure
+```
+
+**Étape 4 — Connecter Railway à votre OSRM local**
+
+```powershell
+# Remplacer l'URL par celle affichée par cloudflared à l'étape 3
+railway variable set "OSRM_BASE_URL=https://xxxx-yyyy-zzzz.trycloudflare.com" --service backend
+```
+
+**Étape 5 — Regénérer toutes les polylines** (Console Railway — onglet Console du service backend)
+
+```bash
+python -m app.complete_troncons
+# → affiche [OK] pour chaque tronçon et sous-tronçon avec leur polyline
+# → les nouveaux tronçons créés en Administration sont inclus automatiquement
+```
+
+**Étape 6 — Nettoyer**
+
+```powershell
+# Supprimer la variable Railway (OSRM n'est plus nécessaire)
+railway variable delete OSRM_BASE_URL --service backend
+# Fermer la fenêtre cloudflared (Ctrl+C)
+# Arrêter OSRM local (optionnel — libère de la RAM)
+docker compose stop osrm
+```
+
+**Étape 7 — Vérifier sur la carte**
+
+Ouvrir la page **Accueil / Carte** et faire **Ctrl+Shift+R** (hard refresh).
+Le nouveau tronçon doit maintenant suivre les vraies routes (pas une ligne droite).
+
+> **Les polylines sont persistées en base PostgreSQL Railway.** Une fois
+> générées, elles restent même si OSRM est éteint. Il ne faut répéter
+> cette procédure qu'à chaque ajout de nouveau tronçon ou sous-tronçon.
 
 ---
 
