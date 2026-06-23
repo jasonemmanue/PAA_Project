@@ -102,6 +102,14 @@ export function ImportSegmentsGpx({ troncons, onImporte }: ImportSegmentsGpxProp
       titre={t("segments.importTitle")}
       description={t("segments.importDescription")}
     >
+      {/* Conseil "par lot" */}
+      <div className="mb-4 rounded-md border border-paa-blue-300 bg-paa-blue-50 dark:border-paa-navy-600 dark:bg-paa-navy-800 px-4 py-3 text-fluid-xs app-text-muted">
+        <strong className="text-paa-navy-800 dark:text-paa-blue-100">
+          {t("segments.conseilLotTitre")}
+        </strong>{" "}
+        {t("segments.conseilLotDetail")}
+      </div>
+
       {/* Métadonnées optionnelles */}
       <div className="grid gap-3 sm:grid-cols-3 mb-4">
         <div className="flex flex-col gap-1">

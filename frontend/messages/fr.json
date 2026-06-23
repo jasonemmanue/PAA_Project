@@ -179,7 +179,9 @@
     "colCouverture": "Couverture",
     "colConfiance": "Confiance",
     "aucunSegment": "Aucun segment GPX encore importé.",
-    "aucunSegmentRow": "Pas de données"
+    "aucunSegmentRow": "Pas de données",
+    "conseilLotTitre": "Importer par lot par tronçon.",
+    "conseilLotDetail": "Sélectionnez uniquement les fichiers appartenant au même axe (ex. tous les segments CARENA→Palm Beach), choisissez son ID de tronçon et un identifiant de session commun. Répétez l'opération pour chaque axe de la sortie terrain."
   },
   "prediction": {
     "title": "Temps de traversée par période",

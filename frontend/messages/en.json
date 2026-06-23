@@ -179,7 +179,9 @@
     "colCouverture": "Coverage",
     "colConfiance": "Confidence",
     "aucunSegment": "No GPX segment imported yet.",
-    "aucunSegmentRow": "No data"
+    "aucunSegmentRow": "No data",
+    "conseilLotTitre": "Import one route per batch.",
+    "conseilLotDetail": "Select only files belonging to the same route (e.g. all CARENA→Palm Beach segments), set its route ID and a shared session ID. Repeat for each route of the field session."
   },
   "prediction": {
     "title": "Crossing time by period",
