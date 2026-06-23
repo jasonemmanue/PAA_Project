@@ -493,3 +493,96 @@ class SousTroncon(Base):
             f"<SousTroncon id={self.id} troncon_id={self.troncon_id} "
             f"code={self.code!r} ordre={self.ordre}>"
         )
+
+
+# ---------------------------------------------------------------------------
+# Table : segments_terrain  (P6.5 — accumulation GPX libres)
+# ---------------------------------------------------------------------------
+
+
+class SegmentTerrain(Base):
+    """Sous-section d'un trajet enregistrée librement entre deux landmarks.
+
+    Contrairement à `releves_terrain` (trajet complet d'un tronçon officiel),
+    un segment peut couvrir n'importe quelle portion du tracé. Les segments
+    s'accumulent session après session ; le module d'assemblage somme les
+    durées pour reconstituer les temps de traversée par tronçon.
+
+    Cf. CLAUDE.md § 4.9 — Précision progressive par accumulation GPX.
+    """
+
+    __tablename__ = "segments_terrain"
+
+    __table_args__ = (
+        Index(
+            "ix_segments_terrain_troncon_date",
+            "troncon_id", "date_session",
+        ),
+        Index("ix_segments_terrain_session", "session_id"),
+        Index("ix_segments_terrain_horodatage", "horodatage_debut"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Libellé lisible (ex. "CARENA-GMA", "Sim Ivoire-Carrefour Seamen's")
+    nom_segment: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    # Tronçon officiel auquel appartient ce segment (NULL si non identifié)
+    troncon_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("troncons.id", ondelete="SET NULL"), nullable=True,
+    )
+
+    # 'aller' (vers Palm Beach) ou 'retour' (depuis Palm Beach)
+    direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+    # Premier et dernier point GPS du segment
+    lat_debut: Mapped[float] = mapped_column(Float, nullable=False)
+    lon_debut: Mapped[float] = mapped_column(Float, nullable=False)
+    lat_fin: Mapped[float] = mapped_column(Float, nullable=False)
+    lon_fin: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Durée mesurée par les horodatages GPS, en secondes
+    duree_s: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Distance cumulée de la trace (Haversine point à point), en mètres
+    distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Horodatages UTC du début et de la fin
+    horodatage_debut: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    horodatage_fin: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    # Date de la session (pour regrouper plusieurs segments du même parcours)
+    date_session: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # Identifiant de session libre (ex. "20260622_A")
+    session_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # True = vrai GPX téléphone ; False = GPX synthétique (exclu de la calibration)
+    source_reelle: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
+    # Contenu binaire du GPX — source de vérité pour le frontend
+    contenu_gpx: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+
+    # Nom du fichier d'origine (logs + téléchargement)
+    nom_fichier_gpx: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Timestamp de création (serveur)
+    cree_le: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default="now()", nullable=False
+    )
+
+    # Relation
+    troncon: Mapped["Troncon | None"] = relationship("Troncon")
+
+    def __repr__(self) -> str:
+        return (
+            f"<SegmentTerrain id={self.id} nom={self.nom_segment!r} "
+            f"troncon_id={self.troncon_id} direction={self.direction!r} "
+            f"duree={self.duree_s}s>"
+        )

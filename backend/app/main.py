@@ -38,6 +38,7 @@ from app.api.predire import router as predire_router
 from app.api.profils import router as profils_router
 from app.api.rapport import router as rapport_router
 from app.api.terrain import router as terrain_router
+from app.api.segments import router as segments_router
 from app.api.troncons import router as troncons_router
 from app.collecte.scheduler import arreter_scheduler, demarrer_scheduler
 from app.core.config import get_settings
@@ -167,6 +168,16 @@ _TAGS_METADATA = [
         ),
     },
     {
+        "name": "segments terrain (GPX libres)",
+        "description": (
+            "Accumulation progressive de sous-sections GPX enregistrées librement "
+            "(entre landmarks intermédiaires, sans obligation de couvrir un tronçon "
+            "officiel en entier). Les segments s'agrègent par session pour reconstituer "
+            "les temps de traversée par axe. La précision s'améliore à chaque nouvelle "
+            "session importée. Miroir aller/retour appliqué quand un sens manque."
+        ),
+    },
+    {
         "name": "rapport DEESP",
         "description": (
             "Reproduit les 17 tableaux et 12 graphiques du rapport officiel "
@@ -270,6 +281,7 @@ app.include_router(carte_ws_router)
 app.include_router(import_router)
 app.include_router(evolution_router)
 app.include_router(terrain_router)
+app.include_router(segments_router)
 app.include_router(rapport_router)
 app.include_router(predire_router)
 app.include_router(administration_router)
