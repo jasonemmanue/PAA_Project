@@ -25,23 +25,45 @@ export function PageAdministration() {
   const charger = useCallback(async () => {
     setChargement(true);
     try {
-      // L'endpoint /troncons renvoie un objet { troncons: [...] } enrichi —
-      // on prend directement le tableau pour l'admin.
+      // L'endpoint /troncons renvoie un objet { troncons: [...] } enrichi
+      // par construire_etat_carte() : coords sous `geometrie.*`, `actif`
+      // implicite (le backend filtre déjà actif=true par défaut),
+      // `couleur` exposée sous `couleur_base`. On normalise ici pour que
+      // l'admin ait le shape `TronconAdmin` même si l'API change un jour.
       const data = await api.troncons();
+      type TronconBrut = {
+        id: number; nom: string;
+        lat_origine?: number | null; lon_origine?: number | null;
+        lat_destination?: number | null; lon_destination?: number | null;
+        geometrie?: {
+          lat_origine: number | null; lon_origine: number | null;
+          lat_destination: number | null; lon_destination: number | null;
+        };
+        polyline: string | null;
+        distance_m: number; vitesse_ref_kmh: number;
+        couleur?: string; couleur_base?: string;
+        actif?: boolean;
+      };
+      const brut = (Array.isArray(data) ? data : []) as TronconBrut[];
       setTroncons(
-        (Array.isArray(data) ? data : []).map((t) => ({
+        brut.map((t) => ({
           id: t.id,
           nom: t.nom,
-          lat_origine: t.lat_origine,
-          lon_origine: t.lon_origine,
-          lat_destination: t.lat_destination,
-          lon_destination: t.lon_destination,
+          // Coords : top-level OU sous `geometrie.*` (payload /carte/etat)
+          lat_origine: t.lat_origine ?? t.geometrie?.lat_origine ?? null,
+          lon_origine: t.lon_origine ?? t.geometrie?.lon_origine ?? null,
+          lat_destination:
+            t.lat_destination ?? t.geometrie?.lat_destination ?? null,
+          lon_destination:
+            t.lon_destination ?? t.geometrie?.lon_destination ?? null,
           polyline: t.polyline,
           distance_m: t.distance_m,
           distance_km: Math.round((t.distance_m / 1000) * 100) / 100,
           vitesse_ref_kmh: t.vitesse_ref_kmh,
-          couleur: t.couleur,
-          actif: t.actif,
+          couleur: t.couleur ?? t.couleur_base ?? "#3498DB",
+          // L'endpoint ne renvoie que les actifs par défaut → si le champ
+          // est absent, on considère le tronçon actif.
+          actif: t.actif ?? true,
         })),
       );
     } finally {
