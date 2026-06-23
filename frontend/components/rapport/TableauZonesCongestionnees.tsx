@@ -14,7 +14,7 @@ export function TableauZonesCongestionnees({
       description={
         "Tronçon congestionné si : (a) ≥ 3 occurrences sur un jour-indicatif " +
         "à la même heure, OU (b) ≥ 4 occurrences à la même heure dans la semaine. " +
-        "Critère de congestion : duree_trafic_s > 1.5 × T_ref_50kmh."
+        "Critère DEESP par mesure : couleur Google Maps — rouge présent OU orange ≥ 50 % du tronçon."
       }
     >
       <div className="overflow-x-auto">

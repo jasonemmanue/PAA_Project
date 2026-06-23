@@ -211,10 +211,8 @@ function TexteLaser({
       taille === "grand"
         ? "clamp(1.6rem, 5vw, 2.75rem)"
         : "clamp(0.9rem, 2.6vw, 1.25rem)",
-    textShadow:
-      taille === "grand"
-        ? "0 0 14px rgba(76, 201, 240, 0.7)"
-        : "0 0 8px rgba(76, 201, 240, 0.55)",
+    // Pas de textShadow : on veut juste les écrits clairs en bleu ciel,
+    // sans halo qui se superpose sur les caractères.
   };
 
   return (

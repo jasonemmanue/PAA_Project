@@ -6,21 +6,15 @@
    SplashScreen HACKATONIA — animations "laser printing"
    ====================================================================== */
 
-/* Effet de gravure du texte : clip-path révèle le texte de gauche à droite,
-   tandis qu'un drop-shadow bleu ciel intense suit la "tête de gravure" et
-   se stabilise à la fin en lueur douce. Compatible Chrome/Firefox/Safari. */
+/* Effet de gravure du texte : clip-path révèle le texte de gauche à droite.
+   Pas de drop-shadow autour du texte — le rapport DEESP demande un rendu
+   sobre, donc on ne garde que l'écriture progressive sans halo bleu. */
 @keyframes splash-laser-reveal {
   0% {
     clip-path: inset(0 100% 0 0);
-    filter: drop-shadow(0 0 14px #4cc9f0) drop-shadow(0 0 28px #4cc9f0);
-  }
-  85% {
-    clip-path: inset(0 0% 0 0);
-    filter: drop-shadow(0 0 14px #4cc9f0) drop-shadow(0 0 28px #4cc9f0);
   }
   100% {
     clip-path: inset(0 0% 0 0);
-    filter: drop-shadow(0 0 6px #4cc9f0) drop-shadow(0 0 14px #4cc9f0);
   }
 }
 
@@ -87,7 +81,7 @@
     animation: none !important;
   }
   .splash-laser-text {
-    filter: drop-shadow(0 0 6px #4cc9f0);
+    filter: none;
   }
 }
 
