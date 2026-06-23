@@ -360,6 +360,17 @@ export function getSegmentsResumeTroncon(tronconId: number): Promise<ResumeSegme
   return appel<ResumeSegments>(`/terrain/segments/resume/${tronconId}`);
 }
 
+export function getSegmentsListe(): Promise<Array<{ id: number; nom_fichier_gpx: string | null }>> {
+  return appel<Array<{ id: number; nom_fichier_gpx: string | null }>>("/terrain/segments");
+}
+
+export async function getSegmentGpxTexte(segmentId: number): Promise<string> {
+  const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+  const resp = await fetch(`${BASE}/terrain/segments/${segmentId}/gpx`);
+  if (!resp.ok) throw new Error(`GPX segment ${segmentId} : HTTP ${resp.status}`);
+  return resp.text();
+}
+
 // ---------------------------------------------------------------------------
 // Rapport DEESP — endpoints /rapport/*
 // ---------------------------------------------------------------------------
@@ -415,6 +426,8 @@ export const api = {
   segmentsImport: postSegmentImport,
   segmentsResume: getSegmentsResume,
   segmentsResumeTroncon: getSegmentsResumeTroncon,
+  segmentsListe: getSegmentsListe,
+  segmentGpxTexte: getSegmentGpxTexte,
   rapportTempsTheoriques: getRapportTempsTheoriques,
   rapportTempsTraversee: getRapportTempsTraversee,
   rapportZonesCongestionnees: getRapportZonesCongestionnees,

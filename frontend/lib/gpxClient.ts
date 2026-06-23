@@ -28,6 +28,22 @@ export interface TraceGpx {
  *  - Le contenu n'est pas du XML valide
  *  - Aucun `<trkpt>` n'a été trouvé
  */
+/** Parse un texte GPX déjà chargé (depuis un fetch par exemple). */
+export function parserGpxTexte(texte: string, nomFichier: string): TraceGpx {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(texte, "application/xml");
+  const erreur = doc.querySelector("parsererror");
+  if (erreur) throw new Error(`GPX invalide : ${erreur.textContent ?? "XML mal formé"}`);
+  const trkpts = Array.from(doc.getElementsByTagNameNS("*", "trkpt"));
+  if (trkpts.length === 0) throw new Error("Aucun point <trkpt>.");
+  const points: PointGpx[] = trkpts.map((node) => ({
+    lat: Number(node.getAttribute("lat")),
+    lon: Number(node.getAttribute("lon")),
+    horodatage: node.getElementsByTagNameNS("*", "time")[0]?.textContent ?? null,
+  })).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  return { nomFichier, points };
+}
+
 export async function parserGpxFichier(fichier: File): Promise<TraceGpx> {
   const texte = await fichier.text();
   const parser = new DOMParser();

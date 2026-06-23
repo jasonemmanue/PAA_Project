@@ -252,6 +252,36 @@ async def importer_segment(
 
 
 # ---------------------------------------------------------------------------
+# GET /terrain/segments/{segment_id}/gpx
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{segment_id}/gpx",
+    summary="Contenu GPX brut d'un segment",
+    description="Retourne le fichier GPX binaire stocké pour ce segment (BYTEA).",
+    response_class=__import__("fastapi").responses.Response,
+)
+async def gpx_segment(
+    segment_id: int,
+    db: Session = Depends(get_db),
+) -> __import__("fastapi").responses.Response:
+    from fastapi.responses import Response as FastAPIResponse
+
+    seg = db.get(SegmentTerrain, segment_id)
+    if seg is None:
+        raise HTTPException(status_code=404, detail=f"Segment {segment_id} introuvable.")
+    if not seg.contenu_gpx:
+        raise HTTPException(status_code=410, detail="Contenu GPX non disponible pour ce segment.")
+    nom = seg.nom_fichier_gpx or f"segment_{segment_id}.gpx"
+    return FastAPIResponse(
+        content=bytes(seg.contenu_gpx),
+        media_type="application/gpx+xml",
+        headers={"Content-Disposition": f'attachment; filename="{nom}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /terrain/segments
 # ---------------------------------------------------------------------------
 
