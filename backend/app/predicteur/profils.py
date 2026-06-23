@@ -324,6 +324,63 @@ def predire(
 # ---------------------------------------------------------------------------
 
 
+def _stats_mesures_periode(
+    db: Session,
+    troncon_id: int,
+    debut_utc: datetime,
+    fin_utc: datetime,
+) -> dict:
+    """Stats min/moyen/max des mesures Google réelles sur une période, par type_jour.
+
+    Retourne un dict avec :
+      - ``jour_ouvrable`` / ``week_end`` : dict { min_mn, moyen_mn, max_mn, nb_mesures } ou None
+      - ``nb_mesures_total``
+    """
+    from sqlalchemy.sql.expression import and_
+
+    fuseau = ZoneInfo(get_settings().tz)
+
+    rows = list(
+        db.execute(
+            select(Mesure.duree_trafic_s, Mesure.horodatage)
+            .where(
+                and_(
+                    Mesure.troncon_id == troncon_id,
+                    Mesure.source == SourceMesure.google,
+                    Mesure.duree_trafic_s.is_not(None),
+                    Mesure.aberrante.is_(False),
+                    Mesure.horodatage >= debut_utc,
+                    Mesure.horodatage <= fin_utc,
+                )
+            )
+        ).all()
+    )
+
+    par_type: dict[str, list[float]] = {"jour_ouvrable": [], "week_end": []}
+    for duree_s, horodatage in rows:
+        if duree_s is None:
+            continue
+        horodatage_local = horodatage.astimezone(fuseau) if horodatage.tzinfo else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+        tj = _type_jour(horodatage_local.date())
+        par_type[tj].append(duree_s / 60.0)
+
+    def _calc(valeurs: list[float]) -> dict | None:
+        if not valeurs:
+            return None
+        return {
+            "min_mn": int(round(min(valeurs))),
+            "moyen_mn": int(round(statistics.fmean(valeurs))),
+            "max_mn": int(round(max(valeurs))),
+            "nb_mesures": len(valeurs),
+        }
+
+    return {
+        "jour_ouvrable": _calc(par_type["jour_ouvrable"]),
+        "week_end": _calc(par_type["week_end"]),
+        "nb_mesures_total": len(rows),
+    }
+
+
 def evaluer_qualite(db: Session, nb_jours: int = 7) -> dict:
     """Renvoie la MAE du prédicteur en minutes sur la fenêtre récente.
 

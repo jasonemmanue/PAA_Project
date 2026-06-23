@@ -34,7 +34,6 @@ from app.api.export import router as export_router
 from app.api.indicateurs import router as indicateurs_router
 from app.api.mesures import router as mesures_router
 from app.api.administration import router as administration_router
-from app.api.heure_optimale import router as heure_optimale_router
 from app.api.predire import router as predire_router
 from app.api.profils import router as profils_router
 from app.api.rapport import router as rapport_router
@@ -177,21 +176,14 @@ _TAGS_METADATA = [
         ),
     },
     {
-        "name": "prédicteur",
+        "name": "temps de traversée par période",
         "description": (
-            "Prédicteur DEESP par profils horaires avec cascade gracieuse "
-            "(Google → profils → 50 km/h). Renvoie min/moyen/max en minutes. "
-            "Calibration terrain appliquée UNIQUEMENT si des relevés réels "
-            "sont disponibles — pas avec les GPX synthétiques."
-        ),
-    },
-    {
-        "name": "heure optimale",
-        "description": (
-            "Module P6.3 — calcul de l'heure de départ optimale vers un "
-            "tronçon du port avec propagation temporelle (le profil horaire "
-            "utilisé est celui de l'instant d'arrivée au tronçon, pas du "
-            "départ). Géocodage via Nominatim (OpenStreetMap)."
+            "Résumé des temps de traversée sur 3 horizons temporels : "
+            "période courante (cascade Google → profils 60 j → 50 km/h), "
+            "semaine en cours et mois en cours (min/moyen/max depuis les "
+            "mesures Google réelles, séparés jours-ouvrables/week-ends). "
+            "La précision de l'estimation courante est améliorée par les "
+            "relevés GPX terrain importés via la page Fiabilité."
         ),
     },
     {
@@ -278,6 +270,5 @@ app.include_router(evolution_router)
 app.include_router(terrain_router)
 app.include_router(rapport_router)
 app.include_router(predire_router)
-app.include_router(heure_optimale_router)
 app.include_router(administration_router)
 app.include_router(diag_router)

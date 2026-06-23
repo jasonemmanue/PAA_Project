@@ -21,6 +21,7 @@ import type {
   PredictionResponse,
   ProfilHoraire,
   QualiteResponse,
+  ResumePrediction,
   SousTroncon,
   SousTronconCreer,
   SousTronconsResponse,
@@ -368,6 +369,7 @@ export const api = {
   rapportGraphique: getRapportGraphique,
   predire: getPredire,
   qualitePrediction: getQualitePrediction,
+  resumePrediction: getResumePrediction,
   heureOptimale: getHeureOptimale,
   creerTroncon: postCreerTroncon,
   supprimerTroncon: deleteTroncon,
@@ -397,6 +399,10 @@ export function getQualitePrediction(fenetreJours = 7): Promise<QualiteResponse>
   return appel<QualiteResponse>(
     `/predire/qualite?fenetre_jours=${fenetreJours}`,
   );
+}
+
+export function getResumePrediction(tronconId: number): Promise<ResumePrediction> {
+  return appel<ResumePrediction>(`/predire/resume?troncon_id=${tronconId}`);
 }
 
 export function getHeureOptimale(

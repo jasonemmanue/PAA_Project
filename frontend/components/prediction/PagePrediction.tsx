@@ -1,41 +1,23 @@
 "use client";
 
 /**
- * Page Prédiction (P6.2) — prédicteur DEESP + cascade gracieuse.
+ * Page Temps de traversée par période.
  *
- * Affiche pour un (tronçon, date, heure) cibles :
- *   - 3 KPI cards Min / Moyen / Max en minutes (format DEESP)
- *   - badge de source (google_routes / predicteur_profils_60j / vitesse_ref_50kmh)
- *   - badge de type-jour (jour_ouvrable / week_end)
- *   - phrase d'interprétation auto-générée
- *   - barre de confiance (0..1)
- *   - encart calibration si appliquée, avertissement si désactivée
- *   - encart MAE du prédicteur (qualité) en bas de page
+ * Affiche 3 blocs empilés de haut en bas :
+ *   1. Temps actuel   — estimation cascade Google → profils → 50 km/h
+ *                       (précision améliorée par les relevés GPX terrain — page Fiabilité)
+ *   2. Ce mois        — stats Google réelles depuis le 1er du mois
+ *   3. Cette semaine  — stats Google réelles depuis le lundi en cours
+ *
+ * Aucun sélecteur de date ou d'heure — tout est automatique.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { OngletHeureOptimale } from "@/components/prediction/OngletHeureOptimale";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
-import { useI18n } from "@/lib/i18n";
-import type {
-  PredictionResponse,
-  QualiteResponse,
-  SourcePrediction,
-  Troncon,
-} from "@/lib/types";
-
-type Onglet = "prediction" | "heure_optimale";
-
-function defautDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function defautHeure(): number {
-  return new Date().getHours();
-}
+import type { ResumePrediction, SourcePrediction, StatsPeriode, Troncon } from "@/lib/types";
 
 const COULEUR_SOURCE: Record<SourcePrediction, string> = {
   google_routes: "#2ECC71",
@@ -45,160 +27,68 @@ const COULEUR_SOURCE: Record<SourcePrediction, string> = {
 
 const LIBELLE_SOURCE: Record<SourcePrediction, string> = {
   google_routes: "Mesure Google temps réel",
-  predicteur_profils_60j: "Prédicteur DEESP (profils 60 j)",
+  predicteur_profils_60j: "Profils historiques 60 j (calibré GPX)",
   vitesse_ref_50kmh: "Référence 50 km/h",
 };
 
+function formaterDate(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  const mois = ["", "jan.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  return `${Number(d)} ${mois[Number(m)]} ${y}`;
+}
+
 export function PagePrediction() {
-  const { t } = useI18n();
-  const [onglet, setOnglet] = useState<Onglet>("prediction");
   const [troncons, setTroncons] = useState<Troncon[]>([]);
   const [tronconId, setTronconId] = useState<number | null>(null);
-  const [dateCible, setDateCible] = useState<string>(defautDate());
-  const [heure, setHeure] = useState<number>(defautHeure());
-  const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
-  const [qualite, setQualite] = useState<QualiteResponse | null>(null);
+  const [resume, setResume] = useState<ResumePrediction | null>(null);
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
-  // 1) Charger la liste des tronçons + qualité du prédicteur
   useEffect(() => {
     let annule = false;
-    Promise.all([api.troncons(), api.qualitePrediction(7)])
-      .then(([liste, q]) => {
-        if (annule) return;
-        const tr = Array.isArray(liste) ? liste : [];
-        setTroncons(tr);
-        setTronconId(tr[0]?.id ?? null);
-        setQualite(q);
-      })
-      .catch((e) =>
-        !annule && setErreur(e instanceof Error ? e.message : String(e)),
-      );
-    return () => {
-      annule = true;
-    };
+    api.troncons().then((liste) => {
+      if (annule) return;
+      const tr = Array.isArray(liste) ? liste : [];
+      setTroncons(tr);
+      setTronconId(tr[0]?.id ?? null);
+    }).catch((e) => !annule && setErreur(e instanceof Error ? e.message : String(e)));
+    return () => { annule = true; };
   }, []);
 
-  const lancerPrediction = useCallback(async () => {
+  useEffect(() => {
     if (tronconId === null) return;
+    let annule = false;
     setChargement(true);
     setErreur(null);
-    try {
-      const p = await api.predire(tronconId, dateCible, heure);
-      setPrediction(p);
-    } catch (e) {
-      setErreur(e instanceof Error ? e.message : String(e));
-    } finally {
-      setChargement(false);
-    }
-  }, [tronconId, dateCible, heure]);
-
-  // Auto-prédiction au chargement initial dès qu'on a un tronçon
-  useEffect(() => {
-    if (tronconId !== null && prediction === null) {
-      void lancerPrediction();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    api.resumePrediction(tronconId)
+      .then((r) => { if (!annule) setResume(r); })
+      .catch((e) => { if (!annule) setErreur(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (!annule) setChargement(false); });
+    return () => { annule = true; };
   }, [tronconId]);
-
-  const phraseInterpretation = construirePhrase(prediction);
 
   return (
     <div className="flex flex-col gap-fluid-4">
       <PageHeader
-        titre="Prédicteur DEESP — quand passer ?"
-        sousTitre="Estimation min / moyen / max en minutes basée sur les profils horaires, avec cascade Google → prédicteur → référence 50 km/h."
+        titre="Temps de traversée par période"
+        sousTitre="Temps min / moyen / max observés — période courante, ce mois et cette semaine. L'estimation courante est calibrée par les relevés GPX terrain (page Fiabilité)."
       />
 
-      {/* Onglets */}
-      <div className="inline-flex flex-wrap gap-1 rounded-md border app-border p-1 app-surface self-start">
-        <button
-          type="button"
-          onClick={() => setOnglet("prediction")}
-          aria-pressed={onglet === "prediction"}
-          className={
-            "px-4 py-2 text-fluid-sm font-medium rounded transition-colors " +
-            (onglet === "prediction"
-              ? "bg-paa-navy-700 text-white"
-              : "text-paa-navy-700 hover:bg-paa-blue-50 dark:text-paa-blue-100 dark:hover:bg-paa-navy-700")
-          }
-        >
-          📈 Prédiction par créneau
-        </button>
-        <button
-          type="button"
-          onClick={() => setOnglet("heure_optimale")}
-          aria-pressed={onglet === "heure_optimale"}
-          className={
-            "px-4 py-2 text-fluid-sm font-medium rounded transition-colors " +
-            (onglet === "heure_optimale"
-              ? "bg-paa-navy-700 text-white"
-              : "text-paa-navy-700 hover:bg-paa-blue-50 dark:text-paa-blue-100 dark:hover:bg-paa-navy-700")
-          }
-        >
-          🏆 Heure optimale de départ
-        </button>
-      </div>
-
-      {/* Onglet Heure optimale */}
-      {onglet === "heure_optimale" && <OngletHeureOptimale />}
-
-      {/* Onglet Prédiction par créneau — reste tel quel */}
-      {onglet === "prediction" && (
-        <>
-
-      {/* Sélecteurs */}
+      {/* Sélecteur tronçon */}
       <Card>
-        <div className="grid gap-3 md:grid-cols-4 md:items-end">
-          <label className="flex flex-col gap-1 text-fluid-sm font-medium">
-            Tronçon
-            <select
-              value={tronconId ?? ""}
-              onChange={(e) => setTronconId(Number(e.target.value))}
-              className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
-                         focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
-            >
-              {troncons.map((tr) => (
-                <option key={tr.id} value={tr.id}>
-                  {tr.nom}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-fluid-sm font-medium">
-            Date
-            <input
-              type="date"
-              value={dateCible}
-              onChange={(e) => setDateCible(e.target.value)}
-              className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
-                         focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-fluid-sm font-medium">
-            Heure : <span className="font-mono text-paa-blue-500">{String(heure).padStart(2, "0")}:00</span>
-            <input
-              type="range"
-              min={0}
-              max={23}
-              value={heure}
-              onChange={(e) => setHeure(Number(e.target.value))}
-              className="accent-paa-navy-700"
-            />
-          </label>
-
-          <button
-            type="button"
-            onClick={lancerPrediction}
-            disabled={tronconId === null || chargement}
-            className="btn-primary disabled:opacity-50"
+        <label className="flex flex-col gap-1 text-fluid-sm font-medium max-w-md">
+          Tronçon
+          <select
+            value={tronconId ?? ""}
+            onChange={(e) => setTronconId(Number(e.target.value))}
+            className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
+                       focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
           >
-            {chargement ? "Calcul…" : "Prédire"}
-          </button>
-        </div>
+            {troncons.map((tr) => (
+              <option key={tr.id} value={tr.id}>{tr.nom}</option>
+            ))}
+          </select>
+        </label>
       </Card>
 
       {erreur && (
@@ -207,73 +97,70 @@ export function PagePrediction() {
         </div>
       )}
 
-      {/* Résultat de prédiction */}
-      {prediction && (
+      {chargement && (
+        <div className="text-fluid-sm app-text-muted animate-pulse">Chargement…</div>
+      )}
+
+      {resume && !chargement && (
         <>
-          {/* Badge source + type-jour */}
-          <div className="flex flex-wrap gap-2">
-            <BadgeSource source={prediction.source} />
-            <BadgeTypeJour type={prediction.type_jour} />
-            <BadgeConfiance valeur={prediction.confiance} />
-          </div>
-
-          {/* 3 KPI Min / Moyen / Max */}
-          <div className="grid gap-fluid-4 md:grid-cols-3">
-            <KpiPrediction label="Temps minimum attendu" mn={prediction.prediction.min_mn} couleur="#2ECC71" />
-            <KpiPrediction label="Temps moyen attendu" mn={prediction.prediction.moyen_mn} couleur="#3498DB" couleurDominante />
-            <KpiPrediction label="Temps maximum attendu" mn={prediction.prediction.max_mn} couleur="#E74C3C" />
-          </div>
-
-          {/* Phrase d'interprétation */}
-          {phraseInterpretation && (
-            <Card titre="Notre interprétation">
-              <p className="text-fluid-base text-paa-navy-900 dark:text-paa-blue-100 leading-relaxed">
-                {phraseInterpretation}
-              </p>
-            </Card>
-          )}
-
-          {/* Calibration + avertissement */}
-          <Card titre="Calibration terrain" description="Multiplicateur appliqué à la prédiction depuis les relevés GPX réels. Désactivé tant que tous les relevés sont synthétiques.">
-            <div className="flex flex-wrap items-baseline gap-4">
-              <div>
-                <div className="text-fluid-xs app-text-muted">Facteur</div>
-                <div className="text-fluid-2xl font-bold">
-                  {prediction.calibration_appliquee === 0
-                    ? "×1,00 (neutre)"
-                    : `×${(1 + prediction.calibration_appliquee).toFixed(3)}`}
-                </div>
-              </div>
-              {prediction.avertissement && (
-                <p className="flex-1 min-w-[200px] rounded-md bg-statut-dense/10 border border-statut-dense/40 px-3 py-2 text-fluid-sm text-statut-dense">
-                  ⚠ {prediction.avertissement}
-                </p>
-              )}
+          {/* ─── 1. TEMPS ACTUEL ─────────────────────────────────────────── */}
+          <section>
+            <h2 className="text-fluid-lg font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-2">
+              🕐 Temps actuel
+            </h2>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <BadgeSource source={resume.courante.source} />
+              <BadgeTypeJour type={resume.courante.type_jour} />
+              <BadgeConfiance valeur={resume.courante.confiance} />
             </div>
-          </Card>
-        </>
-      )}
+            <div className="grid gap-fluid-4 md:grid-cols-3">
+              <KpiMn label="Temps minimum" mn={resume.courante.prediction.min_mn} couleur="#2ECC71" />
+              <KpiMn label="Temps moyen" mn={resume.courante.prediction.moyen_mn} couleur="#3498DB" dominante />
+              <KpiMn label="Temps maximum" mn={resume.courante.prediction.max_mn} couleur="#E74C3C" />
+            </div>
+            {resume.courante.avertissement && (
+              <p className="mt-2 text-fluid-xs app-text-muted italic">
+                ⚠ {resume.courante.avertissement}
+              </p>
+            )}
+          </section>
 
-      {/* Qualité (MAE) en bas de page */}
-      {qualite && (
-        <Card
-          titre="Qualité du prédicteur"
-          description="Mean Absolute Error (MAE) des 7 derniers jours, mesures Google réelles vs prédiction par profils."
-        >
-          <div className="grid gap-fluid-4 sm:grid-cols-2">
-            <MaeCard
-              label="Jours ouvrables (lun–ven)"
-              mae={qualite.mae_minutes.jour_ouvrable}
-              nbObs={qualite.nb_observations.jour_ouvrable}
-            />
-            <MaeCard
-              label="Week-ends (sam–dim)"
-              mae={qualite.mae_minutes.week_end}
-              nbObs={qualite.nb_observations.week_end}
-            />
+          {/* ─── 2. CE MOIS ──────────────────────────────────────────────── */}
+          <section>
+            <h2 className="text-fluid-lg font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-1">
+              📆 Ce mois
+            </h2>
+            <p className="text-fluid-xs app-text-muted mb-3">
+              {formaterDate(resume.mois.debut)} → {formaterDate(resume.mois.fin)}
+              {" — "}{resume.mois.nb_mesures_total} mesure{resume.mois.nb_mesures_total !== 1 ? "s" : ""} Google
+            </p>
+            <div className="grid gap-fluid-4 md:grid-cols-2">
+              <BlocTypeJour titre="Jours ouvrables (lun–ven)" stats={resume.mois.jours_ouvrables} />
+              <BlocTypeJour titre="Week-ends (sam–dim)" stats={resume.mois.week_ends} />
+            </div>
+          </section>
+
+          {/* ─── 3. CETTE SEMAINE ────────────────────────────────────────── */}
+          <section>
+            <h2 className="text-fluid-lg font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-1">
+              📅 Cette semaine
+            </h2>
+            <p className="text-fluid-xs app-text-muted mb-3">
+              {formaterDate(resume.semaine.debut)} → {formaterDate(resume.semaine.fin)}
+              {" — "}{resume.semaine.nb_mesures_total} mesure{resume.semaine.nb_mesures_total !== 1 ? "s" : ""} Google
+            </p>
+            <div className="grid gap-fluid-4 md:grid-cols-2">
+              <BlocTypeJour titre="Jours ouvrables (lun–ven)" stats={resume.semaine.jours_ouvrables} />
+              <BlocTypeJour titre="Week-ends (sam–dim)" stats={resume.semaine.week_ends} />
+            </div>
+          </section>
+
+          {/* Note GPX */}
+          <div className="rounded-md border app-border bg-paa-blue-50 dark:bg-paa-navy-800 px-4 py-3 text-fluid-xs app-text-muted">
+            💡 <strong>Précision des temps actuels :</strong> les relevés GPX importés via la page
+            Fiabilité calibrent automatiquement l'estimation « Temps actuel » — plus vous importez
+            de relevés terrain réels, plus la valeur affichée est proche de la réalité.
           </div>
-        </Card>
-      )}
         </>
       )}
     </div>
@@ -284,33 +171,59 @@ export function PagePrediction() {
 // Sous-composants
 // ---------------------------------------------------------------------------
 
-function KpiPrediction({
+function KpiMn({
   label,
   mn,
   couleur,
-  couleurDominante = false,
+  dominante = false,
 }: {
   label: string;
   mn: number | null;
   couleur: string;
-  couleurDominante?: boolean;
+  dominante?: boolean;
 }) {
   return (
     <div
       className="paa-card p-fluid-4"
-      style={
-        couleurDominante
-          ? { borderLeft: `4px solid ${couleur}` }
-          : undefined
-      }
+      style={dominante ? { borderLeft: `4px solid ${couleur}` } : undefined}
     >
       <div className="text-fluid-xs font-medium app-text-muted">{label}</div>
-      <div
-        className="mt-1 text-fluid-3xl font-bold"
-        style={{ color: couleur }}
-      >
+      <div className="mt-1 text-fluid-3xl font-bold" style={{ color: couleur }}>
         {mn === null ? "—" : `${mn} min`}
       </div>
+    </div>
+  );
+}
+
+function BlocTypeJour({ titre, stats }: { titre: string; stats: StatsPeriode | null }) {
+  return (
+    <div className="paa-card p-fluid-4">
+      <div className="text-fluid-sm font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-3">
+        {titre}
+      </div>
+      {stats === null ? (
+        <p className="text-fluid-xs app-text-muted italic">Aucune mesure sur cette période.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <div className="text-fluid-xs app-text-muted">Min</div>
+              <div className="text-fluid-xl font-bold text-statut-fluide">{stats.min_mn} min</div>
+            </div>
+            <div>
+              <div className="text-fluid-xs app-text-muted">Moyen</div>
+              <div className="text-fluid-xl font-bold text-paa-blue-500">{stats.moyen_mn} min</div>
+            </div>
+            <div>
+              <div className="text-fluid-xs app-text-muted">Max</div>
+              <div className="text-fluid-xl font-bold text-statut-congestionne">{stats.max_mn} min</div>
+            </div>
+          </div>
+          <div className="mt-3 text-fluid-xs app-text-muted text-right">
+            {stats.nb_mesures} mesure{stats.nb_mesures !== 1 ? "s" : ""}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -344,45 +257,7 @@ function BadgeConfiance({ valeur }: { valeur: number }) {
       className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-fluid-xs font-medium"
       style={{ backgroundColor: `${c}22`, color: c, border: `1px solid ${c}` }}
     >
-      Confiance {pct}%
+      Fiabilité {pct}%
     </span>
   );
-}
-
-function MaeCard({ label, mae, nbObs }: { label: string; mae: number | null; nbObs: number }) {
-  return (
-    <div className="rounded-md border app-border p-3 app-surface">
-      <div className="text-fluid-xs app-text-muted">{label}</div>
-      <div className="mt-1 text-fluid-2xl font-bold text-paa-navy-900 dark:text-paa-blue-100">
-        {mae === null ? "—" : `± ${mae} min`}
-      </div>
-      <div className="mt-1 text-fluid-xs app-text-muted">
-        Calculé sur {nbObs.toLocaleString("fr-FR")} observation{nbObs > 1 ? "s" : ""}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Génération de la phrase d'interprétation
-// ---------------------------------------------------------------------------
-
-function construirePhrase(p: PredictionResponse | null): string | null {
-  if (!p) return null;
-  const { min_mn, moyen_mn, max_mn } = p.prediction;
-  if (moyen_mn === null) return null;
-
-  const dateObj = new Date(p.instant_local);
-  const joursFr = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
-  const moisFr = ["jan.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
-  const libelleJour = joursFr[dateObj.getUTCDay()];
-  const libelleDate = `${dateObj.getUTCDate()} ${moisFr[dateObj.getUTCMonth()]}`;
-  const libelleHeure = `${String(dateObj.getUTCHours()).padStart(2, "0")}h00`;
-
-  const fourchette =
-    min_mn !== null && max_mn !== null && min_mn !== max_mn
-      ? ` (entre ${min_mn} et ${max_mn} minutes selon les conditions)`
-      : "";
-
-  return `Pour un trajet ${libelleJour} ${libelleDate} à ${libelleHeure}, comptez en moyenne ${moyen_mn} minute${moyen_mn > 1 ? "s" : ""}${fourchette}.`;
 }

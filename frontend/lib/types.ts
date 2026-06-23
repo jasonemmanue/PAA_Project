@@ -420,6 +420,40 @@ export interface QualiteResponse {
   };
 }
 
+export interface StatsPeriode {
+  min_mn: number;
+  moyen_mn: number;
+  max_mn: number;
+  nb_mesures: number;
+}
+
+export interface ResumePrediction {
+  troncon_id: number;
+  troncon_nom: string;
+  courante: {
+    instant_local: string;
+    type_jour: "jour_ouvrable" | "week_end";
+    prediction: { min_mn: number | null; moyen_mn: number | null; max_mn: number | null };
+    source: SourcePrediction;
+    confiance: number;
+    avertissement: string | null;
+  };
+  semaine: {
+    debut: string;
+    fin: string;
+    nb_mesures_total: number;
+    jours_ouvrables: StatsPeriode | null;
+    week_ends: StatsPeriode | null;
+  };
+  mois: {
+    debut: string;
+    fin: string;
+    nb_mesures_total: number;
+    jours_ouvrables: StatsPeriode | null;
+    week_ends: StatsPeriode | null;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Heure optimale de départ (P6.3)
 // ---------------------------------------------------------------------------
