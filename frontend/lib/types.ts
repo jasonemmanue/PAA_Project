@@ -523,3 +523,53 @@ export interface SousTronconCreer {
   lon_fin: number;
   ordre?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Segments terrain — accumulation progressive GPX libres (P6.9 / § 4.9)
+// ---------------------------------------------------------------------------
+
+/** Segment terrain importé (réponse de POST /terrain/segments/import). */
+export interface SegmentImporte {
+  id: number;
+  nom_segment: string;
+  troncon_id: number | null;
+  direction: string | null;
+  lat_debut: number;
+  lon_debut: number;
+  lat_fin: number;
+  lon_fin: number;
+  duree_s: number;
+  duree_mn: number;
+  distance_m: number | null;
+  horodatage_debut: string;
+  horodatage_fin: string;
+  date_session: string;
+  session_id: string | null;
+}
+
+/** Une session = somme de segments du même groupe (date_session, session_id). */
+export interface EstimationSession {
+  date_session: string;
+  session_id: string | null;
+  nb_segments: number;
+  duree_totale_s: number;
+  duree_totale_mn: number;
+  distance_couverte_m: number;
+  couverture_pct: number;
+  source: "segments_directs" | "miroir_aller_retour";
+}
+
+/** Résumé consolidé par tronçon (GET /terrain/segments/resume/{id}). */
+export interface ResumeSegments {
+  troncon_id: number;
+  troncon_nom: string;
+  distance_m: number;
+  nb_sessions: number;
+  temps_moyen_s: number | null;
+  temps_moyen_mn: number | null;
+  temps_min_s: number | null;
+  temps_max_s: number | null;
+  couverture_moyenne_pct: number;
+  confiance: number;
+  sessions: EstimationSession[];
+}

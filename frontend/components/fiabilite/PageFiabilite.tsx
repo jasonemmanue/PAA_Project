@@ -22,6 +22,8 @@ import { useCallback, useEffect, useState } from "react";
 import { CalibrationTable } from "@/components/fiabilite/CalibrationTable";
 import { EvolutionEcart } from "@/components/fiabilite/EvolutionEcart";
 import { ImportGpx } from "@/components/fiabilite/ImportGpx";
+import { ImportSegmentsGpx } from "@/components/fiabilite/ImportSegmentsGpx";
+import { ResumeSegmentsBlock } from "@/components/fiabilite/ResumeSegments";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
@@ -52,6 +54,7 @@ export function PageFiabilite() {
   const [calibration, setCalibration] = useState<CalibrationResponse | null>(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [compteurSegments, setCompteurSegments] = useState(0);
   // États dérivés pour la prévisualisation carte (hydratés depuis Railway).
   const [tracesApercu, setTracesApercu] = useState<TraceGpx[]>([]);
   const [relevesApercu, setRelevesApercu] = useState<ReleveTerrainImport[]>([]);
@@ -235,6 +238,22 @@ export function PageFiabilite() {
           fenetre={calibration.fenetre_relevees}
         />
       )}
+
+      {/* ---- Séparateur section segments GPX libres ---- */}
+      <div className="border-t app-border pt-2">
+        <p className="text-fluid-xs font-semibold uppercase tracking-widest app-text-muted mb-4">
+          {t("segments.sectionTitle")}
+        </p>
+      </div>
+
+      {/* Import segments GPX libres */}
+      <ImportSegmentsGpx
+        troncons={troncons}
+        onImporte={() => setCompteurSegments((n) => n + 1)}
+      />
+
+      {/* Résumé précision progressive + explications */}
+      <ResumeSegmentsBlock rafraichir={compteurSegments} />
 
       {chargement && (
         <p className="text-fluid-xs app-text-muted">{t("common.loading")}</p>

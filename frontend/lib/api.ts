@@ -19,6 +19,8 @@ import type {
   Mesure,
   ProfilHoraire,
   ResumePrediction,
+  ResumeSegments,
+  SegmentImporte,
   SousTroncon,
   SousTronconCreer,
   SousTronconsResponse,
@@ -309,6 +311,52 @@ export async function getTerrainGpx(releveId: number): Promise<File> {
 }
 
 // ---------------------------------------------------------------------------
+// Segments terrain — GPX libres / précision progressive (§ 4.9)
+// ---------------------------------------------------------------------------
+
+export async function postSegmentImport(
+  fichier: File,
+  opts: {
+    nomSegment?: string;
+    tronconId?: number;
+    direction?: "aller" | "retour";
+    sessionId?: string;
+  } = {},
+): Promise<SegmentImporte> {
+  const formData = new FormData();
+  formData.append("fichier", fichier);
+  if (opts.nomSegment) formData.append("nom_segment", opts.nomSegment);
+  if (opts.tronconId !== undefined)
+    formData.append("troncon_id", String(opts.tronconId));
+  if (opts.direction) formData.append("direction", opts.direction);
+  if (opts.sessionId) formData.append("session_id", opts.sessionId);
+  formData.append("source_reelle", "true");
+
+  const url = `${baseUrl()}/terrain/segments/import`;
+  let reponse: Response;
+  try {
+    reponse = await fetch(url, { method: "POST", body: formData });
+  } catch {
+    throw new ApiError(0, "", `Réseau indisponible — impossible de joindre ${url}`);
+  }
+  if (!reponse.ok) {
+    const corps = await reponse.text().catch(() => "");
+    let message = `HTTP ${reponse.status}`;
+    try {
+      const json = JSON.parse(corps);
+      if (typeof json?.detail === "string")
+        message = `HTTP ${reponse.status} — ${json.detail}`;
+    } catch { /* corps non-JSON */ }
+    throw new ApiError(reponse.status, corps, message);
+  }
+  return (await reponse.json()) as SegmentImporte;
+}
+
+export function getSegmentsResume(): Promise<ResumeSegments[]> {
+  return appel<ResumeSegments[]>("/terrain/segments/resume");
+}
+
+// ---------------------------------------------------------------------------
 // Rapport DEESP — endpoints /rapport/*
 // ---------------------------------------------------------------------------
 
@@ -360,6 +408,8 @@ export const api = {
   terrainReleves: getTerrainReleves,
   terrainCalibration: getTerrainCalibration,
   terrainGpx: getTerrainGpx,
+  segmentsImport: postSegmentImport,
+  segmentsResume: getSegmentsResume,
   rapportTempsTheoriques: getRapportTempsTheoriques,
   rapportTempsTraversee: getRapportTempsTraversee,
   rapportZonesCongestionnees: getRapportZonesCongestionnees,
