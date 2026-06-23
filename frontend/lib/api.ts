@@ -356,6 +356,10 @@ export function getSegmentsResume(): Promise<ResumeSegments[]> {
   return appel<ResumeSegments[]>("/terrain/segments/resume");
 }
 
+export function getSegmentsResumeTroncon(tronconId: number): Promise<ResumeSegments> {
+  return appel<ResumeSegments>(`/terrain/segments/resume/${tronconId}`);
+}
+
 // ---------------------------------------------------------------------------
 // Rapport DEESP — endpoints /rapport/*
 // ---------------------------------------------------------------------------
@@ -410,6 +414,7 @@ export const api = {
   terrainGpx: getTerrainGpx,
   segmentsImport: postSegmentImport,
   segmentsResume: getSegmentsResume,
+  segmentsResumeTroncon: getSegmentsResumeTroncon,
   rapportTempsTheoriques: getRapportTempsTheoriques,
   rapportTempsTraversee: getRapportTempsTraversee,
   rapportZonesCongestionnees: getRapportZonesCongestionnees,
