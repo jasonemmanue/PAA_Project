@@ -36,19 +36,23 @@
 
 ## 🗺️ Carnet d'exécution du hackathon
 
-Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-21 :
+Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-23 :
 
 | Phase | Statut | Description rapide |
 |-------|--------|--------------------|
-| P1 → P5 | ✅ Livrées | Fondations, collecte, indicateurs FHWA, frontend, P5 (terrain) |
+| P1 → P5 | ✅ Livrées | Fondations, collecte, indicateurs DEESP, frontend complet, validation terrain GPX |
 | P6.1 | ✅ Livrée | Import historique fév 2025 + comparatif pluriannuel |
-| **§ 4.5 DEESP** | ✅ Livré | **Méthodologie DEESP/DEEF appliquée** (collecte horaire, page Rapport, 17 tableaux + 12 BarCharts) |
-| P6.2 → P7.3 | ⏳ À faire | **7 prompts restants** dans [PROMPTS_RESTANTS_DEESP.md](PROMPTS_RESTANTS_DEESP.md) |
+| **§ 4.5 DEESP** | ✅ Livré | **Méthodologie DEESP/DEEF appliquée** (collecte horaire 24h/24, page Rapport, 17 tableaux + 12 BarCharts) |
+| **P6.2** | ✅ Livré (2026-06-23) | **Page Temps de traversée** — 3 blocs (temps actuel, ce mois, cette semaine), cascade Google → mesures 7j → 50 km/h, calibration GPX |
+| ~~P6.3~~ | ❌ Retiré | ~~Heure optimale de départ~~ — module supprimé (code + UI) |
+| **P6.4** | ✅ Livré | **Administration** — ajout de tronçons sans redéploiement |
+| **P6.4bis** | ✅ Livré (2026-06-23) | **Mesure sous-tronçons** (T1A, T1B, T1C…) — scheduler, migration 0009, carte Accueil + Fiabilité, Tableau 16 ventilé |
+| **Polylines réelles** | ✅ En prod | Tracés routiers OSRM persistés en Railway via tunnel Cloudflare (2026-06-23) |
+| P6.5 → P7.3 | ⏳ À faire | ML Random Forest (optionnel), tests, déploiement Vercel, rapport final |
 
-> Les 7 prompts restants sont **entièrement réalignés** avec le rapport
-> DEESP/DEEF d'octobre 2025 — distinction jour-ouvrable/week-end, durées
-> en minutes, sous-tronçons codifiés (T1A, T1B…), cascade de dégradation,
-> tests des règles 3/4-jour-indicatif, et déploiement Vercel.
+> Les polylines des 6 tronçons suivent maintenant les vraies routes
+> (boulevard de Marseille, pont Houphouët-Boigny, avenue Christiani…) —
+> persistées en base Railway via un tunnel Cloudflare ponctuel le 2026-06-23.
 
 ---
 
@@ -201,14 +205,14 @@ npm run build && npm start
 | Exigence du brief | Statut | Implémentation |
 |-------------------|--------|----------------|
 | Connexion APIs cartographiques | ✅ | OpenStreetMap (tuiles) + OSRM (auto-hébergé, routage) + Google Routes (trafic) |
-| Récupération **temps de parcours** | ✅ | Scheduler APScheduler toutes les 20 min, 7h–19h Africa/Abidjan |
+| Récupération **temps de parcours** | ✅ | Scheduler APScheduler **toutes les heures (60 min), 24h/24** Africa/Abidjan — 144 req/jour |
 | Récupération **distances** | ✅ | Stockées en base via `seed_troncons` (officielles) + OSRM (réelles routière) |
 | Récupération **niveaux de congestion** | ✅ | Couleur Google Maps (`speedReadingIntervals`) lue à chaque cycle → classification fluide / congestionné (critère DEESP officiel — cf. § Refonte ci-dessus). |
-| Récupération **itinéraires** | 🟡 | Polylines OSRM stockées dans `troncons.polyline` quand OSRM est accessible. Sur Railway (où OSRM n'est pas exposé), la polyline reste NULL tant que `python -m app.complete_troncons` n'est pas exécuté avec un tunnel OSRM temporaire. **Procédure complète de déploiement OSRM permanent sur Oracle Cloud Free Tier** documentée dans [CLAUDE.md § 8.7](CLAUDE.md) (45-60 min de setup, 0 € récurrent). |
+| Récupération **itinéraires** | ✅ | Polylines OSRM réelles persistées en Railway (558–1081 cars/tronçon). Tracé routier complet : boulevard de Marseille, pont Houphouët-Boigny, avenue Christiani. Cf. § 0bis. |
 | Récupération **données de circulation** | ✅ | **Collecte 24h/24 toutes les heures** (144 req/jour ≪ 250 quota Google), persistée et accessible via `/mesures`, `/troncons/{id}/mesures`, etc. Le filtre DEESP officiel (7h-19h) est appliqué côté analyse pour les Tableaux 3-15 et le Tableau 16. |
 | Zoom dynamique | ✅ | `flyToBounds` animé, niveau adaptatif `maxZoom 15` |
 | Recentrage automatique | ✅ | `fitBounds` global au chargement si tout est fluide, sinon centré sur le point chaud |
-| Visualisation réelle de la zone sélectionnée | 🟡 | Polylines OSRM réelles seulement après `python -m app.complete_troncons` avec OSRM accessible. **Limitation documentée** dans [CLAUDE.md § 8.5.1](CLAUDE.md). |
+| Visualisation réelle de la zone sélectionnée | ✅ | Polylines OSRM réelles en base Railway depuis le 2026-06-23 (cf. § 0bis). Hard refresh suffit pour les voir. |
 
 ### Étape 5 — Tests, optimisation et déploiement
 
@@ -321,20 +325,26 @@ un 4e niveau de cascade).
 
 ---
 
-## 0bis · Polylines des tronçons : 2 niveaux de rendu
+## 0bis · Polylines des tronçons — état en production
 
-Pour comprendre ce qui s'affiche sur la carte selon votre setup :
+> **Situation au 2026-06-23 :** les 6 tronçons ont des polylines réelles
+> persistées en base Railway (558 à 1081 caractères chacune). Aucune
+> manipulation supplémentaire n'est nécessaire — hard refresh suffit.
 
-| Setup | Polylines obtenues | Rendu visuel | Quand l'utiliser |
-|-------|--------------------|--------------|------------------|
-| **Aucun script lancé** | `NULL` en base | **Rien** ne s'affiche (carte vide) | Jamais — bug |
-| `python -m app.complete_troncons` (❌ besoin OSRM accessible) | Polyline ~600-1000 caractères suivant les routes | 6 vraies polylines **suivant boulevard de Marseille, pont Houphouët-Boigny, etc.** | Production, démo finale, dès qu'OSRM est exposé (ngrok ponctuel suffit) |
+| Tronçon | Longueur polyline | Route couverte |
+|---------|-------------------|----------------|
+| CARENA → Palm Beach (id=1) | 939 cars | Bd de Marseille + pont HB |
+| Palm Beach → CARENA (id=2) | 1081 cars | Retour complet |
+| Toyota CFAO → Palm Beach (id=3) | 558 cars | Av. Christiani + port |
+| Palm Beach → Toyota CFAO (id=4) | 567 cars | Retour |
+| SODECI → Palm Beach (id=5) | 577 cars | Zone 4 → port |
+| Palm Beach → SODECI (id=6) | 580 cars | Retour |
 
-> Le script `complete_sans_osrm.py` (segments droits) a été **supprimé**
-> le 2026-06-23 — il a été jugé esthétiquement trop pauvre pour le jury.
-> Lancer OSRM en local + ngrok 5 minutes le temps d'exécuter
-> `complete_troncons` une seule fois, puis couper. Les polylines persistent
-> en base.
+Ces polylines ont été générées par OSRM (extrait OSM Côte d'Ivoire) et
+persistées via `python -m app.complete_troncons` lancé depuis la Console
+Railway avec un **tunnel Cloudflare** temporaire vers OSRM local
+(`cloudflared tunnel --url http://localhost:5000`). Étant idempotent, ce
+script peut être rejoué à tout moment sans effet secondaire.
 
 ### Ce que demande chaque script
 
@@ -344,19 +354,25 @@ Pour comprendre ce qui s'affiche sur la carte selon votre setup :
 | `set_coords_depuis_seed` | ❌ | ✅ | Pose **uniquement** les coords depuis `coordonnees.py`. Polyline et distance inchangées. |
 | `complete_troncons` | ✅ | ✅ | Pose coords + **polyline réelle routière** + distance recalculée par OSRM. |
 
-### Workflow recommandé pour Railway
+### Pour rejouer complete_troncons (idempotent)
 
-```bash
-# Sur la Console Railway, juste après le premier déploiement :
-alembic upgrade head          # appliquer les migrations
-python -m app.seed_troncons   # insérer les 6 tronçons
+```powershell
+# 1. Sur le PC Windows — OSRM déjà en local sur :5000 (docker compose up osrm)
+.\cloudflared-windows-amd64.exe tunnel --url http://localhost:5000
+# → Cloudflare affiche une URL https://xxxx.trycloudflare.com
 
-# Avec un tunnel OSRM temporaire (ngrok local, 5 min) :
-python -m app.complete_troncons   # écrase les polylines droites par les vraies routières
+# 2. Sur Railway
+railway variable set "OSRM_BASE_URL=https://xxxx.trycloudflare.com" --service backend
+
+# 3. Console Railway
+python -m app.complete_troncons
+
+# 4. Nettoyage
+railway variable delete OSRM_BASE_URL --service backend
 ```
 
-`complete_troncons` étant idempotent, on peut le rejouer N fois sans effet
-secondaire.
+Avantage du tunnel Cloudflare vs ngrok : pas de compte requis, pas de
+limite de connexions, fonctionne même si le port 22 SSH est bloqué.
 
 ---
 
