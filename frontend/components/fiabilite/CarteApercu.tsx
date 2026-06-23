@@ -258,167 +258,68 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
     }
   }, [pret, traces]);
 
-  // 4) Marqueurs début/fin des segments détectés
+  // 4) Marqueurs début/fin — premier et dernier point de chaque trace GPX
   useEffect(() => {
     const L = LRef.current;
     const map = mapRef.current;
-    if (!pret || !L || !map || !etatCarte) return;
+    if (!pret || !L || !map) return;
 
     marqueurs.current.forEach((m) => m.remove());
     marqueurs.current = [];
 
-    const tronconsParId = new Map(etatCarte.troncons.map((tr) => [tr.id, tr]));
-
-    // Dédup par LIBELLÉ DE POI (et non par coord) : SODECI et Toyota CFAO
-    // sont à 600 m l'un de l'autre — un dédup par coord arrondie les sépare
-    // bien en théorie, mais à zoom 12 leurs markers de 28 px se chevauchent
-    // visuellement. Dédupliquer par libellé garantit qu'on dessine UN
-    // marker logique par POI, à sa coord exacte (celle du troncon dont il
-    // est origine ou destination). On compte sur troncon_id unique pour
-    // éviter de double-compter quand une session contient plusieurs relevés
-    // pour le même tronçon.
-    interface PoiInfo {
-      libelle: string;
-      lat: number;
-      lon: number;
-      departs: Set<string>;    // troncons "Origine → Destination" qui partent
-      arrivees: Set<string>;   // troncons qui arrivent
-    }
-    const poiParLibelle = new Map<string, PoiInfo>();
-
-    const ajouter = (
-      libelle: string,
-      lat: number,
-      lon: number,
-      role: "depart" | "arrivee",
-      tronconNom: string,
-    ) => {
-      const existant = poiParLibelle.get(libelle);
-      const info = existant ?? {
-        libelle, lat, lon,
-        departs: new Set<string>(),
-        arrivees: new Set<string>(),
-      };
-      if (role === "depart") info.departs.add(tronconNom);
-      else info.arrivees.add(tronconNom);
-      poiParLibelle.set(libelle, info);
-    };
-
-    for (const releve of releves) {
-      const tr = tronconsParId.get(releve.troncon_id);
-      if (!tr) continue;
-      const latO = tr.lat_origine ?? tr.geometrie?.lat_origine ?? null;
-      const lonO = tr.lon_origine ?? tr.geometrie?.lon_origine ?? null;
-      const latD = tr.lat_destination ?? tr.geometrie?.lat_destination ?? null;
-      const lonD = tr.lon_destination ?? tr.geometrie?.lon_destination ?? null;
-      const [libO, libD] = tr.nom.split(" → ").map((s) => s.trim());
-      if (libO && Number.isFinite(latO) && Number.isFinite(lonO)) {
-        ajouter(libO, latO as number, lonO as number, "depart", tr.nom);
-      }
-      if (libD && Number.isFinite(latD) && Number.isFinite(lonD)) {
-        ajouter(libD, latD as number, lonD as number, "arrivee", tr.nom);
-      }
-    }
-
-    const boundsMarqueurs: [number, number][] = [];
-
-    const fabriquerBadge = (
-      couleur: string,
-      symbole: string,
-      compte: number,
-      anchorX: number,
-    ) => {
-      const taille = 34; // un peu plus grand pour faciliter le hover
-      return L.divIcon({
-        html: `
-          <div style="
-            background:${couleur};
-            color:#ffffff;
-            border:3px solid #ffffff;
-            border-radius:50%;
-            width:${taille}px;
-            height:${taille}px;
-            display:flex; align-items:center; justify-content:center;
-            font-weight:700; font-size:15px;
-            box-shadow:0 2px 8px rgba(0,0,0,0.5);
-            line-height:1;
-            cursor: pointer;
-          ">${compte > 1 ? compte : symbole}</div>`,
-        className: "paa-poi-fiabilite",
+    const fabriquerDisque = (couleur: string, taille = 14) =>
+      L.divIcon({
+        html: `<div style="
+          background:${couleur};
+          border:3px solid #ffffff;
+          border-radius:50%;
+          width:${taille}px;
+          height:${taille}px;
+          box-shadow:0 2px 6px rgba(0,0,0,0.5);
+        "></div>`,
+        className: "",
         iconSize: [taille, taille],
-        iconAnchor: [anchorX, taille / 2],
+        iconAnchor: [taille / 2, taille / 2],
       });
-    };
 
-    for (const info of poiParLibelle.values()) {
-      try {
-        const nbDeparts = info.departs.size;
-        const nbArrivees = info.arrivees.size;
-        // Vert (départs) — décalé vers la gauche pour ne pas couvrir le rouge.
-        // zIndexOffset=1000 garantit que le marker passe AU-DESSUS des
-        // polylines (dont le tooltip aurait sinon priorité au hover).
-        if (nbDeparts > 0) {
-          const icone = fabriquerBadge(
-            COULEUR_MARQUEUR_DEBUT,
-            "↗",
-            nbDeparts,
-            34, // anchorX = largeur → décale le centre du marker à GAUCHE du point
-          );
-          const tronconsTexte = Array.from(info.departs).join("<br/>");
-          const marker = L.marker([info.lat, info.lon], {
-            icon: icone,
-            zIndexOffset: 1000,
-            riseOnHover: true,
-          })
-            .bindTooltip(
-              `<strong>${t("fiabilite.marqueurDebut")} — ${info.libelle}</strong><br/>${tronconsTexte}`,
-              { direction: "top", offset: [0, -18] },
-            )
-            .addTo(map);
-          marqueurs.current.push(marker);
-        }
-        // Rouge (arrivées) — décalé vers la droite.
-        if (nbArrivees > 0) {
-          const icone = fabriquerBadge(
-            COULEUR_MARQUEUR_FIN,
-            "↘",
-            nbArrivees,
-            0, // anchorX = 0 → décale le centre à DROITE du point
-          );
-          const tronconsTexte = Array.from(info.arrivees).join("<br/>");
-          const marker = L.marker([info.lat, info.lon], {
-            icon: icone,
-            zIndexOffset: 1000,
-            riseOnHover: true,
-          })
-            .bindTooltip(
-              `<strong>${t("fiabilite.marqueurFin")} — ${info.libelle}</strong><br/>${tronconsTexte}`,
-              { direction: "top", offset: [0, -18] },
-            )
-            .addTo(map);
-          marqueurs.current.push(marker);
-        }
-        boundsMarqueurs.push([info.lat, info.lon]);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn("[CarteApercu] POI non dessiné :", err);
-      }
-    }
+    for (let i = 0; i < traces.length; i++) {
+      const trace = traces[i];
+      const pts = trace?.points?.filter(
+        (p) => Number.isFinite(p.lat) && Number.isFinite(p.lon),
+      );
+      if (!pts || pts.length < 2) continue;
 
-    // Re-centrage incluant les marqueurs pour qu'aucun ne soit hors de la
-    // fenêtre (cas typique : Palm Beach au sud, CARENA au nord — la trace
-    // seule peut ne pas suffire à cadrer les deux extrémités).
-    if (boundsMarqueurs.length >= 2) {
+      const debut = pts[0];
+      const fin = pts[pts.length - 1];
+      const nomCourt = trace.nomFichier.replace(/\.gpx$/i, "").slice(0, 40);
+
       try {
-        map.fitBounds(boundsMarqueurs as any, {
-          padding: [50, 50],
-          maxZoom: 13,
-        });
+        L.marker([debut.lat, debut.lon], {
+          icon: fabriquerDisque(COULEUR_MARQUEUR_DEBUT),
+          zIndexOffset: 1000,
+          riseOnHover: true,
+        })
+          .bindTooltip(`${t("fiabilite.marqueurDebut")}<br/><em>${nomCourt}</em>`, {
+            direction: "top",
+            offset: [0, -10],
+          })
+          .addTo(map);
+
+        L.marker([fin.lat, fin.lon], {
+          icon: fabriquerDisque(COULEUR_MARQUEUR_FIN),
+          zIndexOffset: 1000,
+          riseOnHover: true,
+        })
+          .bindTooltip(`${t("fiabilite.marqueurFin")}<br/><em>${nomCourt}</em>`, {
+            direction: "top",
+            offset: [0, -10],
+          })
+          .addTo(map);
       } catch {
         /* silencieux */
       }
     }
-  }, [pret, etatCarte, releves, t]);
+  }, [pret, traces, t]);
 
   const aDesContenus = useMemo(
     () => traces.some((t) => t.points.length >= 2),
