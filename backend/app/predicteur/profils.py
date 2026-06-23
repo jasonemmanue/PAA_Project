@@ -76,39 +76,74 @@ def _type_jour(d: date) -> TypeJour:
 # ---------------------------------------------------------------------------
 
 
+# Fenêtre par défaut (8) — compromis entre stabilité statistique (≥ 5 échantillons)
+# et fraîcheur (assez récents pour rester représentatifs des conditions actuelles).
+FENETRE_CALIBRATION_DEFAUT = 8
+
+# Seuil minimal pour qu'une calibration soit appliquée — sous ce seuil, le bruit
+# d'échantillonnage rend le facteur peu fiable.
+MIN_RELEVES_CALIBRATION = 4
+
+
 def calculer_calibration(
     db: Session,
     troncon_id: int,
-    fenetre_releves: int = 4,
+    fenetre_releves: int = FENETRE_CALIBRATION_DEFAUT,
+    type_jour_cible: TypeJour | None = None,
 ) -> tuple[float, str | None]:
     """Renvoie (facteur, avertissement_optionnel).
 
-    Le facteur n'est appliqué QUE si au moins 1 relevé terrain `source_reelle=true`
-    existe pour le tronçon. Sinon : facteur=0.0 et avertissement explicite.
+    Le facteur n'est appliqué QUE si au moins MIN_RELEVES_CALIBRATION relevés
+    terrain `source_reelle=true` existent pour le tronçon. Sinon : facteur=0.0
+    et avertissement explicite.
 
-    Cf. amendement 1 du prompt 6.2 : tant que les GPX terrain sont synthétiques,
-    leur écart ne reflète pas la réalité ; on ne calibre donc PAS le prédicteur.
+    Si `type_jour_cible` est précisé, on ne moyenne que les ε des relevés du
+    même type de jour (jour_ouvrable ou week_end). C'est l'alignement DEESP :
+    le rapport sépare systématiquement les statistiques par type de jour
+    (cf. CLAUDE.md § 4.5.5). En cas d'échantillon insuffisant pour le type
+    cible, on retombe sur l'ensemble des relevés.
     """
-    releves_reels = list(
-        db.execute(
-            select(ReleveTerrain)
-            .where(
-                ReleveTerrain.troncon_id == troncon_id,
-                ReleveTerrain.source_reelle.is_(True),
-                ReleveTerrain.ecart_relatif.is_not(None),
-            )
-            .order_by(ReleveTerrain.horodatage_passage.desc().nullslast())
-            .limit(fenetre_releves)
-        ).scalars()
+    requete = (
+        select(ReleveTerrain)
+        .where(
+            ReleveTerrain.troncon_id == troncon_id,
+            ReleveTerrain.source_reelle.is_(True),
+            ReleveTerrain.ecart_relatif.is_not(None),
+        )
+        .order_by(ReleveTerrain.horodatage_passage.desc().nullslast())
+        .limit(fenetre_releves * 2)  # surcouche pour filtrage type_jour ensuite
     )
+    releves_reels = list(db.execute(requete).scalars())
+
     if not releves_reels:
         return 0.0, (
             "Calibration désactivée — aucun relevé terrain réel disponible. "
-            "Les GPX synthétiques ne sont pas utilisés pour calibrer."
+            "Importez au moins 4 vrais GPX (page Fiabilité, paramètre "
+            "synthetique=false) pour activer la calibration."
         )
+
+    # Filtrage optionnel par type_jour, avec repli si échantillon trop petit
+    if type_jour_cible is not None:
+        memes_type = [
+            r for r in releves_reels
+            if r.horodatage_passage is not None
+            and _type_jour(r.horodatage_passage.date()) == type_jour_cible
+        ]
+        if len(memes_type) >= MIN_RELEVES_CALIBRATION:
+            releves_reels = memes_type[:fenetre_releves]
+        else:
+            releves_reels = releves_reels[:fenetre_releves]
+    else:
+        releves_reels = releves_reels[:fenetre_releves]
+
     ecarts = [r.ecart_relatif for r in releves_reels if r.ecart_relatif is not None]
-    if not ecarts:
-        return 0.0, "Calibration désactivée — aucun écart relatif exploitable."
+
+    if len(ecarts) < MIN_RELEVES_CALIBRATION:
+        return 0.0, (
+            f"Calibration désactivée — seulement {len(ecarts)} relevé(s) "
+            f"réel(s) disponible(s) ; il en faut au moins {MIN_RELEVES_CALIBRATION}."
+        )
+
     return statistics.fmean(ecarts), None
 
 
@@ -227,7 +262,11 @@ def _prediction_profils(
     if stats is None:
         return None
 
-    calibration, avertissement = calculer_calibration(db, troncon.id)
+    # Calibration ciblée sur le type de jour de l'instant prédit (alignement DEESP)
+    type_jour_cible = _type_jour(instant_local.date())
+    calibration, avertissement = calculer_calibration(
+        db, troncon.id, type_jour_cible=type_jour_cible,
+    )
     facteur = 1.0 + calibration  # ε = (T_terrain - T_api) / T_api → terrain = api × (1+ε)
 
     def to_mn(secondes: float) -> int:

@@ -165,6 +165,15 @@ async def importer_gpx(
         None,
         description="Date de la session terrain. Par défaut : date du premier point GPX.",
     ),
+    synthetique: bool = Form(
+        False,
+        description=(
+            "Marque ce relevé comme issu d'un GPX **synthétique** "
+            "(`generer_gpx_synthetiques.py`) et non d'un vrai parcours terrain. "
+            "Quand True, ce relevé n'alimente pas la calibration du prédicteur. "
+            "Défaut : False (vrai relevé terrain)."
+        ),
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Importe un GPX, le découpe par tronçon et persiste les relevés."""
@@ -245,6 +254,9 @@ async def importer_gpx(
             duree_api_s=duree_api_s,
             ecart_relatif=ecart_relatif,
             confiance_matching=confiance,
+            # Source réelle = vrai parcours terrain. Marqué False uniquement
+            # quand l'opérateur indique explicitement un GPX synthétique.
+            source_reelle=not synthetique,
         )
         db.add(releve)
         db.flush()  # pour récupérer l'ID
