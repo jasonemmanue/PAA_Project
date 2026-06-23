@@ -16,7 +16,7 @@
  * Les résultats s'affichent au fur et à mesure.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Card } from "@/components/ui/Card";
 import { api } from "@/lib/api";
@@ -45,6 +45,7 @@ function formaterDureeS(s: number): string {
 
 export function ImportSegmentsGpx({ troncons, onImporte, onTracesChange }: ImportSegmentsGpxProps) {
   const { t } = useI18n();
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [fichiers, setFichiers] = useState<File[]>([]);
   const [tronconId, setTronconId] = useState<string>("");
   const [direction, setDirection] = useState<string>("auto");
@@ -59,6 +60,13 @@ export function ImportSegmentsGpx({ troncons, onImporte, onTracesChange }: Impor
     const dureeTotal = ok.reduce((acc, r) => acc + (r.segment?.duree_s ?? 0), 0);
     return { nbOk: ok.length, nbErreurs: erreurs.length, dureeTotal };
   }, [resultats]);
+
+  const annuler = () => {
+    setFichiers([]);
+    setResultats([]);
+    if (inputRef.current) inputRef.current.value = "";
+    onTracesChange?.([]);
+  };
 
   const importerTout = async () => {
     if (fichiers.length === 0 || enCours) return;
@@ -160,11 +168,12 @@ export function ImportSegmentsGpx({ troncons, onImporte, onTracesChange }: Impor
         </div>
       </div>
 
-      {/* Sélection fichiers + bouton import */}
+      {/* Sélection fichiers + boutons */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <label className="flex-1">
           <span className="sr-only">{t("segments.choisirFichier")}</span>
           <input
+            ref={inputRef}
             type="file"
             accept=".gpx,application/gpx+xml"
             multiple
@@ -191,16 +200,29 @@ export function ImportSegmentsGpx({ troncons, onImporte, onTracesChange }: Impor
                        file:hover:bg-paa-navy-800 file:cursor-pointer"
           />
         </label>
-        <button
-          type="button"
-          onClick={importerTout}
-          disabled={fichiers.length === 0 || enCours}
-          className="btn-primary disabled:opacity-50 whitespace-nowrap"
-        >
-          {enCours
-            ? (progression ?? t("common.loading"))
-            : t("segments.btnImporter").replace("{n}", String(fichiers.length || 1))}
-        </button>
+        <div className="flex gap-2 shrink-0">
+          {fichiers.length > 0 && !enCours && (
+            <button
+              type="button"
+              onClick={annuler}
+              className="rounded-md border app-border px-4 py-2 text-fluid-sm font-medium
+                         text-paa-navy-700 dark:text-paa-blue-100 hover:bg-paa-blue-50
+                         dark:hover:bg-paa-navy-800 transition-colors whitespace-nowrap"
+            >
+              Annuler
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={importerTout}
+            disabled={fichiers.length === 0 || enCours}
+            className="btn-primary disabled:opacity-50 whitespace-nowrap"
+          >
+            {enCours
+              ? (progression ?? t("common.loading"))
+              : t("segments.btnImporter").replace("{n}", String(fichiers.length || 1))}
+          </button>
+        </div>
       </div>
 
       {/* Liste fichiers sélectionnés */}
