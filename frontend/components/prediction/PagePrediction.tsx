@@ -118,11 +118,6 @@ export function PagePrediction() {
               <KpiMn label="Temps moyen" mn={resume.courante.prediction.moyen_mn} couleur="#3498DB" dominante />
               <KpiMn label="Temps maximum" mn={resume.courante.prediction.max_mn} couleur="#E74C3C" />
             </div>
-            {resume.courante.avertissement && (
-              <p className="mt-2 text-fluid-xs app-text-muted italic">
-                ⚠ {resume.courante.avertissement}
-              </p>
-            )}
           </section>
 
           {/* ─── 2. CE MOIS ──────────────────────────────────────────────── */}
@@ -155,12 +150,6 @@ export function PagePrediction() {
             </div>
           </section>
 
-          {/* Note GPX */}
-          <div className="rounded-md border app-border bg-paa-blue-50 dark:bg-paa-navy-800 px-4 py-3 text-fluid-xs app-text-muted">
-            💡 <strong>Précision des temps actuels :</strong> les relevés GPX importés via la page
-            Fiabilité calibrent automatiquement l'estimation « Temps actuel » — plus vous importez
-            de relevés terrain réels, plus la valeur affichée est proche de la réalité.
-          </div>
         </>
       )}
     </div>
