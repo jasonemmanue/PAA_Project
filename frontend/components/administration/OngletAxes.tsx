@@ -10,7 +10,7 @@
  *  - carte temps réel + état /carte/etat,
  *  - indicateurs FHWA + heatmap horaire,
  *  - profils horaires nocturnes,
- *  - prédicteur DEESP + heure optimale,
+ *  - temps de traversée par période (page Prédiction),
  *  - rapport DEESP (Tableaux 3-17, 19 + Graphiques 1-12),
  *  - calibration GPX terrain.
  */
@@ -81,7 +81,7 @@ export function OngletAxes({
       const ad = t.adoption_collecte;
       const lignes = [
         `✅ Tronçon créé : ${t.nom} (id=${t.id}, ${t.distance_km} km)`,
-        "Il est automatiquement inclus au prochain cycle de collecte Google et dans toutes les analyses (carte, indicateurs, profils horaires, prédicteur DEESP, heure optimale, rapport, calibration GPX).",
+        "Il est automatiquement inclus au prochain cycle de collecte Google et dans toutes les analyses (carte, indicateurs, profils horaires, temps de traversée par période, rapport, calibration GPX).",
       ];
       if (ad) {
         lignes.push(

@@ -20,7 +20,7 @@
     "indicateurs": "Indicators",
     "rapport": "DEESP Report",
     "fiabilite": "Reliability",
-    "prediction": "Prediction",
+    "prediction": "Crossing time",
     "administration": "Administration"
   },
   "carte": {
@@ -128,13 +128,9 @@
     "marqueurFin": "Detected segment end"
   },
   "prediction": {
-    "title": "Prediction & optimal time",
-    "subtitle": "Future travel time estimation from historical hourly profiles.",
-    "selectTroncon": "Select a segment",
-    "selectDate": "Date",
-    "selectTime": "Time",
-    "estimate": "Estimate",
-    "placeholder": "Prediction components (P6.2 / P6.3) will be embedded here."
+    "title": "Crossing time by period",
+    "subtitle": "Min / mean / max travel times — current window, this month and this week. Calibrated by field GPX recordings (Reliability page).",
+    "selectTroncon": "Select a segment"
   },
   "administration": {
     "title": "Administration",

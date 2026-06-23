@@ -108,9 +108,9 @@ _TAGS_METADATA = [
     {
         "name": "indicateurs",
         "description": (
-            "Indicateurs de congestion normalisés (FHWA) : Travel Time Index (TTI), "
-            "Planning Time Index (PTI), Buffer Time Index (BTI), série temporelle, "
-            "heures de pointe."
+            "Indicateurs DEESP : temps min / moyen / max, taux de congestion "
+            "(critère couleur Google Maps), pourcentages rouge/orange/vert "
+            "moyens, série temporelle, heures de pointe."
         ),
     },
     {
@@ -138,7 +138,8 @@ _TAGS_METADATA = [
         "name": "carte",
         "description": (
             "État temps réel des tronçons pour la cartographie Leaflet : "
-            "géométrie, dernière mesure, TTI, classe de congestion, couleur."
+            "géométrie, dernière mesure, pourcentages couleur Google Maps, "
+            "classe de congestion DEESP (fluide / congestionné / indéterminé)."
         ),
     },
     {
@@ -210,9 +211,10 @@ app = FastAPI(
         "l'analyse historique des temps de parcours sur les axes stratégiques "
         "de la zone portuaire.\n\n"
         "**Cascade de mesure** : Google Routes (TRAFFIC_AWARE_OPTIMAL) → "
-        "prédicteur interne (P6) → temps de référence 50 km/h via OSRM.\n\n"
-        "**Indicateurs FHWA** : TTI, PTI, BTI, classification fluide / dense / "
-        "congestionné, heures de pointe.\n\n"
+        "profils horaires 60 j (P6) → temps de référence 50 km/h via OSRM.\n\n"
+        "**Indicateurs DEESP** : temps min / moyen / max, taux de congestion "
+        "(critère couleur Google Maps), classification fluide / congestionné, "
+        "heures de pointe.\n\n"
         "**Temps réel** : un WebSocket `/ws/etat` diffuse l'état carte à chaque "
         "nouveau cycle de collecte."
     ),

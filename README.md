@@ -172,7 +172,7 @@ npm run build && npm start
 | Architecture technique web | ✅ | Backend FastAPI + Frontend Next.js + Postgres + Redis + OSRM, orchestrés via Docker Compose ([CLAUDE.md § 2](CLAUDE.md)) |
 | Structure des données | ✅ | 5 modèles SQLAlchemy + 4 migrations Alembic (0001 → 0004) |
 | Intégration cartographique | ✅ | Leaflet + OpenStreetMap (tuiles standard) + plugin `leaflet.heat` pour la heatmap |
-| APIs de trafic | ✅ | Google Routes API (`TRAFFIC_AWARE_OPTIMAL`) + cascade gracieuse → prédicteur interne → 50 km/h |
+| APIs de trafic | ✅ | Google Routes API (`TRAFFIC_AWARE_OPTIMAL`) + cascade gracieuse → profils horaires 60 j → 50 km/h |
 | Système de stockage local | ✅ | PostgreSQL (mesures, agrégats), Redis (cache léger), volume disque (`GPX_STORAGE_DIR` pour les fichiers GPX terrain) |
 | **Sous-livrables architecture** : | | |
 | ↳ Une carte interactive | ✅ | [`PageCarte.tsx`](frontend/components/carte/PageCarte.tsx) + [`CarteLeaflet.tsx`](frontend/components/carte/CarteLeaflet.tsx) |
@@ -230,14 +230,15 @@ npm run build && npm start
 > contient les 7 prompts restants (6.2 → 7.3) entièrement réalignés avec la
 > méthodologie DEESP/DEEF du rapport octobre 2025.
 
-- ❌ **Page Prédiction** (P6.2 / P6.3) — endpoints `/predire` + `/heure-optimale` à écrire, page UI à construire avec format DEESP (min/moyen/max en minutes, jour ouvrable vs week-end)
-- ❌ **Page Administration** (P6.4) — ajout/édition de tronçons via UI + **sous-tronçons codifiés** (T1A, T1B, T1C…) comme dans le rapport DEESP
-- ❌ **ML niveau 3** (P6.5, optionnel) — Random Forest avec évaluation honnête vs prédicteur niveau 2
+- ✅ **Page Temps de traversée** (P6.2 refondu 2026-06-23) — `GET /predire/resume?troncon_id=` + UI 3 blocs (temps actuel, ce mois, cette semaine), précision calibrée par les GPX terrain. Cf. CLAUDE.md § 4.7.
+- ❌ ~~**Module Heure optimale de départ**~~ (P6.3) — **retiré du périmètre le 2026-06-23** (code backend + UI supprimés)
+- ✅ **Page Administration** (P6.4) — ajout/édition de tronçons via UI + **sous-tronçons codifiés** (T1A, T1B, T1C…) comme dans le rapport DEESP
+- ❌ **ML niveau 3** (P6.5, optionnel) — Random Forest avec évaluation honnête vs profils horaires
 - ❌ **Frontend déployé sur Vercel** — actuellement servi par `npm start` local
 - ❌ **OSRM exposé en production** — nécessaire pour `confiance_matching` (P5) et vraies polylines (procédure complète CLAUDE.md § 8.7 Oracle Cloud)
 - ❌ **Vrais GPX terrain** — la démo P5 tourne sur GPX synthétiques (cf. CLAUDE.md § 4.3.1)
 - ❌ **Suite de tests automatisés** — pytest backend pour `rapport_paa` + endpoints critiques (P7.1)
-- ❌ **Cache Redis** — wrapper avec TTL pour `/carte/etat`, `/rapport/*`, `/predire` (P7.1)
+- ❌ **Cache Redis** — wrapper avec TTL pour `/carte/etat`, `/rapport/*`, `/predire/resume` (P7.1)
 - ❌ **Rapport final article 4 + Pitch** (P7.3) — document docs/rapport-final.md + docs/pitch.md à produire
 
 ### Synthèse pour le pitch jury
@@ -699,7 +700,7 @@ côté mesures, et `axe + sens + periode + type_jour` côté évolution).
 | Pour calculer…                                  | Source à utiliser                     |
 |-------------------------------------------------|---------------------------------------|
 | L'état **temps réel** affiché sur la carte      | `source = 'google'` uniquement        |
-| Le **profil horaire** et le **prédicteur** (P6.2) | `'google'` + `'historique_paa_2025'`  |
+| Le **profil horaire** et la **page Temps de traversée** (P6.2) | `'google'` + `'historique_paa_2025'`  |
 | La **comparaison pluriannuelle**                | Table `evolution_indicateur`          |
 
 ---
@@ -786,7 +787,7 @@ Une **palette dérivée du bleu marine institutionnel** du Port Autonome d'Abidj
 | Fluide | Vert | `#2ECC71` | Tronçon sans bouchon (vert ou orange court Google Maps) |
 | Congestionné | Rouge | `#E74C3C` | Bouchon sévère (rouge OU orange long Google Maps) |
 | Indéterminé | Gris | `#95A5A6` | Google n'a pas qualifié le tracé |
-| ~~Dense~~ | ~~Orange `#F39C12`~~ | *Alias couleur conservé pour warnings hors-congestion (jauges de calibration P5, avertissements de prédicteur).* La **classe de congestion "dense" a été retirée** le 2026-06-22 — le rapport DEESP n'en distingue pas. |
+| ~~Dense~~ | ~~Orange `#F39C12`~~ | *Alias couleur conservé pour warnings hors-congestion (jauges de calibration P5).* La **classe de congestion "dense" a été retirée** le 2026-06-22 — le rapport DEESP n'en distingue pas. |
 
 Définie dans [`frontend/tailwind.config.ts`](frontend/tailwind.config.ts), réutilisée
 **partout** : tronçons sur la carte, badges, courbes Recharts, heatmaps.
@@ -862,7 +863,7 @@ Le `<head>` HTML est enrichi via les `metadata` Next.js (`title`, `description`,
 | Accueil / Carte | `/` | ✅ Complète |
 | Indicateurs | `/indicateurs` | ✅ Complète |
 | Fiabilité | `/fiabilite` | ⏳ Coquille (P5) |
-| Prédiction | `/prediction` | ⏳ Coquille (P6.2/6.3) |
+| Temps de traversée | `/prediction` | ✅ 3 blocs (temps actuel / mois / semaine) — P6.2 refondu 2026-06-23 |
 | Administration | `/administration` | ⏳ Coquille (P6.4) |
 
 Navigation accessible via :
@@ -1000,7 +1001,7 @@ Pour rejouer le splash screen : il se rejoue à **chaque ouverture de fenêtre**
 ### Ce qui n'est **pas encore** fait à la fin de P4
 
 - ✅ Page **Fiabilité** : livrée en P5 (voir § 8bis ci-dessous)
-- ❌ Page **Prédiction** : sélecteur date/heure + temps estimé *(arrive en P6.2 / P6.3)*
+- ✅ Page **Temps de traversée** : 3 blocs empilés sans saisie (temps actuel cascade Google → profils → 50 km/h, ce mois, cette semaine) calibrés par les GPX terrain (P6.2 refondu 2026-06-23)
 - ❌ Page **Administration** : ajout/édition de tronçons *(arrive en P6.4)*
 - ❌ **Polylines exactes** des 6 tronçons sur la carte : nécessite OSRM exposé
   (cf. CLAUDE.md § 8.3) — pour l'instant des **segments droits** entre origine
@@ -1748,7 +1749,7 @@ Sept phases au total (voir [CLAUDE.md § 4](CLAUDE.md#4-feuille-de-route--7-phas
 | **Déploiement** | **Backend en ligne sur Railway** (collecte 24h/24 démarrée)   | ✅ **terminé**     |
 | **P4**    | **Frontend Next.js complet : carte Leaflet, Indicateurs Recharts, splash HACKATONIA, i18n FR/EN, thème clair/sombre** | ✅ **terminée**    |
 | P5        | Validation hebdomadaire par relevés GPS terrain                     | À venir            |
-| P6.2-6.4  | Prédicteur, heure optimale, ajout de parcours admin                 | À venir            |
+| P6.2/6.4  | Temps de traversée par période + ajout de parcours admin (heure optimale retirée le 2026-06-23) | Terminées          |
 | P7        | Tests, durcissement, support de présentation                        | À venir            |
 
 À la fin de P7, l'application sera prête pour la démo au jury du hackathon.

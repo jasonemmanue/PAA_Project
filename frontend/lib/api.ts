@@ -17,10 +17,7 @@ import type {
   IndicateursPeriode,
   JourSemaine,
   Mesure,
-  HeureOptimaleResponse,
-  PredictionResponse,
   ProfilHoraire,
-  QualiteResponse,
   ResumePrediction,
   SousTroncon,
   SousTronconCreer,
@@ -367,10 +364,7 @@ export const api = {
   rapportTempsTraversee: getRapportTempsTraversee,
   rapportZonesCongestionnees: getRapportZonesCongestionnees,
   rapportGraphique: getRapportGraphique,
-  predire: getPredire,
-  qualitePrediction: getQualitePrediction,
   resumePrediction: getResumePrediction,
-  heureOptimale: getHeureOptimale,
   creerTroncon: postCreerTroncon,
   supprimerTroncon: deleteTroncon,
   sousTroncons: getSousTroncons,
@@ -381,39 +375,11 @@ export const api = {
 };
 
 // ---------------------------------------------------------------------------
-// Prédicteur (P6.2)
+// Temps de traversée par période
 // ---------------------------------------------------------------------------
-
-export function getPredire(
-  tronconId: number,
-  dateCible?: string,
-  heure?: number,
-): Promise<PredictionResponse> {
-  const params = new URLSearchParams({ troncon_id: String(tronconId) });
-  if (dateCible) params.set("date", dateCible);
-  if (heure !== undefined) params.set("heure", String(heure));
-  return appel<PredictionResponse>(`/predire?${params.toString()}`);
-}
-
-export function getQualitePrediction(fenetreJours = 7): Promise<QualiteResponse> {
-  return appel<QualiteResponse>(
-    `/predire/qualite?fenetre_jours=${fenetreJours}`,
-  );
-}
 
 export function getResumePrediction(tronconId: number): Promise<ResumePrediction> {
   return appel<ResumePrediction>(`/predire/resume?troncon_id=${tronconId}`);
-}
-
-export function getHeureOptimale(
-  depart: string,
-  dateCible?: string,
-  tronconId?: number,
-): Promise<HeureOptimaleResponse> {
-  const params = new URLSearchParams({ depart });
-  if (dateCible) params.set("date", dateCible);
-  if (tronconId !== undefined) params.set("troncon_id", String(tronconId));
-  return appel<HeureOptimaleResponse>(`/heure-optimale?${params.toString()}`);
 }
 
 // ---------------------------------------------------------------------------

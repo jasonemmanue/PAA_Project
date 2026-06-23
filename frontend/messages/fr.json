@@ -20,7 +20,7 @@
     "indicateurs": "Indicateurs",
     "rapport": "Rapport DEESP",
     "fiabilite": "Fiabilité",
-    "prediction": "Prédiction",
+    "prediction": "Temps de traversée",
     "administration": "Administration"
   },
   "carte": {
@@ -128,13 +128,9 @@
     "marqueurFin": "Fin de tronçon détectée"
   },
   "prediction": {
-    "title": "Prédiction et heure optimale",
-    "subtitle": "Estimation du temps de parcours futur, à partir des profils horaires historiques.",
-    "selectTroncon": "Choisir un tronçon",
-    "selectDate": "Date",
-    "selectTime": "Heure",
-    "estimate": "Estimer",
-    "placeholder": "Les composants de prédiction (P6.2 / P6.3) seront intégrés ici."
+    "title": "Temps de traversée par période",
+    "subtitle": "Temps min / moyen / max — période courante, ce mois et cette semaine. Calibré par les relevés GPX terrain (page Fiabilité).",
+    "selectTroncon": "Choisir un tronçon"
   },
   "administration": {
     "title": "Administration",
