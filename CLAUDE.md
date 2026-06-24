@@ -1560,6 +1560,29 @@ La section GPX affiche un message d'invitation si aucun GPX n'a encore été imp
 **Sous-titre de la page :** *« Temps réel basé sur Google Maps — confrontation
 avec les temps terrain GPX en bas de page. »*
 
+#### Internationalisation (état 2026-06-24)
+
+La page est **entièrement traduite FR / EN** via le système i18n existant
+(`frontend/lib/i18n.tsx` + `frontend/messages/{fr,en}.json`).
+
+Toutes les chaînes hardcodées ont été remplacées par `t("prediction.*")`.
+Les sous-composants (`BlocGpx`, `BlocTypeJour`, `PuceEcart`, `BandeauEcart`,
+`BarreConfianceInline`, `BadgeSource`) reçoivent `t` ou `libelleSource` en prop
+pour rester réactifs au changement de langue sans rechargement.
+
+`LIBELLE_SOURCE` (libellés des badges source) a été déplacé **à l'intérieur
+du composant** pour être recalculé à chaque changement de locale — une constante
+de module ne se réévalue pas.
+
+Clés ajoutées sous `"prediction"` dans les deux fichiers de messages :
+`tempsReel`, `ceMois`, `cetteSemaine`, `joursOuvrables`, `weekEnds`,
+`confrontationTitre`, `confrontationDesc`, `toutesSessionsTitre`, `ceMoisTitre`,
+`cetteSemaineTitre`, `aucuneSessionMois`, `aucuneSessionSemaine`, `depuisLe`,
+`ecartTitre`, `ecartLabel`, `ecartEgal`, `ecartPlusLong`, `ecartPlusCourt`,
+`terrainPlusLong`, `terrainPlusCourt`, `puceEgal`, `sourceGoogle`,
+`sourceProfils`, `sourceRef50`, `confiancePct`, `precisionNote`, + libellés
+`labelMin/Moyen/Moy/Max`, `uniteMn`, `mesure/mesures`, `session/sessions`.
+
 ---
 
 ## 8. Déploiement
