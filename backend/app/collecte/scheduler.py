@@ -45,6 +45,7 @@ from app.models.models import Mesure, SourceMesure, SousTroncon, Troncon
 from app.realtime.diffusion import get_diffuseur
 from app.sources import google_routes
 from app.sources.coordonnees import PointGPS
+from app.analyse.incidents_nlp import enrichir_incidents
 from app.sources.parsers.rss_parser import scraper_toutes_sources
 
 
@@ -571,6 +572,10 @@ def _ajouter_job_incidents(scheduler: AsyncIOScheduler, settings: Settings) -> N
         try:
             nb = await scraper_toutes_sources(session)
             logger.info("Collecte incidents : %d nouvel(s) incident(s).", nb)
+            # Enrichissement NLP immédiatement après le scraping :
+            # extraction lieu, classification type/sévérité, géocodage Nominatim.
+            nb_enrichis = await enrichir_incidents(session)
+            logger.info("Enrichissement incidents : %d incident(s) traité(s).", nb_enrichis)
         except Exception:
             logger.exception("Erreur inattendue dans le job collecte_incidents.")
         finally:

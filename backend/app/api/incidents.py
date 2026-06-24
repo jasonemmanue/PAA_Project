@@ -5,6 +5,7 @@ Endpoints :
   GET  /incidents/stats         — KPI globaux (compteurs + dernière collecte)
   GET  /incidents/{id}          — détail d'un incident
   POST /incidents/scraper-now   — déclenchement manuel du scraping RSS
+  POST /incidents/enrichir      — déclenchement manuel NLP + géocodage (P8.2)
 
 Tag Swagger : "incidents"
 """
@@ -19,8 +20,9 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.analyse.incidents_nlp import enrichir_incidents
 from app.core.config import get_settings
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.models.models import Incident, TypeIncident, SeveriteIncident
 from app.sources.parsers.rss_parser import scraper_toutes_sources
 
@@ -262,7 +264,52 @@ async def scraper_maintenant(
 
     async def _scraper():
         nb = await scraper_toutes_sources(db)
+        nb_enrichis = await enrichir_incidents(db)
         db.close()
 
     background_tasks.add_task(_scraper)
     return {"message": "Scraping RSS lancé en arrière-plan."}
+
+
+# ---------------------------------------------------------------------------
+# POST /incidents/enrichir  — enrichissement NLP + géocodage (P8.2)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/enrichir",
+    summary="Déclenche l'enrichissement NLP et le géocodage des incidents",
+    description=(
+        "Parcourt les incidents dont `type_incident` est NULL, applique "
+        "l'extraction de lieu par regex, la classification type/sévérité et "
+        "le géocodage Nominatim. Exécution en tâche de fond. "
+        "Sécurisé par le header `X-API-Key`."
+    ),
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def enrichir_maintenant(
+    background_tasks: BackgroundTasks,
+    x_api_key: str | None = Header(default=None),
+) -> dict[str, str]:
+    """Déclenche l'enrichissement NLP en tâche de fond."""
+    settings = get_settings()
+    if x_api_key != settings.api_secret_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Clé API invalide ou absente.",
+        )
+
+    async def _enrichir():
+        session = SessionLocal()
+        try:
+            nb = await enrichir_incidents(session)
+        except Exception:
+            import logging
+            logging.getLogger("paa.incidents.nlp").exception(
+                "Erreur lors de l'enrichissement manuel."
+            )
+        finally:
+            session.close()
+
+    background_tasks.add_task(_enrichir)
+    return {"message": "Enrichissement NLP lancé en arrière-plan."}
