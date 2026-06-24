@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import type {
   EstimationSession,
   ResumePrediction,
@@ -104,17 +105,18 @@ const COULEUR_SOURCE: Record<SourcePrediction, string> = {
   vitesse_ref_50kmh: "#95A5A6",
 };
 
-const LIBELLE_SOURCE: Record<SourcePrediction, string> = {
-  google_routes: "Mesure Google temps réel",
-  mesures_jour_type_7j: "Mesures récentes même type de jour (7 j)",
-  vitesse_ref_50kmh: "Référence 50 km/h",
-};
-
 // ---------------------------------------------------------------------------
 // Composant principal
 // ---------------------------------------------------------------------------
 
 export function PagePrediction() {
+  const { t } = useI18n();
+
+  const LIBELLE_SOURCE: Record<SourcePrediction, string> = {
+    google_routes: t("prediction.sourceGoogle"),
+    mesures_jour_type_7j: t("prediction.sourceProfils"),
+    vitesse_ref_50kmh: t("prediction.sourceRef50"),
+  };
   const [troncons, setTroncons] = useState<Troncon[]>([]);
   const [tronconId, setTronconId] = useState<number | null>(null);
   const [resume, setResume] = useState<ResumePrediction | null>(null);
@@ -174,14 +176,14 @@ export function PagePrediction() {
   return (
     <div className="flex flex-col gap-fluid-4">
       <PageHeader
-        titre="Temps de traversée par période"
-        sousTitre="Temps réel basé sur Google Maps — confrontation avec les temps terrain GPX en bas de page."
+        titre={t("prediction.title")}
+        sousTitre={t("prediction.subtitle")}
       />
 
       {/* Sélecteur tronçon */}
       <Card>
         <label className="flex flex-col gap-1 text-fluid-sm font-medium max-w-md">
-          Tronçon
+          {t("prediction.selectTroncon")}
           <select
             value={tronconId ?? ""}
             onChange={(e) => setTronconId(Number(e.target.value))}
@@ -197,11 +199,11 @@ export function PagePrediction() {
 
       {erreur && (
         <div className="rounded-md bg-statut-congestionne/10 border border-statut-congestionne/40 px-3 py-2 text-fluid-sm text-statut-congestionne">
-          Erreur : {erreur}
+          {t("prediction.erreur")} {erreur}
         </div>
       )}
       {chargement && (
-        <div className="text-fluid-sm app-text-muted animate-pulse">Chargement…</div>
+        <div className="text-fluid-sm app-text-muted animate-pulse">{t("prediction.chargement")}</div>
       )}
 
       {!chargement && (
@@ -214,43 +216,43 @@ export function PagePrediction() {
               {/* Temps actuel */}
               <section className="paa-card p-fluid-4">
                 <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-2">
-                  Temps réel (Google Maps)
+                  {t("prediction.tempsReel")}
                 </h2>
                 <div className="flex flex-wrap gap-2 mb-3">
-                  <BadgeSource source={resume.courante.source} />
+                  <BadgeSource source={resume.courante.source} libelleSource={LIBELLE_SOURCE} />
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
-                  <KpiMn label="Min" mn={resume.courante.prediction.min_mn} couleur="#2ECC71" />
-                  <KpiMn label="Moyen" mn={resume.courante.prediction.moyen_mn} couleur="#3498DB" dominante />
-                  <KpiMn label="Max" mn={resume.courante.prediction.max_mn} couleur="#E74C3C" />
+                  <KpiMn label={t("prediction.labelMin")} mn={resume.courante.prediction.min_mn} couleur="#2ECC71" />
+                  <KpiMn label={t("prediction.labelMoyen")} mn={resume.courante.prediction.moyen_mn} couleur="#3498DB" dominante />
+                  <KpiMn label={t("prediction.labelMax")} mn={resume.courante.prediction.max_mn} couleur="#E74C3C" />
                 </div>
               </section>
 
               {/* Ce mois Google */}
               <section className="paa-card p-fluid-4">
                 <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
-                  Ce mois — Google Maps
+                  {t("prediction.ceMois")}
                   <span className="ml-2 text-fluid-xs font-normal app-text-muted">
-                    {resume.mois.nb_mesures_total} mesure{resume.mois.nb_mesures_total !== 1 ? "s" : ""}
+                    {resume.mois.nb_mesures_total} {resume.mois.nb_mesures_total !== 1 ? t("prediction.mesures") : t("prediction.mesure")}
                   </span>
                 </h2>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <BlocTypeJour titre="Jours ouvrables (lun–ven)" stats={resume.mois.jours_ouvrables} />
-                  <BlocTypeJour titre="Week-ends (sam–dim)" stats={resume.mois.week_ends} />
+                  <BlocTypeJour titre={t("prediction.joursOuvrables")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.mois.jours_ouvrables} />
+                  <BlocTypeJour titre={t("prediction.weekEnds")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.mois.week_ends} />
                 </div>
               </section>
 
               {/* Cette semaine Google */}
               <section className="paa-card p-fluid-4">
                 <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
-                  Cette semaine — Google Maps
+                  {t("prediction.cetteSemaine")}
                   <span className="ml-2 text-fluid-xs font-normal app-text-muted">
-                    {resume.semaine.nb_mesures_total} mesure{resume.semaine.nb_mesures_total !== 1 ? "s" : ""}
+                    {resume.semaine.nb_mesures_total} {resume.semaine.nb_mesures_total !== 1 ? t("prediction.mesures") : t("prediction.mesure")}
                   </span>
                 </h2>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <BlocTypeJour titre="Jours ouvrables (lun–ven)" stats={resume.semaine.jours_ouvrables} />
-                  <BlocTypeJour titre="Week-ends (sam–dim)" stats={resume.semaine.week_ends} />
+                  <BlocTypeJour titre={t("prediction.joursOuvrables")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.semaine.jours_ouvrables} />
+                  <BlocTypeJour titre={t("prediction.weekEnds")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.semaine.week_ends} />
                 </div>
               </section>
             </div>
@@ -260,7 +262,7 @@ export function PagePrediction() {
               BANDEAU ÉCART — visible seulement si Google + GPX disponibles
           ═══════════════════════════════════════════════════════════════ */}
           {hasGpx && ecartTout && (
-            <BandeauEcart ecart={ecartTout} label="Toutes sessions GPX vs Google ce mois" />
+            <BandeauEcart ecart={ecartTout} label={t("prediction.ecartLabel")} t={t} />
           )}
 
           {/* ═══════════════════════════════════════════════════════════════
@@ -269,53 +271,56 @@ export function PagePrediction() {
           <div className="rounded-md border-2 border-paa-navy-300 dark:border-paa-navy-600 p-fluid-4 flex flex-col gap-4 bg-paa-blue-50 dark:bg-paa-navy-900">
             <div className="flex items-center gap-2">
               <span className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100">
-                Confrontation — Terrain mesuré (GPX)
+                {t("prediction.confrontationTitre")}
               </span>
               {hasGpx && (
-                <BarreConfianceInline confiance={segments!.confiance} />
+                <BarreConfianceInline confiance={segments!.confiance} t={t} />
               )}
             </div>
             <p className="text-fluid-xs app-text-muted -mt-2">
-              Temps réellement parcourus en voiture — comparez avec les valeurs Google Maps ci-dessus.
+              {t("prediction.confrontationDesc")}
             </p>
 
             {!hasGpx ? (
               <div className="rounded-md border app-border bg-white dark:bg-paa-navy-800 px-4 py-3 text-fluid-sm app-text-muted">
-                Aucune session terrain importée — importez des fichiers GPX via la page <strong>Fiabilité</strong>.
+                {t("prediction.aucuneSessionImport")} <strong>{t("prediction.fiabilite")}</strong>.
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-3">
                 <BlocGpx
-                  titre="Toutes sessions"
-                  sousTitre={`${sessionsTout.length} session${sessionsTout.length > 1 ? "s" : ""} — ${formaterDate(sessionsTout[sessionsTout.length - 1].date_session)} → ${formaterDate(sessionsTout[0].date_session)}`}
+                  titre={t("prediction.toutesSessionsTitre")}
+                  sousTitre={`${sessionsTout.length} ${sessionsTout.length > 1 ? t("prediction.sessions") : t("prediction.session")} — ${formaterDate(sessionsTout[sessionsTout.length - 1].date_session)} → ${formaterDate(sessionsTout[0].date_session)}`}
                   stats={statsTout}
                   ecart={ecartTout}
+                  t={t}
                 />
                 <BlocGpx
-                  titre="Ce mois"
+                  titre={t("prediction.ceMoisTitre")}
                   sousTitre={sessionsMois.length > 0
-                    ? `${sessionsMois.length} session${sessionsMois.length > 1 ? "s" : ""} depuis le ${formaterDate(premierDuMois())}`
-                    : "Aucune session ce mois"}
+                    ? `${sessionsMois.length} ${sessionsMois.length > 1 ? t("prediction.sessions") : t("prediction.session")} ${t("prediction.depuisLe")} ${formaterDate(premierDuMois())}`
+                    : t("prediction.aucuneSessionMois")}
                   stats={statsMois}
                   vide={sessionsMois.length === 0}
                   ecart={ecartMois}
+                  t={t}
                 />
                 <BlocGpx
-                  titre="Cette semaine"
+                  titre={t("prediction.cetteSemaineTitre")}
                   sousTitre={sessionsSemaine.length > 0
-                    ? `${sessionsSemaine.length} session${sessionsSemaine.length > 1 ? "s" : ""} depuis le ${formaterDate(lundiSemaine())}`
-                    : "Aucune session cette semaine"}
+                    ? `${sessionsSemaine.length} ${sessionsSemaine.length > 1 ? t("prediction.sessions") : t("prediction.session")} ${t("prediction.depuisLe")} ${formaterDate(lundiSemaine())}`
+                    : t("prediction.aucuneSessionSemaine")}
                   stats={statsSemaine}
                   vide={sessionsSemaine.length === 0}
                   ecart={ecartSemaine}
+                  t={t}
                 />
               </div>
             )}
 
             {hasGpx && (
               <p className="text-fluid-xs app-text-muted">
-                Confiance {Math.round(segments!.confiance * 100)} % — couverture moy. {segments!.couverture_moyenne_pct.toFixed(0)} % du tronçon sur {segments!.nb_sessions} session{segments!.nb_sessions > 1 ? "s" : ""}.
-                La précision s&apos;améliore automatiquement à chaque import GPX.
+                {t("prediction.confiancePct")} {Math.round(segments!.confiance * 100)} % — {t("prediction.couvertureMoy")} {segments!.couverture_moyenne_pct.toFixed(0)} % {t("prediction.duTroncon")} {segments!.nb_sessions} {segments!.nb_sessions > 1 ? t("prediction.sessions") : t("prediction.session")}.
+                {" "}{t("prediction.precisionNote")}
               </p>
             )}
           </div>
@@ -330,19 +335,14 @@ export function PagePrediction() {
 // ---------------------------------------------------------------------------
 
 type Ecart = ReturnType<typeof calculerEcart>;
+type TFn = (key: string) => string;
 
 function BlocGpx({
-  titre,
-  sousTitre,
-  stats,
-  vide = false,
-  ecart,
+  titre, sousTitre, stats, vide = false, ecart, t,
 }: {
-  titre: string;
-  sousTitre: string;
+  titre: string; sousTitre: string;
   stats: { min: number; moyen: number; max: number } | null;
-  vide?: boolean;
-  ecart?: Ecart;
+  vide?: boolean; ecart?: Ecart; t: TFn;
 }) {
   return (
     <div className="rounded-md border app-border p-4 app-surface flex flex-col gap-2">
@@ -354,50 +354,50 @@ function BlocGpx({
         <>
           <div className="grid grid-cols-3 gap-1 text-center mt-1">
             <div>
-              <div className="text-fluid-xs app-text-muted">Min</div>
+              <div className="text-fluid-xs app-text-muted">{t("prediction.labelMin")}</div>
               <div className="text-fluid-lg font-bold text-statut-fluide">{formaterMn(stats.min)}</div>
             </div>
             <div>
-              <div className="text-fluid-xs app-text-muted">Moyen</div>
+              <div className="text-fluid-xs app-text-muted">{t("prediction.labelMoyen")}</div>
               <div className="text-fluid-lg font-bold text-paa-blue-500">{formaterMn(stats.moyen)}</div>
             </div>
             <div>
-              <div className="text-fluid-xs app-text-muted">Max</div>
+              <div className="text-fluid-xs app-text-muted">{t("prediction.labelMax")}</div>
               <div className="text-fluid-lg font-bold text-statut-congestionne">{formaterMn(stats.max)}</div>
             </div>
           </div>
-          {ecart && <PuceEcart ecart={ecart} />}
+          {ecart && <PuceEcart ecart={ecart} t={t} />}
         </>
       )}
     </div>
   );
 }
 
-function PuceEcart({ ecart }: { ecart: NonNullable<Ecart> }) {
+function PuceEcart({ ecart, t }: { ecart: NonNullable<Ecart>; t: TFn }) {
   if (ecart.sens === "egal") {
     return (
       <div className="mt-1 text-center text-fluid-xs font-medium text-statut-fluide">
-        ≈ identique à Google Maps
+        {t("prediction.puceEgal")}
       </div>
     );
   }
   const positif = ecart.sens === "plus_long";
   const couleur = positif ? "text-statut-congestionne" : "text-statut-fluide";
   const bg = positif ? "bg-statut-congestionne/10 border-statut-congestionne/30" : "bg-statut-fluide/10 border-statut-fluide/30";
-  const signe = positif ? "+" : "";
+  const signe = positif ? "+" : "−";
   const mn = Math.abs(ecart.deltaMn);
   const mnAff = mn >= 1 ? `${Math.round(mn)} min` : `${Math.round(mn * 60)} s`;
-  const pctAff = `${signe}${Math.round(ecart.pct)} %`;
-  const libelle = positif ? "plus long que Google" : "plus court que Google";
+  const pctAff = `${signe}${Math.round(Math.abs(ecart.pct))} %`;
+  const libelle = positif ? t("prediction.terrainPlusLongCourt") : t("prediction.terrainPlusCourtel");
 
   return (
     <div className={`mt-1 rounded border px-2 py-1 text-center text-fluid-xs font-semibold ${couleur} ${bg}`}>
-      Terrain {signe}{mnAff} ({pctAff}) — {libelle}
+      {signe}{mnAff} ({pctAff}) — {libelle}
     </div>
   );
 }
 
-function BandeauEcart({ ecart, label }: { ecart: NonNullable<Ecart>; label: string }) {
+function BandeauEcart({ ecart, label, t }: { ecart: NonNullable<Ecart>; label: string; t: TFn }) {
   const positif = ecart.sens === "plus_long";
   const egal = ecart.sens === "egal";
   const bgClass = egal
@@ -416,16 +416,16 @@ function BandeauEcart({ ecart, label }: { ecart: NonNullable<Ecart>; label: stri
   const pctAff = `${Math.round(Math.abs(ecart.pct))} %`;
 
   const message = egal
-    ? "Terrain ≈ Google Maps — données cohérentes"
+    ? t("prediction.ecartEgal")
     : positif
-    ? `Terrain plus long de ${mnAff} (${pctAff}) par rapport à Google Maps — Google sous-estime`
-    : `Terrain plus court de ${mnAff} (${pctAff}) par rapport à Google Maps — Google surestime`;
+    ? `${t("prediction.terrainPlusLong")} ${mnAff} (${pctAff}) ${t("prediction.ecartPlusLong")}`
+    : `${t("prediction.terrainPlusCourt")} ${mnAff} (${pctAff}) ${t("prediction.ecartPlusCourt")}`;
 
   return (
     <div className={`rounded-md border px-4 py-3 flex items-center gap-3 ${bgClass}`}>
       <span className={`text-fluid-xl ${textClass}`}>{egal ? "≈" : positif ? "▲" : "▼"}</span>
       <div>
-        <div className={`text-fluid-sm font-bold ${textClass}`}>Écart Google ↔ Terrain</div>
+        <div className={`text-fluid-sm font-bold ${textClass}`}>{t("prediction.ecartTitre")}</div>
         <div className={`text-fluid-xs ${textClass} opacity-80`}>{message}</div>
         <div className="text-fluid-xs app-text-muted mt-0.5">{label}</div>
       </div>
@@ -433,17 +433,17 @@ function BandeauEcart({ ecart, label }: { ecart: NonNullable<Ecart>; label: stri
   );
 }
 
-function BarreConfianceInline({ confiance }: { confiance: number }) {
+function BarreConfianceInline({ confiance, t }: { confiance: number; t: TFn }) {
   const pct = Math.round(confiance * 100);
   const couleur = pct >= 75 ? "text-statut-fluide" : pct >= 40 ? "text-yellow-500" : "text-statut-congestionne";
   return (
     <span className={`text-fluid-xs font-medium ${couleur}`}>
-      {pct === 0 ? "en cours d'accumulation" : `confiance ${pct} %`}
+      {pct === 0 ? t("prediction.precisionNote") : `${t("prediction.confiancePct")} ${pct} %`}
     </span>
   );
 }
 
-function KpiMn({ label, mn, couleur, dominante = false }: { label: string; mn: number | null; couleur: string; dominante?: boolean }) {
+function KpiMn({ label, mn, couleur, dominante = false }: { label: string; mn: number | null; couleur: string; dominante?: boolean; }) {
   return (
     <div className="paa-card p-3" style={dominante ? { borderLeft: `4px solid ${couleur}` } : undefined}>
       <div className="text-fluid-xs font-medium app-text-muted">{label}</div>
@@ -454,30 +454,33 @@ function KpiMn({ label, mn, couleur, dominante = false }: { label: string; mn: n
   );
 }
 
-function BlocTypeJour({ titre, stats }: { titre: string; stats: import("@/lib/types").StatsPeriode | null }) {
+function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax, unite }: {
+  titre: string; stats: import("@/lib/types").StatsPeriode | null;
+  labelMin: string; labelMoy: string; labelMax: string; unite: string;
+}) {
   return (
     <div className="paa-card p-3">
       <div className="text-fluid-xs font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-2">{titre}</div>
       {stats === null ? (
-        <p className="text-fluid-xs app-text-muted italic">Aucune mesure.</p>
+        <p className="text-fluid-xs app-text-muted italic">—</p>
       ) : (
         <div className="grid grid-cols-3 gap-1 text-center">
-          <div><div className="text-fluid-xs app-text-muted">Min</div><div className="font-bold text-statut-fluide">{stats.min_mn} mn</div></div>
-          <div><div className="text-fluid-xs app-text-muted">Moy.</div><div className="font-bold text-paa-blue-500">{stats.moyen_mn} mn</div></div>
-          <div><div className="text-fluid-xs app-text-muted">Max</div><div className="font-bold text-statut-congestionne">{stats.max_mn} mn</div></div>
+          <div><div className="text-fluid-xs app-text-muted">{labelMin}</div><div className="font-bold text-statut-fluide">{stats.min_mn} {unite}</div></div>
+          <div><div className="text-fluid-xs app-text-muted">{labelMoy}</div><div className="font-bold text-paa-blue-500">{stats.moyen_mn} {unite}</div></div>
+          <div><div className="text-fluid-xs app-text-muted">{labelMax}</div><div className="font-bold text-statut-congestionne">{stats.max_mn} {unite}</div></div>
         </div>
       )}
     </div>
   );
 }
 
-function BadgeSource({ source }: { source: SourcePrediction }) {
+function BadgeSource({ source, libelleSource }: { source: SourcePrediction; libelleSource: Record<SourcePrediction, string> }) {
   const c = COULEUR_SOURCE[source];
   return (
     <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-fluid-xs font-medium"
       style={{ backgroundColor: `${c}22`, color: c, border: `1px solid ${c}` }}>
       <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: c }} />
-      {LIBELLE_SOURCE[source]}
+      {libelleSource[source]}
     </span>
   );
 }
