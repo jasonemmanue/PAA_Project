@@ -18,6 +18,7 @@ asynchrone — les champs correspondants sont également nullable.
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "0011"
@@ -27,20 +28,26 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Enum TypeIncident
-    type_incident_enum = sa.Enum(
-        "accident", "embouteillage", "route_barree", "travaux", "autre",
-        name="typeincident",
+    # Création idempotente des types enum PostgreSQL via PL/pgSQL.
+    # `DO $$...$$` absorbe l'erreur `duplicate_object` si la migration a
+    # déjà été partiellement exécutée (cas d'un rollback incomplet).
+    op.execute(
+        "DO $$ BEGIN "
+        "CREATE TYPE typeincident AS ENUM "
+        "('accident', 'embouteillage', 'route_barree', 'travaux', 'autre'); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; "
+        "END $$"
     )
-    type_incident_enum.create(op.get_bind(), checkfirst=True)
-
-    # Enum SeveriteIncident
-    severite_enum = sa.Enum(
-        "mineur", "moyen", "grave", "inconnu",
-        name="severiteincident",
+    op.execute(
+        "DO $$ BEGIN "
+        "CREATE TYPE severiteincident AS ENUM "
+        "('mineur', 'moyen', 'grave', 'inconnu'); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; "
+        "END $$"
     )
-    severite_enum.create(op.get_bind(), checkfirst=True)
 
+    # On utilise postgresql.ENUM avec create_type=False : les types existent
+    # déjà (créés ci-dessus) — SQLAlchemy ne doit PAS les recréer.
     op.create_table(
         "incidents",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
@@ -75,10 +82,10 @@ def upgrade() -> None:
         sa.Column("lat", sa.Float(), nullable=True),
         sa.Column("lon", sa.Float(), nullable=True),
 
-        # Lieu tel qu'extrait du texte par le module NLP (CLAUDE.md § 10.3)
+        # Lieu tel qu'extrait du texte par le module NLP
         sa.Column("lieu_extrait", sa.String(200), nullable=True),
 
-        # Tronçon impacté détecté par proximité géographique (< 300 m)
+        # Tronçon officiel impacté (distance < 300 m) — NULL sinon
         sa.Column(
             "troncon_id",
             sa.Integer(),
@@ -86,10 +93,10 @@ def upgrade() -> None:
             nullable=True,
         ),
 
-        # Classification type et sévérité par regex NLP
+        # postgresql.ENUM avec create_type=False : référence les types déjà créés
         sa.Column(
             "type_incident",
-            sa.Enum(
+            postgresql.ENUM(
                 "accident", "embouteillage", "route_barree", "travaux", "autre",
                 name="typeincident",
                 create_type=False,
@@ -98,7 +105,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "severite",
-            sa.Enum(
+            postgresql.ENUM(
                 "mineur", "moyen", "grave", "inconnu",
                 name="severiteincident",
                 create_type=False,
@@ -122,12 +129,11 @@ def upgrade() -> None:
         ["source_url"],
     )
 
-    # Tri chronologique
+    # Tri chronologique (DESC pour les requêtes "les plus récents en premier")
     op.create_index(
         "ix_incidents_horodatage",
         "incidents",
         ["horodatage_publication"],
-        postgresql_ops={"horodatage_publication": "DESC"},
     )
 
     # Filtrage par tronçon impacté
