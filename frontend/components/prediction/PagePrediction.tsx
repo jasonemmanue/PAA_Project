@@ -144,7 +144,7 @@ export function PagePrediction() {
     <div className="flex flex-col gap-fluid-4">
       <PageHeader
         titre="Temps de traversée par période"
-        sousTitre="Mesures terrain GPX en source principale — Google Routes en indicateur temps réel."
+        sousTitre="Temps réel basé sur Google Maps — confrontation avec les temps terrain GPX en bas de page."
       />
 
       {/* Sélecteur tronçon */}
@@ -176,31 +176,82 @@ export function PagePrediction() {
       {!chargement && (
         <>
           {/* ═══════════════════════════════════════════════════════════════
-              SECTION PRIMAIRE — TERRAIN GPX
+              SECTION 1 — GOOGLE MAPS (TEMPS RÉEL) — EN HAUT
           ═══════════════════════════════════════════════════════════════ */}
-          <div className="rounded-md border-2 border-paa-navy-700 dark:border-paa-blue-400 p-fluid-4 flex flex-col gap-4 bg-white dark:bg-paa-navy-900">
+          {resume && (
+            <div className="flex flex-col gap-4">
+              {/* Temps actuel */}
+              <section className="paa-card p-fluid-4">
+                <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-2">
+                  Temps réel (Google Maps)
+                </h2>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <BadgeSource source={resume.courante.source} />
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <KpiMn label="Min" mn={resume.courante.prediction.min_mn} couleur="#2ECC71" />
+                  <KpiMn label="Moyen" mn={resume.courante.prediction.moyen_mn} couleur="#3498DB" dominante />
+                  <KpiMn label="Max" mn={resume.courante.prediction.max_mn} couleur="#E74C3C" />
+                </div>
+              </section>
+
+              {/* Ce mois Google */}
+              <section className="paa-card p-fluid-4">
+                <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
+                  Ce mois — Google Maps
+                  <span className="ml-2 text-fluid-xs font-normal app-text-muted">
+                    {resume.mois.nb_mesures_total} mesure{resume.mois.nb_mesures_total !== 1 ? "s" : ""}
+                  </span>
+                </h2>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <BlocTypeJour titre="Jours ouvrables (lun–ven)" stats={resume.mois.jours_ouvrables} />
+                  <BlocTypeJour titre="Week-ends (sam–dim)" stats={resume.mois.week_ends} />
+                </div>
+              </section>
+
+              {/* Cette semaine Google */}
+              <section className="paa-card p-fluid-4">
+                <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
+                  Cette semaine — Google Maps
+                  <span className="ml-2 text-fluid-xs font-normal app-text-muted">
+                    {resume.semaine.nb_mesures_total} mesure{resume.semaine.nb_mesures_total !== 1 ? "s" : ""}
+                  </span>
+                </h2>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <BlocTypeJour titre="Jours ouvrables (lun–ven)" stats={resume.semaine.jours_ouvrables} />
+                  <BlocTypeJour titre="Week-ends (sam–dim)" stats={resume.semaine.week_ends} />
+                </div>
+              </section>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              SECTION 2 — TERRAIN GPX (CONFRONTATION) — EN BAS
+          ═══════════════════════════════════════════════════════════════ */}
+          <div className="rounded-md border-2 border-paa-navy-300 dark:border-paa-navy-600 p-fluid-4 flex flex-col gap-4 bg-paa-blue-50 dark:bg-paa-navy-900">
             <div className="flex items-center gap-2">
-              <span className="text-fluid-lg font-bold text-paa-navy-800 dark:text-paa-blue-100">
-                Terrain mesuré (GPX)
+              <span className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100">
+                Confrontation — Terrain mesuré (GPX)
               </span>
               {hasGpx && (
                 <BarreConfianceInline confiance={segments!.confiance} />
               )}
             </div>
+            <p className="text-fluid-xs app-text-muted -mt-2">
+              Temps réellement parcourus en voiture — à comparer avec les valeurs Google Maps ci-dessus.
+            </p>
 
             {!hasGpx ? (
-              <div className="rounded-md border app-border bg-paa-blue-50 dark:bg-paa-navy-800 px-4 py-3 text-fluid-sm app-text-muted">
-                Aucune session terrain importée — importez des fichiers GPX via la page <strong>Fiabilité</strong> pour voir les temps réellement mesurés.
+              <div className="rounded-md border app-border bg-white dark:bg-paa-navy-800 px-4 py-3 text-fluid-sm app-text-muted">
+                Aucune session terrain importée — importez des fichiers GPX via la page <strong>Fiabilité</strong>.
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-3">
-                {/* Toutes sessions */}
                 <BlocGpx
                   titre="Toutes sessions"
                   sousTitre={`${sessionsTout.length} session${sessionsTout.length > 1 ? "s" : ""} — ${formaterDate(sessionsTout[sessionsTout.length - 1].date_session)} → ${formaterDate(sessionsTout[0].date_session)}`}
                   stats={statsTout}
                 />
-                {/* Ce mois */}
                 <BlocGpx
                   titre="Ce mois"
                   sousTitre={sessionsMois.length > 0
@@ -209,7 +260,6 @@ export function PagePrediction() {
                   stats={statsMois}
                   vide={sessionsMois.length === 0}
                 />
-                {/* Cette semaine */}
                 <BlocGpx
                   titre="Cette semaine"
                   sousTitre={sessionsSemaine.length > 0
@@ -228,57 +278,6 @@ export function PagePrediction() {
               </p>
             )}
           </div>
-
-          {/* ═══════════════════════════════════════════════════════════════
-              SECTION SECONDAIRE — GOOGLE TEMPS RÉEL
-          ═══════════════════════════════════════════════════════════════ */}
-          {resume && (
-            <details className="group">
-              <summary className="cursor-pointer list-none flex items-center gap-2 text-fluid-sm font-medium app-text-muted hover:text-paa-navy-700 dark:hover:text-paa-blue-100 select-none">
-                <span className="text-paa-navy-400 dark:text-paa-blue-300 group-open:rotate-90 transition-transform inline-block">▶</span>
-                Google Routes — indicateur temps réel (données API)
-              </summary>
-
-              <div className="mt-3 flex flex-col gap-4 pl-4 border-l-2 app-border">
-                {/* Temps actuel */}
-                <section>
-                  <h3 className="text-fluid-sm font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-2">
-                    Temps actuel
-                  </h3>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    <BadgeSource source={resume.courante.source} />
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <KpiMn label="Min" mn={resume.courante.prediction.min_mn} couleur="#2ECC71" />
-                    <KpiMn label="Moyen" mn={resume.courante.prediction.moyen_mn} couleur="#3498DB" dominante />
-                    <KpiMn label="Max" mn={resume.courante.prediction.max_mn} couleur="#E74C3C" />
-                  </div>
-                </section>
-
-                {/* Ce mois Google */}
-                <section>
-                  <h3 className="text-fluid-sm font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-1">
-                    Ce mois — Google ({resume.mois.nb_mesures_total} mesures)
-                  </h3>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <BlocTypeJour titre="Jours ouvrables" stats={resume.mois.jours_ouvrables} />
-                    <BlocTypeJour titre="Week-ends" stats={resume.mois.week_ends} />
-                  </div>
-                </section>
-
-                {/* Cette semaine Google */}
-                <section>
-                  <h3 className="text-fluid-sm font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-1">
-                    Cette semaine — Google ({resume.semaine.nb_mesures_total} mesures)
-                  </h3>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <BlocTypeJour titre="Jours ouvrables" stats={resume.semaine.jours_ouvrables} />
-                    <BlocTypeJour titre="Week-ends" stats={resume.semaine.week_ends} />
-                  </div>
-                </section>
-              </div>
-            </details>
-          )}
         </>
       )}
     </div>
