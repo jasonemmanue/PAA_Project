@@ -14,6 +14,8 @@ import type {
   CollecteStatus,
   EvolutionResponse,
   ImportGpxResponse,
+  Incident,
+  IncidentsPage,
   IndicateursPeriode,
   JourSemaine,
   Mesure,
@@ -24,6 +26,7 @@ import type {
   SousTroncon,
   SousTronconCreer,
   SousTronconsResponse,
+  StatsIncidents,
   TronconAdmin,
   TronconCreer,
   RapportGraphique,
@@ -440,6 +443,9 @@ export const api = {
   supprimerSousTroncon: deleteSousTroncon,
   urlExportMesures,
   urlExportProfils,
+  getIncidents,
+  getStatsIncidents,
+  getIncident,
 };
 
 // ---------------------------------------------------------------------------
@@ -490,4 +496,33 @@ export function deleteSousTroncon(id: number): Promise<unknown> {
   return appel<unknown>(`/administration/sous-troncons/${id}`, {
     method: "DELETE",
   });
+}
+
+// ---------------------------------------------------------------------------
+// Incidents de circulation — P8
+// ---------------------------------------------------------------------------
+
+export function getIncidents(params: {
+  actif_seulement?: boolean;
+  troncon_id?: number;
+  type_incident?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<IncidentsPage> {
+  const q = new URLSearchParams();
+  if (params.actif_seulement) q.set("actif_seulement", "true");
+  if (params.troncon_id)      q.set("troncon_id", String(params.troncon_id));
+  if (params.type_incident)   q.set("type_incident", params.type_incident);
+  if (params.limit)           q.set("limit", String(params.limit));
+  if (params.offset)          q.set("offset", String(params.offset));
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return appel<IncidentsPage>(`/incidents${suffix}`);
+}
+
+export function getStatsIncidents(): Promise<StatsIncidents> {
+  return appel<StatsIncidents>("/incidents/stats");
+}
+
+export function getIncident(id: number): Promise<Incident> {
+  return appel<Incident>(`/incidents/${id}`);
 }

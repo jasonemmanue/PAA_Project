@@ -21,7 +21,8 @@
     "rapport": "DEESP Report",
     "fiabilite": "Reliability",
     "prediction": "Crossing time",
-    "administration": "Administration"
+    "administration": "Administration",
+    "incidents": "Incidents"
   },
   "carte": {
     "title": "Real-time map",
@@ -230,6 +231,35 @@
     "terrainPlusLongCourt": "longer than Google",
     "terrainPlusCourtel": "shorter than Google",
     "puceEgal": "≈ same as Google Maps"
+  },
+  "incidents": {
+    "titre": "Incidents & Accidents",
+    "subtitle": "Automatic monitoring of incidents reported in the port area (Ivorian press).",
+    "nbActifs": "active incidents",
+    "nbAujourdhui": "incidents recorded",
+    "tronconImpacte": "most impacted segment",
+    "carteTitle": "Active geolocated incidents (< 6 h)",
+    "aucunIncidentCarte": "No active geolocated incident at the moment.",
+    "aucunIncident": "No incident recorded for this period.",
+    "incidentsRecenses": "incident(s) recorded",
+    "voirSource": "View source article",
+    "typeAccident": "Accident",
+    "typeEmbouteillage": "Traffic jam",
+    "typeRouteBarree": "Road closed",
+    "typeTravaux": "Roadworks",
+    "typeAutre": "Other",
+    "severiteGrave": "Severe",
+    "severiteMoyen": "Moderate",
+    "severiteMineur": "Minor",
+    "severiteInconnu": "Unknown",
+    "filtreType": "Type",
+    "filtreTypeTous": "All types",
+    "filtrePeriode": "Period",
+    "filtreTroncon": "Segment",
+    "filtreTronconTous": "All segments",
+    "periodAujourd": "Today",
+    "period24h": "24 h",
+    "period7j": "7 days"
   },
   "administration": {
     "title": "Administration",

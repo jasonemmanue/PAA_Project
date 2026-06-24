@@ -573,3 +573,51 @@ export interface ResumeSegments {
   confiance: number;
   sessions: EstimationSession[];
 }
+
+// ---------------------------------------------------------------------------
+// Incidents de circulation — P8
+// ---------------------------------------------------------------------------
+
+export type TypeIncident =
+  | "accident"
+  | "embouteillage"
+  | "route_barree"
+  | "travaux"
+  | "autre";
+
+export type SeveriteIncident =
+  | "mineur"
+  | "moyen"
+  | "grave"
+  | "inconnu";
+
+export interface Incident {
+  id: number;
+  titre: string;
+  resume: string | null;
+  source_url: string;
+  source_nom: string;
+  horodatage_publication: string; // ISO 8601 UTC
+  horodatage_collecte: string;
+  lat: number | null;
+  lon: number | null;
+  lieu_extrait: string | null;
+  troncon_id: number | null;
+  type_incident: TypeIncident | null;
+  severite: SeveriteIncident | null;
+  actif: boolean;
+  verifie: boolean;
+}
+
+export interface IncidentsPage {
+  total: number;
+  items: Incident[];
+}
+
+export interface StatsIncidents {
+  nb_total: number;
+  nb_actifs: number;
+  nb_par_type: Record<string, number>;
+  nb_par_source: Record<string, number>;
+  derniere_collecte: string | null;
+}

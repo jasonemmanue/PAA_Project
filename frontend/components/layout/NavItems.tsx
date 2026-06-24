@@ -9,6 +9,7 @@ import {
   IconCarte,
   IconIndicateurs,
   IconFiabilite,
+  IconIncidents,
   IconPrediction,
   IconAdmin,
 } from "@/components/ui/Icons";
@@ -26,5 +27,6 @@ export const ENTREES_NAV: EntreeNav[] = [
   { href: "/rapport", labelKey: "nav.rapport", Icon: IconIndicateurs },
   { href: "/fiabilite", labelKey: "nav.fiabilite", Icon: IconFiabilite },
   { href: "/prediction", labelKey: "nav.prediction", Icon: IconPrediction },
+  { href: "/incidents", labelKey: "nav.incidents", Icon: IconIncidents },
   { href: "/administration", labelKey: "nav.administration", Icon: IconAdmin },
 ];

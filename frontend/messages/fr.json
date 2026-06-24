@@ -21,7 +21,8 @@
     "rapport": "Rapport DEESP",
     "fiabilite": "Fiabilité",
     "prediction": "Temps de traversée",
-    "administration": "Administration"
+    "administration": "Administration",
+    "incidents": "Incidents"
   },
   "carte": {
     "title": "Cartographie temps réel",
@@ -230,6 +231,35 @@
     "terrainPlusLongCourt": "plus long que Google",
     "terrainPlusCourtel": "plus court que Google",
     "puceEgal": "≈ identique à Google Maps"
+  },
+  "incidents": {
+    "titre": "Incidents & Accidents",
+    "subtitle": "Recensement automatique des incidents signalés dans la zone portuaire (presse ivoirienne).",
+    "nbActifs": "incidents actifs",
+    "nbAujourdhui": "incidents recensés",
+    "tronconImpacte": "tronçon le plus impacté",
+    "carteTitle": "Incidents actifs géolocalisés (< 6 h)",
+    "aucunIncidentCarte": "Aucun incident actif géolocalisé pour l'instant.",
+    "aucunIncident": "Aucun incident recensé sur cette période.",
+    "incidentsRecenses": "incident(s) recensé(s)",
+    "voirSource": "Voir l'article source",
+    "typeAccident": "Accident",
+    "typeEmbouteillage": "Embouteillage",
+    "typeRouteBarree": "Route barrée",
+    "typeTravaux": "Travaux",
+    "typeAutre": "Autre",
+    "severiteGrave": "Grave",
+    "severiteMoyen": "Modéré",
+    "severiteMineur": "Mineur",
+    "severiteInconnu": "Inconnu",
+    "filtreType": "Type",
+    "filtreTypeTous": "Tous les types",
+    "filtrePeriode": "Période",
+    "filtreTroncon": "Tronçon",
+    "filtreTronconTous": "Tous les tronçons",
+    "periodAujourd": "Aujourd'hui",
+    "period24h": "24 h",
+    "period7j": "7 jours"
   },
   "administration": {
     "title": "Administration",
