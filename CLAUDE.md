@@ -252,7 +252,7 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P4.1** | ✅ Terminée *(refondu 2026-06-22)* | **Carte Accueil enrichie** — zoom intelligent au chargement vers le **point chaud** (worst classe DEESP puis worst % rouge), **4 markers POI** étiquetés `C`/`T`/`S`/`P`, **panneau latéral** avec **barre couleur 3 segments rouge/orange/vert par tronçon**, bandeau KPI à 3 classes DEESP (fluide / congestionné / indéterminé), encart « Point chaud actuel » avec libellé du tronçon et ses pourcentages de couleur Google Maps. Cf. `CarteLeaflet.tsx` + `PanneauTroncons.tsx`. |
 | **P4**| ✅ Terminée | **Frontend Next.js complet** — design system PAA, responsive 3 breakpoints (375/768/1024), i18n FR/EN sans rechargement, thème clair/sombre, splash screen HACKATONIA (laser printing 4 s), favicon multi-tailles, page Carte (Leaflet + WebSocket + heatmap + popups), page Indicateurs (Recharts : courbe + heatmap horaire + évolution pluriannuelle + KPI), sélecteur période fonctionnel **24h / 7j / 30j / 90j** (cf. § 4.1), barre de pilotage avec **pastille 3 états + libellé plage active + prochain cycle** reflétant la veille nocturne automatique (cf. § 4.2), exports CSV/XLSX. |
 | **P5**| ✅ Terminée | **Validation terrain hebdomadaire** — `POST /terrain/import` (parsing GPX + OSRM Match + découpage automatique aux bornes des 6 tronçons), appariement avec la mesure Google la plus proche (fenêtre 30 min), `GET /terrain/releves` + `GET /terrain/calibration` (moyenne mobile des écarts). Frontend : page Fiabilité avec import GPX, graphique Recharts d'évolution de ε par tronçon, tableau de calibration coloré 3 niveaux. Script `app/generer_gpx_synthetiques.py` (Option A) produit des GPX placeholder à partir d'OSRM pour valider la boucle sans relevé terrain. Cf. § 4.4. |
-| **P6.2** | ✅ Terminée *(refondu 2026-06-23)* | **Page « Temps de traversée par période »** — 3 blocs empilés (temps actuel cascade Google→profils→50 km/h, ce mois, cette semaine) avec stats min/moyen/max en minutes, séparation jours-ouvrables/week-ends, calibration appliquée si relevés GPX terrain réels disponibles. Cf. § 4.7. |
+| **P6.2** | ✅ Terminée *(refondu 2026-06-24)* | **Page « Temps de traversée par période »** — Google Maps en haut (temps actuel + ce mois + cette semaine, jours-ouvrables/week-ends), confrontation terrain GPX en bas. Cf. § 4.7. |
 | **P6.3** | ❌ Retiré du périmètre (2026-06-23) | Module « Heure optimale de départ » supprimé : code, endpoints, UI. La logique restante (temps de traversée) couvre le besoin opérationnel sans le calcul d'approche géocodée. |
 | **P6.4** | ⏳ À venir | **Administration + sous-tronçons codifiés** (T1A, T1B, T1C…) comme dans le rapport DEESP. Cf. [§ 6.4](PROMPTS_RESTANTS_DEESP.md). |
 | **P6.5** | ⏳ Optionnel | **ML Random Forest** avec évaluation honnête vs prédicteur niveau 2. Cf. [§ 6.5](PROMPTS_RESTANTS_DEESP.md). |
@@ -763,42 +763,37 @@ en valeur dans le pitch.
 | Sous-phase | Statut | Intitulé | Endpoints |
 |------------|--------|----------|-----------|
 | **P6.1** | ✅ Terminée | **Import des données historiques Excel** — `Base_Nettoyee_PAA_Fev2025.xlsx` (2 016 mesures terrain) + `FEVRIER_2026.xlsx` feuille `SYNTHESE COMPAREE` (24 lignes pluriannuelles). | `POST /import/base-nettoyee`, `POST /import/evolution` |
-| **P6.2** | ✅ Terminée *(refondu 2026-06-23)* | **Temps de traversée par période** — endpoint unique qui fournit en un appel : temps actuel (cascade Google → profils 60 j → 50 km/h), mois en cours, semaine en cours (min/moyen/max, séparation jours-ouvrables/week-ends). Cf. § 4.7. | `GET /predire/resume?troncon_id=` |
+| **P6.2** | ✅ Terminée *(refondu 2026-06-24)* | **Temps de traversée par période** — Google Maps en avant (temps actuel + ce mois + cette semaine), confrontation terrain GPX en bas. Cf. § 4.7. | `GET /predire/resume?troncon_id=` + `GET /terrain/segments/resume/{id}` |
 | ~~P6.3~~ | ❌ Retiré (2026-06-23) | ~~Heure optimale d'acheminement~~ — module supprimé : code backend (`app/api/heure_optimale.py`, `app/predicteur/heure_optimale.py`) et UI (`OngletHeureOptimale.tsx`) retirés du dépôt. | — |
 | **P6.4** | ✅ Terminée | **Ajout de nouveaux parcours** — interface admin frontend + endpoint backend pour créer un nouveau tronçon sans redéploiement. | `POST /administration/troncons` |
 
-### 4.7 Page « Temps de traversée par période » (P6.2 refondu — 2026-06-23)
+### 4.7 Page « Temps de traversée par période » (P6.2 refondu — 2026-06-24)
 
-Refonte décidée le **2026-06-23** : la page anciennement « Prédiction »,
-qui exposait un sélecteur date + heure et générait une « prédiction »
-théorique pour un instant arbitraire, a été remplacée par une page de
-**lecture directe** orientée opérateur.
+Refonte décidée le **2026-06-23**, structure finale fixée le **2026-06-24**.
 
-#### Changements UX
+**Sous-titre :** *« Temps réel basé sur Google Maps — confrontation avec les
+temps terrain GPX en bas de page. »*
 
-| Avant (P6.2 v1) | Après (P6.2 v2 — 2026-06-23) |
-|---|---|
-| Titre **« Prédiction »** dans la nav + page | **« Temps de traversée »** (FR) / **« Crossing time »** (EN) |
-| 2 onglets : « Prédiction par créneau » + « Heure optimale de départ » | Page unique sans onglet |
-| Sélecteurs Tronçon + Date + Slider Heure + bouton « Prédire » | Sélecteur Tronçon uniquement — chargement automatique |
-| Carte « Notre interprétation » + encart Calibration + bloc MAE | Note explicative GPX en bas de page |
-| Onglet « 🏆 Heure optimale de départ » avec chips quartiers, géoloc, BarChart 24 créneaux | **Supprimé entièrement** (frontend + backend) |
+#### Structure du contenu — deux sections
 
-#### Structure du contenu (3 blocs empilés de haut en bas)
+**Section 1 — Google Maps (en haut, en avant)**
 
-1. **🕐 Temps actuel** — 3 KPI Min / Moyen / Max (en minutes) + badges
-   source (Google temps réel / Profils 60 j / Référence 50 km/h),
-   type-jour et fiabilité. Cascade :
-   1. Mesure Google si fenêtre ±15 min autour du présent
-   2. Profils horaires 60 j calibrés
-   3. Référence 50 km/h depuis `distance_m`
+Données temps réel API Google Routes. Trois blocs affichés directement
+(sans dépliable) :
 
-2. **📆 Ce mois** — 2 colonnes côte à côte (Jours ouvrables / Week-ends),
-   chacune avec Min / Moyen / Max + nb mesures. Fenêtre : 1er du mois local
-   00:00 → maintenant. Source unique : `Mesure.source=google` avec
-   `aberrante=False`.
+1. **Temps réel (Google Maps)** — Min / Moyen / Max + badge source
+   (mesure ±15 min ou moyenne 7 j même type de jour).
+2. **Ce mois — Google Maps** — stats jours-ouvrables / week-ends depuis
+   le 1er du mois. Nombre de mesures affiché dans le titre.
+3. **Cette semaine — Google Maps** — idem depuis le lundi de la semaine.
 
-3. **📅 Cette semaine** — idem mais fenêtre : lundi 00:00 local → maintenant.
+**Section 2 — Confrontation terrain GPX (en bas, fond bleu pâle)**
+
+Temps réellement parcourus en voiture — importés via la page Fiabilité.
+Même découpage temporel (toutes sessions / ce mois / cette semaine) mais
+calculé depuis `segments_terrain` côté client. Filtrage par `date_session`.
+
+Si aucun GPX importé → message d'invitation vers la page Fiabilité.
 
 #### Endpoint backend
 
@@ -1454,20 +1449,38 @@ Quand l'utilisateur sélectionne de nouveaux fichiers dans le picker :
 - Après clic "Importer" → traces passent en DB → `tracesSelection` effacé →
   `tracesDb` rechargé pour inclure les nouveaux segments.
 
-### Page Temps de traversée — source GPX en primaire (état 2026-06-23)
+### Page Temps de traversée — structure finale (état 2026-06-24)
 
-La page « Temps de traversée » affiche les mesures **terrain GPX** comme
-source principale et Google Routes en indicateur secondaire dépliable :
+La page est organisée en **deux sections distinctes** :
+
+#### Section 1 — Google Maps (en haut, en avant)
+
+Données temps réel provenant de l'API Google Routes, mises à jour à chaque
+cycle de collecte (toutes les heures). Trois blocs :
 
 | Bloc | Source | Calcul |
 |------|--------|--------|
-| **Terrain mesuré — Toutes sessions** | `segments_terrain` (toutes dates) | min/moyen/max des `duree_totale_s` par session |
-| **Terrain mesuré — Ce mois** | `segments_terrain` filtrés `date_session ≥ 1er du mois` | idem |
-| **Terrain mesuré — Cette semaine** | `segments_terrain` filtrés `date_session ≥ lundi` | idem |
-| Google Routes (secondaire, dépliable) | `mesures` table (source=google) | inchangé |
+| **Temps réel (Google Maps)** | `mesures` + `predire/resume` | Mesure la plus récente ±15 min, sinon moyenne 7 j même type de jour |
+| **Ce mois — Google Maps** | `mesures` filtrées sur le mois courant | min/moyen/max, séparation jours-ouvrables / week-ends |
+| **Cette semaine — Google Maps** | `mesures` filtrées sur la semaine courante | idem |
 
-Les temps sont affichés en format `mm:ss min` (ex. `39:37 min`).
+#### Section 2 — Confrontation terrain GPX (en bas, fond distingué)
+
+Temps **réellement mesurés en voiture** via les fichiers GPX importés sur la
+page Fiabilité. Permet de confronter la donnée Google avec la réalité terrain.
+
+| Bloc | Source | Calcul |
+|------|--------|--------|
+| **Toutes sessions** | `segments_terrain` (toutes dates) | min/moyen/max des `duree_totale_s` par session |
+| **Ce mois** | `segments_terrain` filtrés `date_session ≥ 1er du mois` | idem |
+| **Cette semaine** | `segments_terrain` filtrés `date_session ≥ lundi` | idem |
+
+Les temps GPX sont affichés en format `mm:ss min` (ex. `39:37 min`).
 Le filtrage par période est **entièrement côté client** (pas d'endpoint supplémentaire).
+La section GPX affiche un message d'invitation si aucun GPX n'a encore été importé.
+
+**Sous-titre de la page :** *« Temps réel basé sur Google Maps — confrontation
+avec les temps terrain GPX en bas de page. »*
 
 ---
 
