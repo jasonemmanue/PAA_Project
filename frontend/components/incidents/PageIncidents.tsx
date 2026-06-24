@@ -52,20 +52,42 @@ export function PageIncidents() {
   // -------------------------------------------------------------------------
 
   async function charger() {
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
+    console.group("[PageIncidents] charger()");
+    console.log("API base URL :", base);
     try {
-      const [page, statsData, trs] = await Promise.all([
-        api.getIncidents({ limit: 200 }),
-        api.getStatsIncidents(),
-        api.troncons(),
-      ]);
+      console.log("→ GET /incidents?limit=200");
+      const page = await api.getIncidents({ limit: 200 }).catch((e) => {
+        console.error("❌ /incidents :", e?.statut, e?.message, e?.corps);
+        throw e;
+      });
+      console.log("✓ /incidents →", page.total, "incident(s)");
+
+      console.log("→ GET /incidents/stats");
+      const statsData = await api.getStatsIncidents().catch((e) => {
+        console.error("❌ /incidents/stats :", e?.statut, e?.message, e?.corps);
+        throw e;
+      });
+      console.log("✓ /incidents/stats →", statsData);
+
+      console.log("→ GET /troncons");
+      const trs = await api.troncons().catch((e) => {
+        console.error("❌ /troncons :", e?.statut, e?.message, e?.corps);
+        throw e;
+      });
+      console.log("✓ /troncons →", trs.length, "tronçon(s)");
+
       setIncidents(page.items);
       setStats(statsData);
       setTroncons(trs);
       setErreur(null);
     } catch (e) {
-      setErreur(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("❌ Erreur globale charger() :", e);
+      setErreur(msg);
     } finally {
       setChargement(false);
+      console.groupEnd();
     }
   }
 
