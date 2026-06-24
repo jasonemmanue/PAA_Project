@@ -23,7 +23,7 @@ import asyncio
 import logging
 import math
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -333,4 +333,89 @@ async def enrichir_incidents(db: Session) -> int:
         "Enrichissement terminé : %d incident(s) enrichi(s) sur %d.",
         nb_enrichis, len(incidents),
     )
+
+    # Déduplication cross-sources après enrichissement
+    nb_doublons = _dedupliquer_incidents(db)
+    if nb_doublons:
+        logger.info("Déduplication : %d doublon(s) marqué(s).", nb_doublons)
+
     return nb_enrichis
+
+
+# ---------------------------------------------------------------------------
+# Déduplication cross-sources (P8.5)
+# ---------------------------------------------------------------------------
+
+
+def _mots_significatifs(titre: str) -> set[str]:
+    """Extrait les mots de plus de 3 lettres d'un titre (insensible à la casse)."""
+    return {w.lower() for w in re.findall(r"\b\w{4,}\b", titre)}
+
+
+def _dedupliquer_incidents(db: Session) -> int:
+    """Détecte et marque les doublons cross-sources.
+
+    Un doublon probable remplit les 3 critères :
+      1. Même `troncon_id` (non NULL) ET même `type_incident`
+      2. `horodatage_publication` à ±2h de l'incident de référence
+      3. Au moins 3 mots significatifs (> 3 lettres) en commun dans les titres
+
+    On conserve le plus ancien (premier inséré). Les suivants reçoivent :
+      - titre préfixé de « [DOUBLON] »
+      - type_incident → TypeIncident.autre
+      - verifie → False (reset pour signaler le changement)
+
+    Retourne le nombre de doublons marqués.
+    """
+    # Ne considère que les incidents enrichis (type connu, tronçon attribué)
+    enrichis: list[Incident] = list(
+        db.execute(
+            select(Incident)
+            .where(
+                Incident.type_incident.is_not(None),
+                Incident.troncon_id.is_not(None),
+                ~Incident.titre.like("[DOUBLON]%"),
+            )
+            .order_by(Incident.horodatage_publication.asc())
+        ).scalars()
+    )
+
+    nb_doublons = 0
+    # Index rapide : (troncon_id, type_incident) → liste d'incidents déjà vus
+    vu: dict[tuple, list[Incident]] = {}
+
+    for inc in enrichis:
+        cle = (inc.troncon_id, inc.type_incident)
+        candidats = vu.get(cle, [])
+        mots_inc = _mots_significatifs(inc.titre)
+        est_doublon = False
+
+        for ref in candidats:
+            # Critère 2 : fenêtre ±2h
+            pub_ref = ref.horodatage_publication.replace(tzinfo=timezone.utc) \
+                if ref.horodatage_publication.tzinfo is None \
+                else ref.horodatage_publication
+            pub_inc = inc.horodatage_publication.replace(tzinfo=timezone.utc) \
+                if inc.horodatage_publication.tzinfo is None \
+                else inc.horodatage_publication
+            if abs((pub_inc - pub_ref).total_seconds()) > 7_200:
+                continue
+
+            # Critère 3 : ≥ 3 mots communs
+            mots_ref = _mots_significatifs(ref.titre)
+            if len(mots_inc & mots_ref) >= 3:
+                est_doublon = True
+                break
+
+        if est_doublon:
+            inc.titre = f"[DOUBLON] {inc.titre}"
+            inc.type_incident = TypeIncident.autre
+            nb_doublons += 1
+        else:
+            candidats.append(inc)
+            vu[cle] = candidats
+
+    if nb_doublons:
+        db.commit()
+
+    return nb_doublons

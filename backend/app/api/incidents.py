@@ -3,6 +3,7 @@
 Endpoints :
   GET  /incidents               — liste paginée avec filtres
   GET  /incidents/stats         — KPI globaux (compteurs + dernière collecte)
+  GET  /incidents/export        — export CSV (P8.5)
   GET  /incidents/{id}          — détail d'un incident
   POST /incidents/scraper-now   — déclenchement manuel du scraping RSS
   POST /incidents/enrichir      — déclenchement manuel NLP + géocodage (P8.2)
@@ -12,10 +13,13 @@ Tag Swagger : "incidents"
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import csv
+import io
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -23,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.analyse.incidents_nlp import enrichir_incidents
 from app.core.config import get_settings
 from app.db.session import get_db, SessionLocal
-from app.models.models import Incident, TypeIncident, SeveriteIncident
+from app.models.models import Incident, Troncon, TypeIncident, SeveriteIncident
 from app.sources.parsers.rss_parser import scraper_toutes_sources
 
 
@@ -53,6 +57,7 @@ class IncidentOut(BaseModel):
     severite: str | None
     actif: bool
     verifie: bool
+    fiabilite_source: float | None
 
     model_config = {"from_attributes": True}
 
@@ -97,6 +102,7 @@ def _incident_to_out(inc: Incident) -> IncidentOut:
         severite=inc.severite.value if inc.severite else None,
         actif=inc.actif,
         verifie=inc.verifie,
+        fiabilite_source=inc.fiabilite_source,
     )
 
 
@@ -208,6 +214,97 @@ def lister_incidents(
     items = [_incident_to_out(i) for i in tous[offset: offset + limit]]
 
     return IncidentsPage(total=total, items=items)
+
+
+# ---------------------------------------------------------------------------
+# GET /incidents/export  — export CSV (P8.5)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/export",
+    summary="Export CSV des incidents",
+    description=(
+        "Retourne un fichier CSV téléchargeable contenant les incidents "
+        "sur la période choisie (1j / 7j / 30j). "
+        "Filtres optionnels : type_incident, troncon_id."
+    ),
+)
+def exporter_incidents_csv(
+    periode: str = Query("7j", description="Fenêtre temporelle : 1j, 7j ou 30j"),
+    troncon_id: int | None = Query(None),
+    type_incident: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Génère un CSV des incidents pour la période demandée."""
+    # Calcul du début de la fenêtre temporelle
+    maintenant = datetime.now(tz=timezone.utc)
+    _DUREE = {"1j": 1, "7j": 7, "30j": 30}
+    nb_jours = _DUREE.get(periode, 7)
+    debut = maintenant - timedelta(days=nb_jours)
+
+    # Requête principale
+    q = (
+        select(Incident)
+        .where(Incident.horodatage_publication >= debut)
+        .order_by(Incident.horodatage_publication.desc())
+    )
+    if troncon_id is not None:
+        q = q.where(Incident.troncon_id == troncon_id)
+    if type_incident:
+        try:
+            q = q.where(Incident.type_incident == TypeIncident(type_incident))
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Type inconnu : {type_incident!r}",
+            )
+
+    incidents: list[Incident] = list(db.execute(q).scalars())
+
+    # Index des noms de tronçons (évite N+1 queries)
+    troncon_ids = {inc.troncon_id for inc in incidents if inc.troncon_id}
+    noms_troncons: dict[int, str] = {}
+    if troncon_ids:
+        for tr in db.execute(
+            select(Troncon).where(Troncon.id.in_(troncon_ids))
+        ).scalars():
+            noms_troncons[tr.id] = tr.nom
+
+    # Construction du CSV en mémoire
+    sortie = io.StringIO()
+    writer = csv.writer(sortie, delimiter=",", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "id", "titre", "source_nom", "type_incident", "severite",
+        "lieu_extrait", "lat", "lon", "troncon_nom",
+        "horodatage_publication", "actif", "fiabilite_source",
+    ])
+    for inc in incidents:
+        pub = inc.horodatage_publication
+        pub_utc = pub.replace(tzinfo=timezone.utc) if pub.tzinfo is None else pub
+        actif_val = (maintenant - pub_utc).total_seconds() < 6 * 3600
+        writer.writerow([
+            inc.id,
+            inc.titre,
+            inc.source_nom,
+            inc.type_incident.value if inc.type_incident else "",
+            inc.severite.value if inc.severite else "",
+            inc.lieu_extrait or "",
+            inc.lat if inc.lat is not None else "",
+            inc.lon if inc.lon is not None else "",
+            noms_troncons.get(inc.troncon_id, "") if inc.troncon_id else "",
+            pub_utc.strftime("%Y-%m-%d %H:%M UTC"),
+            "oui" if actif_val else "non",
+            round(inc.fiabilite_source, 2) if inc.fiabilite_source is not None else "",
+        ])
+
+    contenu = sortie.getvalue()
+    nom_fichier = f"incidents_paa_{maintenant.strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        iter([contenu]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
+    )
 
 
 # ---------------------------------------------------------------------------

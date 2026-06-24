@@ -687,6 +687,9 @@ class Incident(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # Score de fiabilité de la source (0..1) — initialisé selon source_nom (P8.5)
+    fiabilite_source: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     # Relation optionnelle vers le tronçon impacté
     troncon: Mapped["Troncon | None"] = relationship("Troncon")
 

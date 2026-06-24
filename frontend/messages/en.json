@@ -259,7 +259,9 @@
     "filtreTronconTous": "All segments",
     "periodAujourd": "Today",
     "period24h": "24 h",
-    "period7j": "7 days"
+    "period7j": "7 days",
+    "exporterCsv": "Export CSV",
+    "exporterCsvTitle": "Download the incidents list as a CSV file"
   },
   "administration": {
     "title": "Administration",

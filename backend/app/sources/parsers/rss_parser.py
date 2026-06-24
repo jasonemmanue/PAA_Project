@@ -70,6 +70,15 @@ SOURCES_RSS: list[dict[str, str]] = [
     },
 ]
 
+# Score de fiabilité par source (P8.5)
+_FIABILITE_SOURCE: dict[str, float] = {
+    "fraternite_matin": 0.9,
+    "abidjan_net": 0.8,
+    "koaci": 0.75,
+    "linfodrome": 0.7,
+    "soir_info": 0.7,
+}
+
 # Délai entre deux requêtes vers le même domaine (secondes)
 _DELAI_INTER_REQUETE = 2.0
 
@@ -187,6 +196,7 @@ async def scraper_rss_source(
                 source_url=lien,
                 source_nom=source_nom,
                 horodatage_publication=horodatage,
+                fiabilite_source=_FIABILITE_SOURCE.get(source_nom, 0.5),
             )
             .on_conflict_do_nothing(constraint="uq_incidents_source_url")
         )

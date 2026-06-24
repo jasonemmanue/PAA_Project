@@ -259,7 +259,9 @@
     "filtreTronconTous": "Tous les tronçons",
     "periodAujourd": "Aujourd'hui",
     "period24h": "24 h",
-    "period7j": "7 jours"
+    "period7j": "7 jours",
+    "exporterCsv": "Exporter CSV",
+    "exporterCsvTitle": "Télécharger la liste des incidents au format CSV"
   },
   "administration": {
     "title": "Administration",
