@@ -259,6 +259,11 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P7.1**| ⏳ À venir | **Tests + Cache Redis + Optimisations** — pytest pour rapport_paa, cache /carte/etat et /predire, Lighthouse mobile ≥ 80. Cf. [§ 7.1](PROMPTS_RESTANTS_DEESP.md). |
 | **P7.2**| ⏳ À venir | **Déploiement Vercel** (frontend) + ALLOWED_ORIGINS Railway + URL publique finale. Cf. [§ 7.2](PROMPTS_RESTANTS_DEESP.md). |
 | **P7.3**| ⏳ À venir | **Rapport final article 4** + **trame de pitch 5-7 min** revendiquant l'alignement DEESP. Cf. [§ 7.3](PROMPTS_RESTANTS_DEESP.md). |
+| **P8.1** | ⏳ À venir | **Scraping incidents — fondations** — migration 0011 table `incidents`, scraper RSS multi-source, job APScheduler 30 min, endpoints `GET /incidents`. Cf. § 10. |
+| **P8.2** | ⏳ À venir | **NLP légère + géocodage** — extraction lieu/type/sévérité par regex, géocodage Nominatim OSM, filtre bbox portuaire, attribution `troncon_id`. Cf. § 10. |
+| **P8.3** | ⏳ À venir | **Frontend page Incidents** — `/incidents/page.tsx`, carte Leaflet markers colorés, liste filtrée, KPI, i18n FR/EN. Cf. § 10. |
+| **P8.4** | ⏳ À venir | **Overlay carte principale** — incidents actifs sur la carte Accueil, badge nav rouge. Cf. § 10. |
+| **P8.5** | ⏳ Optionnel | **Qualité & exports** — déduplication cross-sources, score fiabilité, export CSV incidents. Cf. § 10. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -2003,6 +2008,422 @@ Le backend bascule automatiquement en mode best-effort (cf. § 2.5) :
 - Les polylines déjà stockées en base restent affichées (pas écrasées)
 - L'endpoint P5 `/terrain/import` continue de fonctionner sans `confiance_matching`
 - `python -m app.complete_troncons` nécessite OSRM — les polylines déjà en base restent affichées (elles ne sont pas écrasées par la bascule)
+
+---
+
+## 10. Phase P8 — Module « Incidents & Accidents » (scraping presse ivoirienne)
+
+> Phase ajoutée le **2026-06-24**. Objectif : recenser automatiquement en continu
+> les incidents de circulation (accidents, routes barrées, embouteillages
+> exceptionnels) signalés dans la zone portuaire d'Abidjan, les géolocaliser et
+> les afficher sur une page dédiée ainsi qu'en overlay sur la carte principale.
+
+### 10.1 Périmètre et sources
+
+**Zone géographique surveillée :**
+Bounding box de la zone portuaire : lat `[5.24, 5.37]` × lon `[-4.05, -3.96]`.
+Un incident est retenu s'il mentionne un lieu géocodable dans cette zone
+(Plateau, Treichville, Zone 4, pont Houphouët-Boigny, CARENA, Palm Beach,
+Port d'Abidjan, Grand Bassam road, bd de Marseille…).
+
+**Mots-clés de détection :**
+`accident`, `collision`, `accrochage`, `carambolage`, `embouteillage`,
+`bouchon`, `route barrée`, `voie coupée`, `camion renversé`, `poids lourd`,
+`convoi exceptionnel`, `travaux`, `Treichville`, `Plateau`, `Zone 4`,
+`Port d'Abidjan`, `CARENA`, `Palm Beach`, `pont HB`, `Houphouët`.
+
+**Sources de scraping (toutes publiques, aucun login requis) :**
+
+| Source | Type | URL de base | Fréquence |
+|--------|------|-------------|-----------|
+| **Fraternité Matin** | RSS | `https://www.fraternitematin.ci/feed/` | 30 min |
+| **Abidjan.net** | RSS + HTML | `https://news.abidjan.net/rss.php` | 30 min |
+| **Koaci.com** | RSS | `https://koaci.com/rss.xml` | 30 min |
+| **L'Infodrome** | HTML | `https://www.linfodrome.ci/vie-pratique/` | 60 min |
+| **Soir Info** | HTML | `https://www.soir-info.ci/` | 60 min |
+
+**Règles de courtoisie :**
+- Respecter `robots.txt` de chaque site.
+- `User-Agent` identifié : `PAA-Traverse/1.0 (hackathon; contact:sakamemmanuel@gmail.com)`.
+- Délai de 2 s entre les requêtes vers le même domaine.
+- Résultat mis en cache 25 min — ne jamais re-scraper si la dernière collecte
+  est < 20 min.
+
+### 10.2 Modèle de données — table `incidents` (migration 0011)
+
+| Colonne | Type | Description |
+|---------|------|-------------|
+| `id` | int PK | Identifiant interne |
+| `titre` | str(500) | Titre extrait de l'article |
+| `resume` | text | Corps tronqué (500 premiers caractères nettoyés) |
+| `source_url` | str UNIQUE | URL canonique — clé de déduplication |
+| `source_nom` | str | `fraternite_matin` / `abidjan_net` / `koaci` / `linfodrome` / `soir_info` |
+| `horodatage_publication` | datetime tz | Date de publication (UTC) |
+| `horodatage_collecte` | datetime tz | Instant de détection par le scraper (UTC) |
+| `lat` | float nullable | Latitude géocodée (Nominatim) |
+| `lon` | float nullable | Longitude géocodée (Nominatim) |
+| `lieu_extrait` | str nullable | Lieu tel qu'extrait du texte brut |
+| `troncon_id` | int FK nullable | Tronçon officiel impacté (si détecté par bbox) |
+| `type_incident` | enum | `accident` / `embouteillage` / `route_barree` / `travaux` / `autre` |
+| `severite` | enum | `mineur` / `moyen` / `grave` / `inconnu` |
+| `actif` | bool | `True` si `horodatage_publication` < 6 h — recalculé à chaque lecture |
+| `verifie` | bool | `False` par défaut — validation manuelle optionnelle |
+
+**Index :**
+- `ix_incidents_horodatage (horodatage_publication DESC)` — tri chronologique
+- `ix_incidents_actif (actif, horodatage_publication)` — filtre carte temps réel
+- `ix_incidents_troncon (troncon_id, horodatage_publication)` — corrélation tronçon
+
+### 10.3 Architecture backend
+
+```
+backend/app/
+├── sources/
+│   ├── scraper_incidents.py   # Orchestrateur multi-source
+│   ├── parsers/
+│   │   ├── rss_parser.py      # Lecture feedparser + filtre mots-clés
+│   │   └── html_parser.py     # BeautifulSoup4 pour les sites sans RSS
+├── analyse/
+│   └── incidents_nlp.py       # Extraction lieu, type, sévérité
+├── api/
+│   └── incidents.py           # Router FastAPI /incidents
+└── models/models.py           # Modèle SQLAlchemy Incident (ajout)
+```
+
+**Dépendances supplémentaires (`requirements.txt`) :**
+```
+feedparser>=6.0
+beautifulsoup4>=4.12
+lxml>=5.0        # parser HTML rapide pour BeautifulSoup
+```
+
+Pas de dépendance NLP lourde (pas de spaCy) — extraction par regex + dictionnaire
+de lieux.
+
+**Géocodage : Nominatim OSM**
+```python
+# Via httpx (déjà en dépendance)
+GET https://nominatim.openstreetmap.org/search
+  ?q=<lieu_extrait>+Abidjan
+  &format=json&limit=1&countrycodes=ci
+```
+Mise en cache en mémoire (`dict`) : un lieu géocodé n'est pas requêté deux fois.
+Délai Nominatim : 1 s entre appels (respect ToS OSM).
+Résultat filtré dans la bounding box portuaire — si hors zone, `lat/lon = NULL`.
+
+### 10.4 Feuille de route P8 détaillée
+
+| Sous-phase | Statut | Intitulé |
+|------------|--------|----------|
+| **P8.1** | ⏳ À faire | **Fondations scraping** — migration 0011, modèle `Incident`, scraper RSS multi-source, job APScheduler 30 min, endpoint `GET /incidents` |
+| **P8.2** | ⏳ À faire | **Extraction NLP légère + géocodage** — regex mots-clés, dictionnaire de lieux, Nominatim, filtre bbox, attribution `troncon_id` |
+| **P8.3** | ⏳ À faire | **Frontend page Incidents** — `/incidents/page.tsx`, carte Leaflet markers, liste chronologique, filtres type/période, i18n FR/EN |
+| **P8.4** | ⏳ À faire | **Overlay carte principale** — incidents actifs (<6 h) affichés sur la carte Accueil, popup résumé, badge nav si incident actif |
+| **P8.5** | ⏳ Optionnel | **Qualité & exports** — déduplication cross-sources, score fiabilité, export CSV incidents, stats hebdomadaires |
+
+---
+
+### 10.5 Prompts d'implémentation P8
+
+> Exécuter dans l'ordre P8.1 → P8.2 → P8.3 → P8.4 → P8.5 (optionnel).
+> Chaque prompt suppose que le précédent a été exécuté et commité.
+
+---
+
+#### PROMPT P8.1 — Fondations scraping backend
+
+```
+Contexte : PAA-Traverse, backend FastAPI + SQLAlchemy + APScheduler.
+Voir CLAUDE.md § 10 pour le cahier des charges complet.
+
+Objectif : créer la couche de persistance + le scraper RSS multi-source
++ le job APScheduler + les endpoints de lecture.
+
+ÉTAPE 1 — Migration Alembic 0011 (fichier backend/alembic/versions/0011_incidents.py)
+Créer la table `incidents` avec les colonnes définies en § 10.2.
+Enum Python `TypeIncident` (accident/embouteillage/route_barree/travaux/autre)
+et `SeveriteIncident` (mineur/moyen/grave/inconnu).
+Clé unique : source_url. Index : horodatage, actif+horodatage, troncon_id+horodatage.
+
+ÉTAPE 2 — Modèle SQLAlchemy (ajouter dans backend/app/models/models.py)
+Classe `Incident` avec tous les champs de la migration.
+Propriété calculée `actif` : True si (now_utc - horodatage_publication) < 6 heures.
+
+ÉTAPE 3 — Scraper RSS (backend/app/sources/parsers/rss_parser.py)
+Fonction async `scraper_rss(url: str, source_nom: str, db: Session) -> int`
+(retourne le nb d'incidents insérés).
+- Utilise `feedparser` pour parser le feed.
+- Pour chaque entrée : titre + résumé (summary[:500]) + lien + date.
+- Filtre : au moins 1 mot-clé de MOTS_CLES_INCIDENTS dans (titre + résumé).
+- Déduplication : `INSERT ... ON CONFLICT (source_url) DO NOTHING`.
+- User-Agent : "PAA-Traverse/1.0 (hackathon; contact:sakamemmanuel@gmail.com)".
+- Délai 2 s entre sources du même domaine.
+
+MOTS_CLES_INCIDENTS = [
+  "accident", "collision", "accrochage", "carambolage",
+  "embouteillage", "bouchon", "route barrée", "voie coupée",
+  "camion renversé", "poids lourd", "convoi exceptionnel",
+  "travaux", "Treichville", "Plateau", "Zone 4",
+  "Port d'Abidjan", "CARENA", "Palm Beach", "pont HB",
+  "Houphouët", "pont Félix", "Seamen"
+]
+
+SOURCES_RSS = [
+  {"url": "https://www.fraternitematin.ci/feed/",    "nom": "fraternite_matin"},
+  {"url": "https://news.abidjan.net/rss.php",         "nom": "abidjan_net"},
+  {"url": "https://koaci.com/rss.xml",                "nom": "koaci"},
+]
+
+ÉTAPE 4 — Job APScheduler (ajouter dans backend/app/collecte/scheduler.py)
+Nouveau job `collecte_incidents()` — CronTrigger toutes les 30 min, 24h/24.
+Appelle `scraper_rss()` pour chaque source RSS. Log le nombre d'insérés.
+Ne lève pas d'exception si une source est indisponible (log + continue).
+
+ÉTAPE 5 — Router FastAPI (backend/app/api/incidents.py)
+Tag Swagger : "incidents"
+
+GET /incidents
+  Paramètres : actif_seulement: bool = False, troncon_id: int = None,
+               type_incident: str = None, limit: int = 50, offset: int = 0
+  Retourne : liste paginée {total, items: [IncidentOut]}
+
+GET /incidents/{id}
+  Retourne : IncidentOut complet
+
+GET /incidents/stats
+  Retourne : {nb_total, nb_actifs, nb_par_type, nb_par_source,
+              derniere_collecte}
+
+IncidentOut Pydantic :
+  id, titre, resume, source_url, source_nom, horodatage_publication,
+  horodatage_collecte, lat, lon, lieu_extrait, troncon_id,
+  type_incident, severite, actif, verifie
+
+ÉTAPE 6 — Intégrer le router dans backend/app/main.py
+  from app.api import incidents as incidents_router
+  app.include_router(incidents_router.router)
+
+ÉTAPE 7 — Ajouter feedparser + beautifulsoup4 + lxml dans requirements.txt
+
+Conventions :
+- Commentaires en français
+- Noms de variables en français (sauf noms d'API)
+- Pas de valeur inventée : si le scraping échoue → trou de collecte, log WARNING
+- Aucune clé API — Nominatim est gratuit sans clé
+```
+
+---
+
+#### PROMPT P8.2 — Extraction NLP légère + géocodage
+
+```
+Contexte : P8.1 terminée — la table incidents est alimentée par le scraper RSS.
+Les incidents n'ont pas encore de lat/lon ni de type/sévérité classifiés.
+Voir CLAUDE.md § 10.2 et § 10.3.
+
+Objectif : ajouter l'extraction de lieu, la classification du type d'incident
+et de la sévérité, puis le géocodage Nominatim.
+
+ÉTAPE 1 — Module NLP (backend/app/analyse/incidents_nlp.py)
+
+Fonction `extraire_lieu(texte: str) -> str | None`
+- Dictionnaire ordonné de lieux de référence (du plus spécifique au plus général) :
+  LIEUX_ABIDJAN = {
+    "carena": "CARENA", "palm beach": "Palm Beach",
+    "pont houphouët": "Pont Houphouët-Boigny",
+    "pont félix": "Pont Houphouët-Boigny",
+    "seamen": "Seamen's Club", "treichville": "Treichville",
+    "plateau": "Plateau", "zone 4": "Zone 4", "sodeci": "Zone 4",
+    "toyota cfao": "Toyota CFAO", "grand moulin": "Grand Moulin",
+    "port d'abidjan": "Port d'Abidjan",
+    "bd de marseille": "Boulevard de Marseille",
+    "avenue christiani": "Avenue Christiani",
+    "pharmacie palm beach": "Palm Beach",
+    "pharmacie du port": "Port d'Abidjan",
+  }
+- Retourne le premier lieu trouvé (insensible à la casse) dans `texte`.
+
+Fonction `classifier_type(texte: str) -> TypeIncident`
+- Règles regex simples :
+  - r"accident|collision|accrochage|carambolage" → accident
+  - r"travaux|chantier|réfection" → travaux
+  - r"route barr|voie coup|bloquée?" → route_barree
+  - r"embouteillage|bouchon|ralentissement" → embouteillage
+  - sinon → autre
+
+Fonction `classifier_severite(texte: str) -> SeveriteIncident`
+- r"mort|décès|tué|grave|grièvement" → grave
+- r"blessé|hospitalisé|ambulance" → moyen
+- r"léger|mineur|accrochage" → mineur
+- sinon → inconnu
+
+Fonction async `geocoder_lieu(lieu: str, cache: dict) -> tuple[float, float] | None`
+- Cache `dict` en mémoire (clé = lieu normalisé).
+- Appel httpx vers Nominatim OSM avec timeout 5 s.
+- Filtre résultat dans la bbox [5.24, 5.37] × [-4.05, -3.96].
+- Retourne (lat, lon) ou None si hors zone ou erreur.
+- Délai 1 s avant chaque appel non-caché (respect ToS OSM).
+
+Fonction async `enrichir_incidents(db: Session) -> int`
+- Sélectionne les `Incident` où `lieu_extrait IS NULL` ou `lat IS NULL`.
+- Pour chacun : appelle extraire_lieu(), classifier_type(), classifier_severite().
+- Si lieu extrait → geocoder_lieu().
+- Attribue `troncon_id` si le point (lat, lon) est à < 300 m d'une extrémité
+  de tronçon (Haversine sur les coords de la table `troncons`).
+- Commit par batch de 20 incidents.
+- Retourne le nombre d'incidents enrichis.
+
+ÉTAPE 2 — Chaîne dans le scheduler
+Dans `collecte_incidents()` du scheduler, appeler `enrichir_incidents(db)`
+après les scrapers RSS — même transaction de 30 min.
+
+ÉTAPE 3 — Endpoint de déclenchement manuel
+POST /incidents/enrichir
+  Déclenche `enrichir_incidents()` en tâche de fond (BackgroundTasks FastAPI).
+  Retourne : {"message": "enrichissement lancé en arrière-plan"}
+  Sécurisé par le header X-API-Key (même mécanisme que /collecte/demarrer).
+
+Conventions : idem P8.1.
+```
+
+---
+
+#### PROMPT P8.3 — Frontend page Incidents
+
+```
+Contexte : P8.2 terminée — GET /incidents renvoie des incidents géolocalisés.
+Voir CLAUDE.md § 10.3, la pile technique (Next.js 14, Leaflet, Tailwind, i18n).
+
+Objectif : créer la page /incidents avec une carte Leaflet des incidents actifs
+et une liste chronologique filtrable.
+
+STRUCTURE DE LA PAGE (frontend/app/incidents/page.tsx) :
+- Titre + sous-titre (i18n)
+- 3 KPI compacts : nb incidents actifs | nb total aujourd'hui | tronçon le plus impacté
+- `<CarteIncidents>` : carte Leaflet pleine largeur avec markers incidents
+- `<FiltresIncidents>` : barre de filtres (type / période / tronçon)
+- `<ListeIncidents>` : liste chronologique, 20 incidents par page
+
+COMPOSANT CarteIncidents (frontend/components/incidents/CarteIncidents.tsx) :
+- Markers couleurs : rouge = grave, orange = moyen, jaune = mineur, gris = inconnu
+- Marker actif = opaque, marker ancien (>6h) = semi-transparent
+- Popup au clic : titre, résumé (150 chars), source, heure de publication,
+  tronçon impacté si renseigné
+- Cluster automatique si > 10 markers visibles (leaflet.markercluster)
+- Rafraîchissement toutes les 5 min via polling GET /incidents?actif_seulement=true
+
+COMPOSANT ListeIncidents (frontend/components/incidents/ListeIncidents.tsx) :
+- Chaque ligne : badge type coloré | titre | source | heure relative (ex. "il y a 2h")
+- Ligne cliquable → ouvre un panneau latéral avec le résumé complet + lien source
+- Pagination simple (précédent / suivant)
+
+COMPOSANT FiltresIncidents :
+- Dropdown type : Tous / Accident / Embouteillage / Route barrée / Travaux / Autre
+- Dropdown période : Aujourd'hui / 24h / 7 jours
+- Dropdown tronçon : Tous / liste des 6 tronçons
+
+I18N — Ajouter sous la clé "incidents" dans fr.json ET en.json :
+FR : titre="Incidents & Accidents", subtitle="Recensement automatique des incidents
+signalés dans la zone portuaire (presse ivoirienne).",
+nbActifs="incidents actifs", nbAujourdhui="incidents aujourd'hui",
+tronconImpacte="tronçon le plus impacté", aucunIncident="Aucun incident recensé
+sur cette période.", voirSource="Voir l'article source",
+typeAccident="Accident", typeEmbouteillage="Embouteillage",
+typeRouteBarree="Route barrée", typeTravaux="Travaux", typeAutre="Autre",
+severiteGrave="Grave", severiteMoyen="Modéré", severiteMineur="Mineur",
+severiteInconnu="Inconnu", filtreType="Type", filtrePeriode="Période",
+filtreTroncon="Tronçon", periodAujourd="Aujourd'hui", period24h="24 h",
+period7j="7 jours"
+
+EN : title="Incidents & Accidents", subtitle="Automatic monitoring of incidents
+reported in the port area (Ivorian press).",
+nbActifs="active incidents", nbAujourdhui="incidents today",
+tronconImpacte="most impacted segment", aucunIncident="No incident recorded
+for this period.", voirSource="View source article",
+typeAccident="Accident", typeEmbouteillage="Traffic jam",
+typeRouteBarree="Road closed", typeTravaux="Roadworks", typeAutre="Other",
+... (pattern identique)
+
+NAVIGATION — Ajouter "incidents" dans :
+- frontend/messages/fr.json nav.incidents = "Incidents"
+- frontend/messages/en.json nav.incidents = "Incidents"
+- frontend/components/layout/Navigation.tsx : nouveau lien /incidents
+
+Design : respecter le design system PAA (paa-card, couleurs Tailwind existantes).
+Badge rouge "ACTIF" clignotant si incident grave actif. Responsive 3 breakpoints.
+```
+
+---
+
+#### PROMPT P8.4 — Overlay incidents sur la carte principale
+
+```
+Contexte : P8.3 terminée — la page /incidents fonctionne.
+Voir CLAUDE.md § 4.8 pour la structure de CarteLeaflet.tsx.
+
+Objectif : afficher les incidents actifs (<6h) en overlay sur la carte principale
+(page Accueil) et ajouter un badge rouge dans la nav si un incident actif existe.
+
+ÉTAPE 1 — Enrichir GET /carte/etat (backend/app/api/carte.py)
+Ajouter un champ `incidents_actifs: list[IncidentCarte]` dans la réponse JSON.
+IncidentCarte : {id, lat, lon, titre, type_incident, severite, troncon_id,
+horodatage_publication (ISO)}
+Filtrer : actif=True, lat IS NOT NULL (seulement les géolocalisés).
+Limiter à 20 incidents max (les plus récents).
+
+ÉTAPE 2 — Afficher dans CarteLeaflet.tsx
+(frontend/components/carte/CarteLeaflet.tsx)
+- Si `etat.incidents_actifs` existe et non vide :
+  - Afficher un CircleMarker par incident (rayon 10, couleur rouge si grave /
+    orange si moyen / jaune si mineur).
+  - Popup : titre + type + heure relative.
+  - Ne pas mélanger avec les markers POI existants (zIndexOffset différent).
+- Si aucun incident actif → aucun marker incident (comportement silencieux).
+
+ÉTAPE 3 — Badge nav
+Dans le composant Navigation :
+- `GET /incidents/stats` au montage (polling 5 min).
+- Si `nb_actifs > 0` : afficher un badge rouge `nb_actifs` à côté du lien Incidents.
+- Badge disparaît si `nb_actifs = 0`.
+
+Conventions : idem P8.1. TypeScript strict, aucun `any`. Commentaires en français.
+```
+
+---
+
+#### PROMPT P8.5 — Qualité & exports (optionnel)
+
+```
+Contexte : P8.4 terminée — incidents affichés sur la carte et la page dédiée.
+
+Objectif : améliorer la qualité des données + ajouter un export CSV.
+
+ÉTAPE 1 — Déduplication cross-sources
+Dans `enrichir_incidents()` (backend/app/analyse/incidents_nlp.py) :
+Après insertion, détecter les doublons probables :
+- Même `troncon_id` + même `type_incident` + même `horodatage_publication` (±2h)
+  + au moins 3 mots en commun dans les titres → doublon probable.
+- Conserver le plus ancien (premier arrivé), marquer les autres
+  `actif=False` + `type_incident='autre'` + titre préfixé "[DOUBLON] ".
+
+ÉTAPE 2 — Score de fiabilité de la source
+Ajouter colonne `fiabilite_source` (float 0..1) dans `incidents` (migration 0012).
+Initialiser par source :
+  fraternite_matin=0.9, abidjan_net=0.8, koaci=0.75,
+  linfodrome=0.7, soir_info=0.7.
+Exposer dans IncidentOut.
+
+ÉTAPE 3 — Export CSV
+GET /incidents/export?format=csv&periode=7j
+Retourne un CSV avec colonnes :
+  id, titre, source_nom, type_incident, severite, lieu_extrait,
+  lat, lon, troncon_nom, horodatage_publication, actif
+Header HTTP : Content-Disposition: attachment; filename="incidents_paa_YYYYMMDD.csv"
+
+ÉTAPE 4 — Bouton export dans le frontend
+Bouton "Exporter CSV" dans FiltresIncidents (respectant les filtres actifs).
+Appelle GET /incidents/export avec les mêmes paramètres de filtre.
+```
 
 ---
 

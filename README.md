@@ -50,6 +50,7 @@ Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-23 :
 | **Polylines réelles** | ✅ En prod | Tracés routiers OSRM persistés en Railway via tunnel Cloudflare (2026-06-23) |
 | **P6.9** | ✅ Livré (2026-06-23) | **Segments GPX libres — précision progressive** — import de sous-portions de parcours sans obligation de couvrir un tronçon complet, accumulation par session, indice de confiance, miroir aller/retour, UI page Fiabilité |
 | P6.5 → P7.3 | ⏳ À faire | ML Random Forest (optionnel), tests, déploiement Vercel, rapport final |
+| **P8.1 → P8.5** | ⏳ À faire (2026-06-24) | **Module Incidents & Accidents** — scraping automatique presse ivoirienne, géolocalisation zone portuaire, page dédiée + overlay carte |
 
 > Les polylines des 6 tronçons suivent maintenant les vraies routes
 > (boulevard de Marseille, pont Houphouët-Boigny, avenue Christiani…) —
@@ -1919,6 +1920,74 @@ rafraîchit automatiquement et montre pour chaque axe :
 
 ---
 
+## 16 · Module Incidents & Accidents — P8 (planifié 2026-06-24)
+
+Ce module ajoute une **veille automatique des incidents de circulation** dans la
+zone portuaire d'Abidjan en scrutant la presse ivoirienne toutes les 30 minutes.
+
+### Ce que fait le module
+
+| Fonctionnalité | Description |
+|---|---|
+| **Scraping RSS** | Fraternité Matin, Abidjan.net, Koaci — flux RSS analysés toutes les 30 min |
+| **Détection par mots-clés** | 20 mots-clés : accident, collision, bouchon, route barrée, Treichville, Port d'Abidjan… |
+| **Extraction de lieu** | Dictionnaire de 15 lieux de référence de la zone portuaire |
+| **Géocodage** | Nominatim OpenStreetMap (gratuit) — filtre sur la bbox portuaire |
+| **Classification** | Type (accident / embouteillage / route barrée / travaux) + sévérité (mineur / moyen / grave) |
+| **Page Incidents** | Carte Leaflet des markers colorés + liste chronologique filtrée |
+| **Overlay carte principale** | Incidents actifs (<6h) affichés en superposition sur la carte Accueil |
+| **Badge nav** | Compteur rouge dans la navigation si un incident actif est recensé |
+
+### Architecture technique
+
+```
+backend/app/sources/
+  scraper_incidents.py      # orchestrateur multi-source
+  parsers/rss_parser.py     # feedparser + filtre mots-clés
+  parsers/html_parser.py    # BeautifulSoup4 pour sites sans RSS
+
+backend/app/analyse/
+  incidents_nlp.py          # extraction lieu, type, sévérité + Nominatim
+
+backend/app/api/
+  incidents.py              # GET /incidents, GET /incidents/stats, POST /incidents/enrichir
+
+frontend/app/incidents/
+  page.tsx                  # page principale
+
+frontend/components/incidents/
+  CarteIncidents.tsx        # carte Leaflet markers incidents
+  ListeIncidents.tsx        # liste chronologique
+  FiltresIncidents.tsx      # filtres type/période/tronçon
+```
+
+### Sources surveillées
+
+| Source | URL | Type |
+|--------|-----|------|
+| Fraternité Matin | fraternitematin.ci | RSS |
+| Abidjan.net | news.abidjan.net | RSS |
+| Koaci | koaci.com | RSS |
+| L'Infodrome | linfodrome.ci | HTML (scraping) |
+| Soir Info | soir-info.ci | HTML (scraping) |
+
+> **Pas de clé API requise.** Nominatim (géocodage) est gratuit et sans
+> inscription. Les 5 sources de presse sont accessibles publiquement.
+
+### Feuille de route P8
+
+| Sous-phase | Description | Dépendances |
+|------------|-------------|-------------|
+| P8.1 | Fondations : migration `incidents`, scraper RSS, scheduler 30 min, endpoints `GET /incidents` | — |
+| P8.2 | NLP légère + géocodage Nominatim + attribution tronçon | P8.1 |
+| P8.3 | Frontend page /incidents (carte + liste + filtres) | P8.2 |
+| P8.4 | Overlay sur carte principale + badge nav | P8.3 |
+| P8.5 (opt.) | Déduplication cross-sources + export CSV | P8.4 |
+
+Les **4 prompts d'implémentation** sont dans [CLAUDE.md § 10.5](CLAUDE.md).
+
+---
+
 ## 15 · La suite du projet
 
 Sept phases au total (voir [CLAUDE.md § 4](CLAUDE.md#4-feuille-de-route--7-phases)).
@@ -1931,8 +2000,9 @@ Sept phases au total (voir [CLAUDE.md § 4](CLAUDE.md#4-feuille-de-route--7-phas
 | **P6.1**  | **Import des 2 016 mesures terrain Fév 2025 + comparatif pluriannuel** | ✅ **terminée** |
 | **Déploiement** | **Backend en ligne sur Railway** (collecte 24h/24 démarrée)   | ✅ **terminé**     |
 | **P4**    | **Frontend Next.js complet : carte Leaflet, Indicateurs Recharts, splash HACKATONIA, i18n FR/EN, thème clair/sombre** | ✅ **terminée**    |
-| P5        | Validation hebdomadaire par relevés GPS terrain                     | À venir            |
-| P6.2/6.4  | Temps de traversée par période + ajout de parcours admin (heure optimale retirée le 2026-06-23) | Terminées          |
-| P7        | Tests, durcissement, support de présentation                        | À venir            |
+| P5        | Validation hebdomadaire par relevés GPS terrain                     | ✅ **terminée**    |
+| P6.2/6.4  | Temps de traversée par période + ajout de parcours admin | ✅ **terminées**   |
+| **P8**    | **Module Incidents & Accidents** (scraping presse, géoloc, page dédiée) | ⏳ À faire |
+| P7        | Tests, cache Redis, déploiement Vercel, rapport final + pitch       | ⏳ À faire         |
 
-À la fin de P7, l'application sera prête pour la démo au jury du hackathon.
+À la fin de P8 + P7, l'application sera prête pour la démo au jury du hackathon.
