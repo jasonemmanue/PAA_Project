@@ -26,7 +26,7 @@ restent essentielles pour les **agrégats** par jour/semaine/mois (Tableaux
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -40,7 +40,7 @@ from app.analyse.congestion import (
 )
 from app.core.config import get_settings
 from app.db.session import SessionLocal
-from app.models.models import Mesure, SousTroncon, Troncon
+from app.models.models import Incident, Mesure, SousTroncon, Troncon
 
 
 def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
@@ -252,6 +252,34 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 },
             })
 
+        # 4. Incidents actifs géolocalisés (< 6 h) — max 20 les plus récents
+        seuil_actif = instant_utc - timedelta(hours=6)
+        incidents_actifs_db: list[Incident] = list(
+            session.execute(
+                select(Incident)
+                .where(
+                    Incident.lat.is_not(None),
+                    Incident.lon.is_not(None),
+                    Incident.horodatage_publication >= seuil_actif,
+                )
+                .order_by(Incident.horodatage_publication.desc())
+                .limit(20)
+            ).scalars()
+        )
+        incidents_serialises = [
+            {
+                "id": inc.id,
+                "lat": inc.lat,
+                "lon": inc.lon,
+                "titre": inc.titre,
+                "type_incident": inc.type_incident.value if inc.type_incident else None,
+                "severite": inc.severite.value if inc.severite else None,
+                "troncon_id": inc.troncon_id,
+                "horodatage_publication": inc.horodatage_publication.isoformat(),
+            }
+            for inc in incidents_actifs_db
+        ]
+
         return {
             "horodatage_utc": instant_utc.isoformat(),
             "fuseau_affichage": settings.tz,
@@ -268,6 +296,7 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
             },
             "nb_troncons": len(etat_troncons),
             "troncons": etat_troncons,
+            "incidents_actifs": incidents_serialises,
         }
     finally:
         if fermer_apres:

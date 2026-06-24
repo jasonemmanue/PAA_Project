@@ -18,9 +18,11 @@ import { IconChevronLeft, IconChevronRight } from "@/components/ui/Icons";
 export function Sidebar({
   replie,
   basculerReplie,
+  nbIncidentsActifs = 0,
 }: {
   replie: boolean;
   basculerReplie: () => void;
+  nbIncidentsActifs?: number;
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
@@ -62,6 +64,7 @@ export function Sidebar({
               href === "/"
                 ? pathname === "/"
                 : pathname?.startsWith(href);
+            const badgeIncidents = href === "/incidents" && nbIncidentsActifs > 0;
             return (
               <li key={href}>
                 <Link
@@ -75,7 +78,15 @@ export function Sidebar({
                     replie && "justify-center",
                   )}
                 >
-                  <Icon className="shrink-0" />
+                  <span className="relative shrink-0">
+                    <Icon />
+                    {badgeIncidents && (
+                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center
+                                       rounded-full bg-red-600 text-[9px] font-bold text-white">
+                        {nbIncidentsActifs > 9 ? "9+" : nbIncidentsActifs}
+                      </span>
+                    )}
+                  </span>
                   {!replie && <span className="truncate">{t(labelKey)}</span>}
                 </Link>
               </li>

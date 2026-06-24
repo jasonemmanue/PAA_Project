@@ -124,6 +124,17 @@ export interface EtatTronconCarte {
   sous_troncons?: EtatSousTronconCarte[];
 }
 
+export interface IncidentCarte {
+  id: number;
+  lat: number;
+  lon: number;
+  titre: string;
+  type_incident: string | null;
+  severite: string | null;
+  troncon_id: number | null;
+  horodatage_publication: string;
+}
+
 export interface CarteEtat {
   horodatage_utc: string;
   fuseau_affichage: string;
@@ -135,6 +146,7 @@ export interface CarteEtat {
   };
   nb_troncons: number;
   troncons: EtatTronconCarte[];
+  incidents_actifs?: IncidentCarte[];
 }
 
 export interface CollecteStatus {

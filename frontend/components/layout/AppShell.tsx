@@ -12,28 +12,47 @@
  * occupent toute la largeur. Sur desktop, sidebar + main vivent côte à côte.
  */
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { MobileDrawer } from "./MobileDrawer";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { useI18n } from "@/lib/i18n";
+import { api } from "@/lib/api";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOuvert, setDrawerOuvert] = useState(false);
   const [sidebarRepliee, setSidebarRepliee] = useState(false);
+  const [nbIncidentsActifs, setNbIncidentsActifs] = useState(0);
   const { t } = useI18n();
+
+  // Polling incidents toutes les 5 min pour alimenter le badge nav
+  useEffect(() => {
+    async function chargerStats() {
+      try {
+        const stats = await api.getStatsIncidents();
+        setNbIncidentsActifs(stats.nb_actifs);
+      } catch {
+        // Silencieux — le badge reste à 0 si l'API est indisponible
+      }
+    }
+    chargerStats();
+    const id = setInterval(chargerStats, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="flex min-h-dvh flex-col lg:flex-row">
       <Sidebar
         replie={sidebarRepliee}
         basculerReplie={() => setSidebarRepliee((v) => !v)}
+        nbIncidentsActifs={nbIncidentsActifs}
       />
 
       <MobileDrawer
         ouvert={drawerOuvert}
         fermer={() => setDrawerOuvert(false)}
+        nbIncidentsActifs={nbIncidentsActifs}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">

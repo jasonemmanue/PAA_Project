@@ -18,9 +18,11 @@ import { IconClose } from "@/components/ui/Icons";
 export function MobileDrawer({
   ouvert,
   fermer,
+  nbIncidentsActifs = 0,
 }: {
   ouvert: boolean;
   fermer: () => void;
+  nbIncidentsActifs?: number;
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
@@ -98,6 +100,7 @@ export function MobileDrawer({
                 href === "/"
                   ? pathname === "/"
                   : pathname?.startsWith(href);
+              const badgeIncidents = href === "/incidents" && nbIncidentsActifs > 0;
               return (
                 <li key={href}>
                   <Link
@@ -110,7 +113,15 @@ export function MobileDrawer({
                         : "text-paa-navy-900 hover:bg-paa-blue-50 dark:text-paa-blue-200 dark:hover:bg-paa-navy-700",
                     )}
                   >
-                    <Icon className="shrink-0" />
+                    <span className="relative shrink-0">
+                      <Icon />
+                      {badgeIncidents && (
+                        <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center
+                                         rounded-full bg-red-600 text-[9px] font-bold text-white">
+                          {nbIncidentsActifs > 9 ? "9+" : nbIncidentsActifs}
+                        </span>
+                      )}
+                    </span>
                     <span>{t(labelKey)}</span>
                   </Link>
                 </li>

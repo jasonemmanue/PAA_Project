@@ -27,7 +27,7 @@ import {
   libelleSource,
 } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
-import type { CarteEtat, EtatSousTronconCarte, EtatTronconCarte } from "@/lib/types";
+import type { CarteEtat, EtatSousTronconCarte, EtatTronconCarte, IncidentCarte } from "@/lib/types";
 import { useWsCarteEtat } from "@/lib/ws";
 
 const TUILE_URL =
@@ -84,6 +84,8 @@ export function CarteLeaflet({
   const onSelectionnerRef = useRef(onSelectionner);
   onSelectionnerRef.current = onSelectionner;
   const poiMarkersRef = useRef<LeafletMarker[]>([]);
+  // CircleMarkers des incidents actifs (mis à jour à chaque changement d'état)
+  const incidentMarkersRef = useRef<any[]>([]);
   // Garde pour ne déclencher le zoom intelligent qu'une seule fois
   // (sinon la mise à jour WebSocket re-centre toutes les 20 min).
   const zoomInitialFaitRef = useRef(false);
@@ -259,6 +261,31 @@ export function CarteLeaflet({
         maxZoom: 17,
         gradient: { 0.3: "#F39C12", 0.7: "#E67E22", 1.0: "#E74C3C" },
       }).addTo(map);
+    }
+
+    // -- Incidents actifs géolocalisés : CircleMarker coloré par sévérité
+    for (const cm of incidentMarkersRef.current) map.removeLayer(cm);
+    incidentMarkersRef.current = [];
+    for (const inc of etat.incidents_actifs ?? []) {
+      const couleur = couleurSeveriteIncident(inc.severite);
+      const age = Date.now() - new Date(inc.horodatage_publication).getTime();
+      const actif = age < 6 * 60 * 60 * 1000;
+      const cm = L.circleMarker([inc.lat, inc.lon], {
+        radius: 10,
+        color: "#fff",
+        weight: 2,
+        fillColor: couleur,
+        fillOpacity: actif ? 0.9 : 0.35,
+        interactive: true,
+        bubblingMouseEvents: false,
+        pane: "markerPane",
+      });
+      cm.bindPopup(construirePopupIncident(inc, locale), {
+        maxWidth: 280,
+        className: "paa-popup",
+      });
+      cm.addTo(map);
+      incidentMarkersRef.current.push(cm);
     }
 
     // -- POI : 4 markers stratégiques (CARENA, Toyota CFAO, SODECI, Palm Beach)
@@ -565,6 +592,54 @@ function pointsSousTroncon(s: EtatSousTronconCarte): [number, number][] {
     [latF as number, lonF as number],
   ];
   return segment.every(estCoordonneeValide) ? segment : [];
+}
+
+// ---------------------------------------------------------------------------
+// Incidents — couleur par sévérité + popup
+// ---------------------------------------------------------------------------
+function couleurSeveriteIncident(severite: string | null): string {
+  switch (severite) {
+    case "grave":   return "#dc2626";
+    case "moyen":   return "#f97316";
+    case "mineur":  return "#eab308";
+    default:        return "#6b7280";
+  }
+}
+
+function construirePopupIncident(inc: IncidentCarte, locale: "fr" | "en"): string {
+  const couleur = couleurSeveriteIncident(inc.severite);
+  const age = Date.now() - new Date(inc.horodatage_publication).getTime();
+  const heures = Math.floor(age / 3_600_000);
+  const minutes = Math.floor((age % 3_600_000) / 60_000);
+  const ageStr = heures > 0
+    ? locale === "fr" ? `il y a ${heures}h${minutes > 0 ? `${minutes}min` : ""}` : `${heures}h${minutes > 0 ? `${minutes}min` : ""} ago`
+    : locale === "fr" ? `il y a ${minutes} min` : `${minutes} min ago`;
+  const labelType: Record<string, string> = {
+    accident: locale === "fr" ? "Accident" : "Accident",
+    embouteillage: locale === "fr" ? "Embouteillage" : "Traffic jam",
+    route_barree: locale === "fr" ? "Route barrée" : "Road closed",
+    travaux: locale === "fr" ? "Travaux" : "Roadworks",
+    autre: locale === "fr" ? "Autre" : "Other",
+  };
+  const type = inc.type_incident ? (labelType[inc.type_incident] ?? inc.type_incident) : "—";
+  const labelSev: Record<string, string> = {
+    grave: locale === "fr" ? "Grave" : "Severe",
+    moyen: locale === "fr" ? "Modéré" : "Moderate",
+    mineur: locale === "fr" ? "Mineur" : "Minor",
+    inconnu: locale === "fr" ? "Inconnu" : "Unknown",
+  };
+  const sev = inc.severite ? (labelSev[inc.severite] ?? inc.severite) : "—";
+  return `
+    <div style="font-family:Inter,sans-serif;min-width:220px;">
+      <div style="display:inline-block;padding:2px 8px;border-radius:9999px;
+                  background:${couleur};color:white;font-size:11px;font-weight:600;
+                  margin-bottom:6px;">${escapeHtml(type)} — ${escapeHtml(sev)}</div>
+      <div style="font-weight:600;font-size:13px;color:#0B2545;margin-bottom:4px;">
+        ${escapeHtml(inc.titre)}
+      </div>
+      <div style="font-size:11px;color:#6B7280;">${ageStr}</div>
+    </div>
+  `;
 }
 
 function construirePopupSousTroncon(
