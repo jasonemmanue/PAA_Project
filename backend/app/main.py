@@ -34,6 +34,7 @@ from app.api.export import router as export_router
 from app.api.indicateurs import router as indicateurs_router
 from app.api.mesures import router as mesures_router
 from app.api.administration import router as administration_router
+from app.api.incidents import router as incidents_router
 from app.api.predire import router as predire_router
 from app.api.profils import router as profils_router
 from app.api.rapport import router as rapport_router
@@ -208,6 +209,17 @@ _TAGS_METADATA = [
         ),
     },
     {
+        "name": "incidents",
+        "description": (
+            "P8 — Incidents de circulation dans la zone portuaire d'Abidjan. "
+            "Scrapés automatiquement toutes les 30 min depuis les flux RSS de "
+            "la presse ivoirienne (Fraternité Matin, Abidjan.net, Koaci). "
+            "Filtrés par mots-clés, géolocalisés via Nominatim OSM, enrichis "
+            "par NLP léger (type : accident / embouteillage / route barrée / "
+            "travaux ; sévérité : mineur / moyen / grave)."
+        ),
+    },
+    {
         "name": "diagnostic",
         "description": "Tests ponctuels des sources de mesure (Google, OSRM).",
     },
@@ -285,4 +297,5 @@ app.include_router(segments_router)
 app.include_router(rapport_router)
 app.include_router(predire_router)
 app.include_router(administration_router)
+app.include_router(incidents_router)
 app.include_router(diag_router)

@@ -30,4 +30,9 @@ gpxpy>=1.6,<2.0          # parser GPX (P5 — validation terrain hebdomadaire)
 # --- Modèles prédictifs (P6) ---
 scikit-learn>=1.5,<2.0
 
+# --- Scraping incidents presse ivoirienne (P8) ---
+feedparser>=6.0,<7.0          # parsing flux RSS (Fraternité Matin, Abidjan.net, Koaci)
+beautifulsoup4>=4.12,<5.0     # parsing HTML pour les sites sans RSS
+lxml>=5.0,<6.0                # backend HTML rapide pour BeautifulSoup
+
 psycopg[binary]>=3.1

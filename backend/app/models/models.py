@@ -15,7 +15,7 @@ Conventions :
 """
 
 import enum
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -585,4 +585,123 @@ class SegmentTerrain(Base):
             f"<SegmentTerrain id={self.id} nom={self.nom_segment!r} "
             f"troncon_id={self.troncon_id} direction={self.direction!r} "
             f"duree={self.duree_s}s>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Table : incidents  (P8 — scraping presse ivoirienne)
+# ---------------------------------------------------------------------------
+
+
+class TypeIncident(str, enum.Enum):
+    """Catégorie de l'incident détecté par le module NLP."""
+    accident    = "accident"
+    embouteillage = "embouteillage"
+    route_barree  = "route_barree"
+    travaux     = "travaux"
+    autre       = "autre"
+
+
+class SeveriteIncident(str, enum.Enum):
+    """Sévérité estimée de l'incident par le module NLP."""
+    mineur   = "mineur"
+    moyen    = "moyen"
+    grave    = "grave"
+    inconnu  = "inconnu"
+
+
+class Incident(Base):
+    """Incident de circulation recensé automatiquement depuis la presse ivoirienne.
+
+    Le scraper (CLAUDE.md § 10) interroge 3 flux RSS (Fraternité Matin,
+    Abidjan.net, Koaci) toutes les 30 minutes. Chaque article détecté par
+    les mots-clés est inséré ici — jamais inventé, jamais dupliqué
+    (déduplication sur `source_url`).
+
+    Le géocodage Nominatim et la classification NLP (lieu / type / sévérité)
+    sont effectués en différé par `enrichir_incidents()` (P8.2).
+    """
+
+    __tablename__ = "incidents"
+
+    __table_args__ = (
+        UniqueConstraint("source_url", name="uq_incidents_source_url"),
+        Index("ix_incidents_horodatage", "horodatage_publication"),
+        Index("ix_incidents_troncon", "troncon_id", "horodatage_publication"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Titre de l'article (500 chars max)
+    titre: Mapped[str] = mapped_column(String(500), nullable=False)
+
+    # Résumé tronqué à 500 chars — NULL si l'article n'a pas de corps parsable
+    resume: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # URL canonique de l'article — clé de déduplication inter-collectes
+    source_url: Mapped[str] = mapped_column(String(2000), nullable=False)
+
+    # Source de scraping (fraternite_matin / abidjan_net / koaci / …)
+    source_nom: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # Date de publication fournie par le flux RSS (UTC)
+    horodatage_publication: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    # Instant où le scraper l'a détecté (UTC — valeur serveur par défaut)
+    horodatage_collecte: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default="now()", nullable=False
+    )
+
+    # Géocodage Nominatim — NULL si le lieu n'est pas géocodable ou hors bbox
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Lieu tel qu'extrait du texte par le module NLP regex
+    lieu_extrait: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # Tronçon officiel impacté (distance au plus proche < 300 m) — NULL sinon
+    troncon_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("troncons.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Classification NLP — NULL si l'enrichissement n'a pas encore été lancé
+    type_incident: Mapped[TypeIncident | None] = mapped_column(
+        postgresql.ENUM(
+            "accident", "embouteillage", "route_barree", "travaux", "autre",
+            name="typeincident", create_type=False,
+        ),
+        nullable=True,
+    )
+    severite: Mapped[SeveriteIncident | None] = mapped_column(
+        postgresql.ENUM(
+            "mineur", "moyen", "grave", "inconnu",
+            name="severiteincident", create_type=False,
+        ),
+        nullable=True,
+    )
+
+    # Validation manuelle optionnelle (False = non vérifié)
+    verifie: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # Relation optionnelle vers le tronçon impacté
+    troncon: Mapped["Troncon | None"] = relationship("Troncon")
+
+    @property
+    def actif(self) -> bool:
+        """True si l'incident date de moins de 6 heures (recalculé à chaque lecture)."""
+        age = datetime.now(tz=timezone.utc) - self.horodatage_publication.replace(
+            tzinfo=timezone.utc
+        ) if self.horodatage_publication.tzinfo is None else (
+            datetime.now(tz=timezone.utc) - self.horodatage_publication
+        )
+        return age.total_seconds() < 6 * 3600
+
+    def __repr__(self) -> str:
+        return (
+            f"<Incident id={self.id} source={self.source_nom!r} "
+            f"type={self.type_incident!r} actif={self.actif}>"
         )

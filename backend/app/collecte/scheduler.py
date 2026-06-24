@@ -45,6 +45,7 @@ from app.models.models import Mesure, SourceMesure, SousTroncon, Troncon
 from app.realtime.diffusion import get_diffuseur
 from app.sources import google_routes
 from app.sources.coordonnees import PointGPS
+from app.sources.parsers.rss_parser import scraper_toutes_sources
 
 
 logger = logging.getLogger("paa.collecte")
@@ -52,6 +53,7 @@ logger = logging.getLogger("paa.collecte")
 # Identifiants uniques des jobs APScheduler — un seul de chaque type à la fois
 _JOB_ID = "collecte_temps_reel"
 _JOB_ID_AGREGATION = "agregation_profils_horaires"
+_JOB_ID_INCIDENTS = "collecte_incidents"
 
 
 # ---------------------------------------------------------------------------
@@ -557,6 +559,38 @@ def _ajouter_job_agregation_nocturne(scheduler: AsyncIOScheduler, settings: Sett
     )
 
 
+def _ajouter_job_incidents(scheduler: AsyncIOScheduler, settings: Settings) -> None:
+    """Planifie la collecte des incidents toutes les 30 min, 24h/24.
+
+    Séparé du cycle de collecte Google pour ne pas alourdir ce dernier et
+    pouvoir ajuster la fréquence indépendamment du quota Google.
+    Jamais levé d'exception si le scraping échoue — log + continue.
+    """
+    async def _tache():
+        session = SessionLocal()
+        try:
+            nb = await scraper_toutes_sources(session)
+            logger.info("Collecte incidents : %d nouvel(s) incident(s).", nb)
+        except Exception:
+            logger.exception("Erreur inattendue dans le job collecte_incidents.")
+        finally:
+            session.close()
+
+    scheduler.add_job(
+        _tache,
+        trigger=CronTrigger(
+            minute="*/30",
+            timezone=ZoneInfo(settings.tz),
+        ),
+        id=_JOB_ID_INCIDENTS,
+        name="Collecte incidents presse (RSS)",
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=600,
+        replace_existing=True,
+    )
+
+
 def demarrer_scheduler() -> dict[str, str | int | None]:
     """Démarre le scheduler s'il ne tourne pas déjà.
 
@@ -587,6 +621,9 @@ def demarrer_scheduler() -> dict[str, str | int | None]:
     # Job d'agrégation nocturne — toujours réinstallé au démarrage
     _ajouter_job_agregation_nocturne(scheduler, settings)
     job_agregation = scheduler.get_job(_JOB_ID_AGREGATION)
+
+    # Job de collecte incidents (scraping RSS toutes les 30 min)
+    _ajouter_job_incidents(scheduler, settings)
 
     # Affichage spécial pour la collecte 24h/24 (start=0 et end=24).
     couvre_journee_complete = (
