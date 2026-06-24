@@ -774,20 +774,61 @@ Refonte décidée le **2026-06-23**, structure finale fixée le **2026-06-24**.
 **Sous-titre :** *« Temps réel basé sur Google Maps — confrontation avec les
 temps terrain GPX en bas de page. »*
 
-#### Structure du contenu — deux sections
+#### Structure du contenu — trois zones verticales
 
-**Section 1 — Google Maps (en haut, en avant)**
+**Zone 1 — Google Maps (en haut, en avant)**
 
-Données temps réel API Google Routes. Trois blocs affichés directement
-(sans dépliable) :
+Données temps réel API Google Routes, mises à jour toutes les heures par le
+scheduler. Trois blocs `paa-card` affichés directement (sans dépliable) :
 
-1. **Temps réel (Google Maps)** — Min / Moyen / Max + badge source
-   (mesure ±15 min ou moyenne 7 j même type de jour).
-2. **Ce mois — Google Maps** — stats jours-ouvrables / week-ends depuis
-   le 1er du mois. Nombre de mesures affiché dans le titre.
+1. **Temps réel (Google Maps)** — Min / Moyen / Max + badge source coloré
+   (vert = mesure temps réel, bleu = moyenne 7 j, gris = 50 km/h).
+2. **Ce mois — Google Maps** — stats jours-ouvrables / week-ends depuis le
+   1er du mois. Nombre de mesures affiché.
 3. **Cette semaine — Google Maps** — idem depuis le lundi de la semaine.
 
-**Section 2 — Confrontation terrain GPX (en bas, fond bleu pâle)**
+**Principe de collecte et de calcul Google (`backend/app/predicteur/profils.py`) :**
+
+Toutes les heures, le scheduler appelle l'API Google Routes pour chaque tronçon
+et insère une ligne dans la table `mesures` (source=`google`, `duree_trafic_s`
+en secondes, `est_congestionne` calculé depuis les couleurs Maps).
+
+**Temps actuel** — cascade à 3 niveaux :
+
+| Niveau | Source | Condition | Confiance |
+|--------|--------|-----------|-----------|
+| 1 | Mesure Google ±15 min | Une mesure existe à ±15 min du présent | 1.0 |
+| 2 | Mesures Google 7 j même `type_jour` | Toutes les mesures du même type de jour (jo/we) sur 7 j glissants — pas de filtre par heure | 0.5–0.93 |
+| 3 | Distance / 50 km/h | Repli déterministe | 0.3 |
+
+**Ce mois / Cette semaine** — calcul backend (`_stats_mesures_periode`) :
+- Filtre : `source=google`, `aberrante=False`, fenêtre = [1er du mois ou lundi] → maintenant
+- Sépare par `type_jour` : `weekday() < 5` → `jour_ouvrable`, sinon `week_end`
+- Calcule `min / fmean / max` des `duree_trafic_s` et convertit en minutes entières
+
+**Zone 2 — Bandeau d'écart Google ↔ Terrain**
+
+Affiché entre les deux sections, uniquement si données Google **et** GPX
+disponibles simultanément. Calcul **entièrement côté client** :
+
+```typescript
+// Moyenne Google mensuelle pondérée (jours ouvrables + week-ends)
+googleMoyenMn = (jo.moyen_mn × jo.nb + we.moyen_mn × we.nb) / (jo.nb + we.nb)
+
+// Écart GPX (toutes sessions) vs Google mensuel
+deltaMn = (gpxMoyen_s / 60) − googleMoyenMn
+pct     = (deltaMn / googleMoyenMn) × 100
+```
+
+Rendu :
+- **▲ rouge** `BandeauEcart` → terrain plus long → *« Google sous-estime »*
+- **▼ vert** → terrain plus court → *« Google surestime »*
+- **≈ neutre** → écart < 30 s → cohérence confirmée
+
+Un badge `PuceEcart` identique est répété dans chaque colonne GPX
+(Toutes sessions / Ce mois / Cette semaine) pour lecture rapide par période.
+
+**Zone 3 — Confrontation terrain GPX (en bas, fond bleu pâle)**
 
 Temps réellement parcourus en voiture — importés via la page Fiabilité.
 Même découpage temporel (toutes sessions / ce mois / cette semaine) mais
