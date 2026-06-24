@@ -74,6 +74,30 @@ function statsFromSessions(sessions: EstimationSession[]): { min: number; moyen:
   };
 }
 
+// Calcule la moyenne Google mensuelle pondérée (jours ouvrables + week-ends)
+function googleMoyenMnMois(mois: ResumePrediction["mois"]): number | null {
+  const jo = mois.jours_ouvrables;
+  const we = mois.week_ends;
+  if (!jo && !we) return null;
+  if (!jo) return we!.moyen_mn;
+  if (!we) return jo.moyen_mn;
+  const totalMesures = jo.nb_mesures + we.nb_mesures;
+  return Math.round((jo.moyen_mn * jo.nb_mesures + we.moyen_mn * we.nb_mesures) / totalMesures);
+}
+
+// Calcule l'écart entre GPX (s) et Google (mn) — retourne {delta_mn, pct, sens}
+function calculerEcart(
+  gpxMoyenS: number | undefined,
+  googleMoyenMn: number | null,
+): { deltaMn: number; pct: number; sens: "plus_long" | "plus_court" | "egal" } | null {
+  if (!gpxMoyenS || !googleMoyenMn) return null;
+  const gpxMn = gpxMoyenS / 60;
+  const deltaMn = gpxMn - googleMoyenMn;
+  const pct = (deltaMn / googleMoyenMn) * 100;
+  const sens = Math.abs(deltaMn) < 0.5 ? "egal" : deltaMn > 0 ? "plus_long" : "plus_court";
+  return { deltaMn, pct, sens };
+}
+
 const COULEUR_SOURCE: Record<SourcePrediction, string> = {
   google_routes: "#2ECC71",
   mesures_jour_type_7j: "#3498DB",
@@ -139,6 +163,13 @@ export function PagePrediction() {
   const statsMois = statsFromSessions(sessionsMois);
 
   const hasGpx = sessionsTout.length > 0;
+
+  // Écarts Google ↔ GPX (moyennes comparées)
+  const googleMoyenMois = resume ? googleMoyenMnMois(resume.mois) : null;
+  const googleMoyenSemaine = resume ? googleMoyenMnMois(resume.semaine) : null;
+  const ecartTout = calculerEcart(statsTout?.moyen, googleMoyenMois);
+  const ecartMois = calculerEcart(statsMois?.moyen, googleMoyenMois);
+  const ecartSemaine = calculerEcart(statsSemaine?.moyen, googleMoyenSemaine);
 
   return (
     <div className="flex flex-col gap-fluid-4">
@@ -226,6 +257,13 @@ export function PagePrediction() {
           )}
 
           {/* ═══════════════════════════════════════════════════════════════
+              BANDEAU ÉCART — visible seulement si Google + GPX disponibles
+          ═══════════════════════════════════════════════════════════════ */}
+          {hasGpx && ecartTout && (
+            <BandeauEcart ecart={ecartTout} label="Toutes sessions GPX vs Google ce mois" />
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
               SECTION 2 — TERRAIN GPX (CONFRONTATION) — EN BAS
           ═══════════════════════════════════════════════════════════════ */}
           <div className="rounded-md border-2 border-paa-navy-300 dark:border-paa-navy-600 p-fluid-4 flex flex-col gap-4 bg-paa-blue-50 dark:bg-paa-navy-900">
@@ -238,7 +276,7 @@ export function PagePrediction() {
               )}
             </div>
             <p className="text-fluid-xs app-text-muted -mt-2">
-              Temps réellement parcourus en voiture — à comparer avec les valeurs Google Maps ci-dessus.
+              Temps réellement parcourus en voiture — comparez avec les valeurs Google Maps ci-dessus.
             </p>
 
             {!hasGpx ? (
@@ -251,6 +289,7 @@ export function PagePrediction() {
                   titre="Toutes sessions"
                   sousTitre={`${sessionsTout.length} session${sessionsTout.length > 1 ? "s" : ""} — ${formaterDate(sessionsTout[sessionsTout.length - 1].date_session)} → ${formaterDate(sessionsTout[0].date_session)}`}
                   stats={statsTout}
+                  ecart={ecartTout}
                 />
                 <BlocGpx
                   titre="Ce mois"
@@ -259,6 +298,7 @@ export function PagePrediction() {
                     : "Aucune session ce mois"}
                   stats={statsMois}
                   vide={sessionsMois.length === 0}
+                  ecart={ecartMois}
                 />
                 <BlocGpx
                   titre="Cette semaine"
@@ -267,6 +307,7 @@ export function PagePrediction() {
                     : "Aucune session cette semaine"}
                   stats={statsSemaine}
                   vide={sessionsSemaine.length === 0}
+                  ecart={ecartSemaine}
                 />
               </div>
             )}
@@ -288,16 +329,20 @@ export function PagePrediction() {
 // Sous-composants
 // ---------------------------------------------------------------------------
 
+type Ecart = ReturnType<typeof calculerEcart>;
+
 function BlocGpx({
   titre,
   sousTitre,
   stats,
   vide = false,
+  ecart,
 }: {
   titre: string;
   sousTitre: string;
   stats: { min: number; moyen: number; max: number } | null;
   vide?: boolean;
+  ecart?: Ecart;
 }) {
   return (
     <div className="rounded-md border app-border p-4 app-surface flex flex-col gap-2">
@@ -306,21 +351,84 @@ function BlocGpx({
       {vide || stats === null ? (
         <p className="text-fluid-xs app-text-muted italic mt-1">—</p>
       ) : (
-        <div className="grid grid-cols-3 gap-1 text-center mt-1">
-          <div>
-            <div className="text-fluid-xs app-text-muted">Min</div>
-            <div className="text-fluid-lg font-bold text-statut-fluide">{formaterMn(stats.min)}</div>
+        <>
+          <div className="grid grid-cols-3 gap-1 text-center mt-1">
+            <div>
+              <div className="text-fluid-xs app-text-muted">Min</div>
+              <div className="text-fluid-lg font-bold text-statut-fluide">{formaterMn(stats.min)}</div>
+            </div>
+            <div>
+              <div className="text-fluid-xs app-text-muted">Moyen</div>
+              <div className="text-fluid-lg font-bold text-paa-blue-500">{formaterMn(stats.moyen)}</div>
+            </div>
+            <div>
+              <div className="text-fluid-xs app-text-muted">Max</div>
+              <div className="text-fluid-lg font-bold text-statut-congestionne">{formaterMn(stats.max)}</div>
+            </div>
           </div>
-          <div>
-            <div className="text-fluid-xs app-text-muted">Moyen</div>
-            <div className="text-fluid-lg font-bold text-paa-blue-500">{formaterMn(stats.moyen)}</div>
-          </div>
-          <div>
-            <div className="text-fluid-xs app-text-muted">Max</div>
-            <div className="text-fluid-lg font-bold text-statut-congestionne">{formaterMn(stats.max)}</div>
-          </div>
-        </div>
+          {ecart && <PuceEcart ecart={ecart} />}
+        </>
       )}
+    </div>
+  );
+}
+
+function PuceEcart({ ecart }: { ecart: NonNullable<Ecart> }) {
+  if (ecart.sens === "egal") {
+    return (
+      <div className="mt-1 text-center text-fluid-xs font-medium text-statut-fluide">
+        ≈ identique à Google Maps
+      </div>
+    );
+  }
+  const positif = ecart.sens === "plus_long";
+  const couleur = positif ? "text-statut-congestionne" : "text-statut-fluide";
+  const bg = positif ? "bg-statut-congestionne/10 border-statut-congestionne/30" : "bg-statut-fluide/10 border-statut-fluide/30";
+  const signe = positif ? "+" : "";
+  const mn = Math.abs(ecart.deltaMn);
+  const mnAff = mn >= 1 ? `${Math.round(mn)} min` : `${Math.round(mn * 60)} s`;
+  const pctAff = `${signe}${Math.round(ecart.pct)} %`;
+  const libelle = positif ? "plus long que Google" : "plus court que Google";
+
+  return (
+    <div className={`mt-1 rounded border px-2 py-1 text-center text-fluid-xs font-semibold ${couleur} ${bg}`}>
+      Terrain {signe}{mnAff} ({pctAff}) — {libelle}
+    </div>
+  );
+}
+
+function BandeauEcart({ ecart, label }: { ecart: NonNullable<Ecart>; label: string }) {
+  const positif = ecart.sens === "plus_long";
+  const egal = ecart.sens === "egal";
+  const bgClass = egal
+    ? "bg-paa-blue-50 dark:bg-paa-navy-800 border-paa-navy-200 dark:border-paa-navy-600"
+    : positif
+    ? "bg-statut-congestionne/10 border-statut-congestionne/40"
+    : "bg-statut-fluide/10 border-statut-fluide/40";
+  const textClass = egal
+    ? "text-paa-navy-600 dark:text-paa-blue-200"
+    : positif
+    ? "text-statut-congestionne"
+    : "text-statut-fluide";
+
+  const mn = Math.abs(ecart.deltaMn);
+  const mnAff = mn >= 1 ? `${Math.round(mn)} min` : `${Math.round(mn * 60)} s`;
+  const pctAff = `${Math.round(Math.abs(ecart.pct))} %`;
+
+  const message = egal
+    ? "Terrain ≈ Google Maps — données cohérentes"
+    : positif
+    ? `Terrain plus long de ${mnAff} (${pctAff}) par rapport à Google Maps — Google sous-estime`
+    : `Terrain plus court de ${mnAff} (${pctAff}) par rapport à Google Maps — Google surestime`;
+
+  return (
+    <div className={`rounded-md border px-4 py-3 flex items-center gap-3 ${bgClass}`}>
+      <span className={`text-fluid-xl ${textClass}`}>{egal ? "≈" : positif ? "▲" : "▼"}</span>
+      <div>
+        <div className={`text-fluid-sm font-bold ${textClass}`}>Écart Google ↔ Terrain</div>
+        <div className={`text-fluid-xs ${textClass} opacity-80`}>{message}</div>
+        <div className="text-fluid-xs app-text-muted mt-0.5">{label}</div>
+      </div>
     </div>
   );
 }

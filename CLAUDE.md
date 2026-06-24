@@ -1451,9 +1451,9 @@ Quand l'utilisateur sélectionne de nouveaux fichiers dans le picker :
 
 ### Page Temps de traversée — structure finale (état 2026-06-24)
 
-La page est organisée en **deux sections distinctes** :
+La page est organisée en **trois zones verticales** :
 
-#### Section 1 — Google Maps (en haut, en avant)
+#### Zone 1 — Google Maps (en haut, en avant)
 
 Données temps réel provenant de l'API Google Routes, mises à jour à chaque
 cycle de collecte (toutes les heures). Trois blocs :
@@ -1461,13 +1461,50 @@ cycle de collecte (toutes les heures). Trois blocs :
 | Bloc | Source | Calcul |
 |------|--------|--------|
 | **Temps réel (Google Maps)** | `mesures` + `predire/resume` | Mesure la plus récente ±15 min, sinon moyenne 7 j même type de jour |
-| **Ce mois — Google Maps** | `mesures` filtrées sur le mois courant | min/moyen/max, séparation jours-ouvrables / week-ends |
+| **Ce mois — Google Maps** | `mesures` filtrées sur le mois courant | min/moyen/max, séparation jours-ouvrables / week-ends, moyenne pondérée |
 | **Cette semaine — Google Maps** | `mesures` filtrées sur la semaine courante | idem |
 
-#### Section 2 — Confrontation terrain GPX (en bas, fond distingué)
+**Principe de collecte Google (cascade — `backend/app/predicteur/profils.py`) :**
+
+- Une mesure = un appel API Google Routes stocké dans `mesures` (source=`google`),
+  avec `duree_trafic_s` en secondes et `est_congestionne` (couleur Maps).
+- **Temps actuel** → Niveau 1 : mesure Google dans ±15 min autour de maintenant.
+  Niveau 2 : si aucune, moyenne des 7 derniers jours de même `type_jour`
+  (`jour_ouvrable` ou `week_end`). Niveau 3 (repli) : distance / 50 km/h.
+- **Ce mois** → toutes les mesures Google du mois courant, filtrées
+  `aberrante=False`, séparées par type de jour, puis `min/fmean/max` calculés
+  côté backend en Python. La moyenne mensuelle pondérée (jo + we) est
+  recalculée côté frontend pour le calcul d'écart.
+- **Cette semaine** → même logique mais fenêtre = lundi 00:00 local → maintenant.
+
+#### Zone 2 — Bandeau d'écart Google ↔ Terrain (entre les deux sections)
+
+Affiché uniquement si des données GPX **et** des données Google sont disponibles.
+Calcul **entièrement côté client** (`PagePrediction.tsx`) :
+
+```typescript
+// Moyenne Google mensuelle pondérée (jours ouvrables + week-ends)
+googleMoyenMn = (jo.moyen_mn × jo.nb + we.moyen_mn × we.nb) / (jo.nb + we.nb)
+
+// Écart
+deltaMn = (gpxMoyen_s / 60) - googleMoyenMn
+pct     = (deltaMn / googleMoyenMn) × 100
+```
+
+Rendu visuel :
+- **▲ rouge** : terrain plus long que Google → *« Google sous-estime »*
+- **▼ vert** : terrain plus court que Google → *« Google surestime »*
+- **≈ neutre** : écart < 30 s → données cohérentes
+
+Le même badge `PuceEcart` est répété dans chaque colonne GPX (Toutes / Ce mois
+/ Cette semaine) pour une lecture rapide par période.
+
+#### Zone 3 — Confrontation terrain GPX (en bas, fond bleu pâle)
 
 Temps **réellement mesurés en voiture** via les fichiers GPX importés sur la
-page Fiabilité. Permet de confronter la donnée Google avec la réalité terrain.
+page Fiabilité. Même découpage temporel (toutes sessions / ce mois / cette
+semaine) mais calculé depuis `segments_terrain` côté client. Filtrage par
+`date_session`.
 
 | Bloc | Source | Calcul |
 |------|--------|--------|
