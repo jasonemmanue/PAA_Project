@@ -259,11 +259,11 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P7.1**| ⏳ À venir | **Tests + Cache Redis + Optimisations** — pytest pour rapport_paa, cache /carte/etat et /predire, Lighthouse mobile ≥ 80. Cf. [§ 7.1](PROMPTS_RESTANTS_DEESP.md). |
 | **P7.2**| ⏳ À venir | **Déploiement Vercel** (frontend) + ALLOWED_ORIGINS Railway + URL publique finale. Cf. [§ 7.2](PROMPTS_RESTANTS_DEESP.md). |
 | **P7.3**| ⏳ À venir | **Rapport final article 4** + **trame de pitch 5-7 min** revendiquant l'alignement DEESP. Cf. [§ 7.3](PROMPTS_RESTANTS_DEESP.md). |
-| **P8.1** | ⏳ À venir | **Scraping incidents — fondations** — migration 0011 table `incidents`, scraper RSS multi-source, job APScheduler 30 min, endpoints `GET /incidents`. Cf. § 10. |
-| **P8.2** | ⏳ À venir | **NLP légère + géocodage** — extraction lieu/type/sévérité par regex, géocodage Nominatim OSM, filtre bbox portuaire, attribution `troncon_id`. Cf. § 10. |
-| **P8.3** | ⏳ À venir | **Frontend page Incidents** — `/incidents/page.tsx`, carte Leaflet markers colorés, liste filtrée, KPI, i18n FR/EN. Cf. § 10. |
-| **P8.4** | ⏳ À venir | **Overlay carte principale** — incidents actifs sur la carte Accueil, badge nav rouge. Cf. § 10. |
-| **P8.5** | ⏳ Optionnel | **Qualité & exports** — déduplication cross-sources, score fiabilité, export CSV incidents. Cf. § 10. |
+| **P8.1** | ✅ Terminée | **Scraping incidents — fondations** — migration 0011 table `incidents`, scraper RSS multi-source (Fraternité Matin, Abidjan.net, Koaci), job APScheduler 30 min, endpoints `GET /incidents`, `GET /incidents/stats`. |
+| **P8.2** | ✅ Terminée | **NLP légère + géocodage** — extraction lieu/type/sévérité par regex, géocodage Nominatim OSM + fallback Photon, filtre bbox portuaire, attribution `troncon_id` (Haversine 300 m). |
+| **P8.3** | ✅ Terminée | **Frontend page Incidents** — `/incidents/page.tsx`, carte Leaflet markers colorés par sévérité, liste chronologique filtrée, 3 KPI, panneau latéral détail, i18n FR/EN, polling 5 min. |
+| **P8.4** | ✅ Terminée | **Overlay carte principale** — incidents actifs (<6 h) affichés en CircleMarkers sur la carte Accueil, badge rouge compteur dans la nav sidebar + drawer mobile, polling stats 5 min. |
+| **P8.5** | ✅ Terminée | **Qualité & exports** — migration 0012 `fiabilite_source` (0..1) par source, déduplication cross-sources dans `enrichir_incidents()`, `GET /incidents/export` (CSV 12 colonnes), bouton Exporter CSV dans les filtres. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -2115,11 +2115,91 @@ Résultat filtré dans la bounding box portuaire — si hors zone, `lat/lon = NU
 
 | Sous-phase | Statut | Intitulé |
 |------------|--------|----------|
-| **P8.1** | ⏳ À faire | **Fondations scraping** — migration 0011, modèle `Incident`, scraper RSS multi-source, job APScheduler 30 min, endpoint `GET /incidents` |
-| **P8.2** | ⏳ À faire | **Extraction NLP légère + géocodage** — regex mots-clés, dictionnaire de lieux, Nominatim, filtre bbox, attribution `troncon_id` |
-| **P8.3** | ⏳ À faire | **Frontend page Incidents** — `/incidents/page.tsx`, carte Leaflet markers, liste chronologique, filtres type/période, i18n FR/EN |
-| **P8.4** | ⏳ À faire | **Overlay carte principale** — incidents actifs (<6 h) affichés sur la carte Accueil, popup résumé, badge nav si incident actif |
-| **P8.5** | ⏳ Optionnel | **Qualité & exports** — déduplication cross-sources, score fiabilité, export CSV incidents, stats hebdomadaires |
+| **P8.1** | ✅ Terminée | **Fondations scraping** — migration 0011, modèle `Incident`, scraper RSS multi-source, job APScheduler 30 min, endpoint `GET /incidents` |
+| **P8.2** | ✅ Terminée | **Extraction NLP légère + géocodage** — regex mots-clés, dictionnaire de lieux, Nominatim + fallback Photon, filtre bbox, attribution `troncon_id` |
+| **P8.3** | ✅ Terminée | **Frontend page Incidents** — `/incidents/page.tsx`, carte Leaflet markers colorés par sévérité, liste chronologique, filtres type/période/tronçon, i18n FR/EN |
+| **P8.4** | ✅ Terminée | **Overlay carte principale** — incidents actifs (<6 h) affichés sur la carte Accueil, popup résumé, badge rouge compteur dans nav sidebar + drawer mobile |
+| **P8.5** | ✅ Terminée | **Qualité & exports** — migration 0012 `fiabilite_source`, déduplication cross-sources dans `enrichir_incidents()`, `GET /incidents/export` CSV, bouton Exporter CSV dans les filtres |
+
+### 10.4bis État final P8 — livré le 2026-06-24
+
+#### Architecture backend P8
+
+```
+backend/app/
+├── sources/parsers/
+│   └── rss_parser.py          # Scraper RSS 3 sources, cache 20 min, User-Agent PAA
+├── analyse/
+│   └── incidents_nlp.py       # extraire_lieu() + classifier_type/severite() + geocoder_lieu()
+│                              # enrichir_incidents() + _dedupliquer_incidents() (P8.5)
+├── api/
+│   └── incidents.py           # GET /incidents, /stats, /export, /{id}
+│                              # POST /scraper-now, /enrichir
+└── models/models.py           # Incident, TypeIncident, SeveriteIncident
+```
+
+#### Migrations liées à P8
+
+| Migration | Table | Changement |
+|-----------|-------|-----------|
+| 0011 | `incidents` | Création complète (15 colonnes, 2 enums PL/pgSQL idempotents) |
+| 0012 | `incidents` | Colonne `fiabilite_source` float nullable + init CASE WHEN par source |
+
+**Commande Railway Console (à relancer si rollback nécessaire) :**
+```bash
+alembic upgrade head
+```
+
+#### Scores de fiabilité par source (P8.5)
+
+| Source | `source_nom` | Score |
+|--------|--------------|-------|
+| Fraternité Matin | `fraternite_matin` | 0.90 |
+| Abidjan.net | `abidjan_net` | 0.80 |
+| Koaci | `koaci` | 0.75 |
+| L'Infodrome | `linfodrome` | 0.70 |
+| Soir Info | `soir_info` | 0.70 |
+| Autre | (toute autre valeur) | 0.50 |
+
+#### Déduplication cross-sources (P8.5)
+
+La fonction `_dedupliquer_incidents()` (appelée automatiquement après chaque `enrichir_incidents()`)
+marque les doublons probables selon 3 critères cumulatifs :
+
+1. Même `troncon_id` ET même `type_incident`
+2. `horodatage_publication` à ±2h
+3. ≥ 3 mots de plus de 3 lettres en commun dans les titres
+
+Le plus ancien est conservé. Les doublons reçoivent le préfixe `[DOUBLON]` sur le titre et
+`type_incident='autre'` (signale le changement sans supprimer la ligne).
+
+#### Export CSV (P8.5)
+
+`GET /incidents/export?periode=7j&type_incident=accident&troncon_id=1`
+
+**Colonnes** : `id`, `titre`, `source_nom`, `type_incident`, `severite`, `lieu_extrait`,
+`lat`, `lon`, `troncon_nom`, `horodatage_publication`, `actif`, `fiabilite_source`
+
+**Header** : `Content-Disposition: attachment; filename="incidents_paa_YYYYMMDD.csv"`
+
+Le bouton **Exporter CSV** dans `FiltresIncidents.tsx` génère l'URL avec les filtres actifs
+(période, type, tronçon) via un `<a href=... download>` natif — aucun JavaScript supplémentaire.
+
+#### Bounding box portuaire (filtre géocodage)
+
+```python
+_BBOX_LAT_MIN, _BBOX_LAT_MAX = 5.24, 5.37
+_BBOX_LON_MIN, _BBOX_LON_MAX = -4.05, -3.96
+```
+Un point géocodé hors de cette zone → `lat/lon = NULL`, troncon_id non attribué.
+
+#### Règles de courtoisie scraping
+
+- `User-Agent: PAA-Traverse/1.0 (hackathon; contact:sakamemmanuel@gmail.com)`
+- Cache 20 min par source (`_CACHE_TTL = 20 * 60`)
+- Délai 2 s entre requêtes vers le même domaine
+- Délai 1,2 s entre appels Nominatim (respect ToS OSM 1 req/s)
+- Cache mémoire Nominatim : un lieu géocodé n'est pas requêté deux fois
 
 ---
 
