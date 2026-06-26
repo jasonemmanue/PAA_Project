@@ -41,7 +41,7 @@ export function PageIndicateurs() {
 
   const [troncons, setTroncons] = useState<Troncon[]>([]);
   const [tronconId, setTronconId] = useState<number | null>(null);
-  const [periode, setPeriode] = useState<Periode>("7j");
+  const [periode, setPeriode] = useState<Periode>("24h");
   const [indicateurs, setIndicateurs] = useState<IndicateursPeriode | null>(null);
   const [serie, setSerie] = useState<SerieTemporelle | null>(null);
   const [chargement, setChargement] = useState(true);
