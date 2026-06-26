@@ -204,3 +204,21 @@
     @apply rounded-lg border app-surface app-border shadow-paa-sm;
   }
 }
+
+/* =========================================================================
+   Correction Leaflet — isolation du contexte d'empilement (stacking context)
+   Sans ceci, les panes Leaflet (z-index 200 → 1000) participent au contexte
+   racine et débordent visuellement sur la topbar sticky et le drawer mobile
+   lors du défilement sur mobile.
+   Avec isolation:isolate, le .leaflet-container crée son propre contexte :
+   ses z-index internes restent confinés dedans, sans affecter le reste de la page.
+   ========================================================================= */
+.leaflet-container {
+  isolation: isolate;
+}
+
+/* Sur iOS/Android les cartes leaflet dans un scroll-container peuvent
+   déclencher des artefacts de rendu. On force le GPU layer pour stabiliser. */
+.leaflet-container .leaflet-pane {
+  will-change: transform;
+}

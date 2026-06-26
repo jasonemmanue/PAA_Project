@@ -422,9 +422,11 @@ export function CarteLeaflet({
         role="region"
       />
 
-      {/* Indicateur WS — petit badge en haut à droite de la carte */}
+      {/* Indicateur WS — petit badge en haut à droite de la carte.
+          z-[1050] : au-dessus des contrôles Leaflet internes (z-1000 isolés)
+          mais bien en dessous de la topbar (z-1100) et du drawer (z-1200). */}
       <div
-        className="pointer-events-none absolute right-2 top-2 z-[1000]
+        className="pointer-events-none absolute right-2 top-2 z-[1050]
                    rounded-md bg-white/90 px-2 py-1 text-fluid-xs font-medium
                    text-paa-navy-900 shadow-paa-sm dark:bg-paa-navy-900/90 dark:text-paa-blue-100"
       >
@@ -432,7 +434,7 @@ export function CarteLeaflet({
       </div>
 
       {chargement && (
-        <div className="absolute inset-0 z-[999] flex items-center justify-center bg-white/60 backdrop-blur-sm dark:bg-paa-navy-900/60">
+        <div className="absolute inset-0 z-[1050] flex items-center justify-center bg-white/60 backdrop-blur-sm dark:bg-paa-navy-900/60">
           <span className="rounded-md bg-white px-4 py-2 text-fluid-sm font-medium shadow-paa-md dark:bg-paa-navy-800 dark:text-paa-blue-100">
             {t("common.loading")}
           </span>
@@ -440,7 +442,7 @@ export function CarteLeaflet({
       )}
 
       {erreur && !chargement && (
-        <div className="absolute inset-x-4 top-4 z-[999] rounded-md bg-statut-congestionne/95 px-3 py-2 text-fluid-sm text-white shadow-paa-md">
+        <div className="absolute inset-x-4 top-4 z-[1050] rounded-md bg-statut-congestionne/95 px-3 py-2 text-fluid-sm text-white shadow-paa-md">
           {t("common.error")} : {erreur}
         </div>
       )}

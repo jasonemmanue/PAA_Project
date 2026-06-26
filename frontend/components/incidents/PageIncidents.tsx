@@ -148,7 +148,7 @@ export function PageIncidents() {
   const nbAujourdhui = incidentsFiltres.length;
 
   return (
-    <div className="flex flex-col gap-6 p-4 md:p-6 max-w-5xl mx-auto">
+    <div className="flex flex-col gap-fluid-4">
       {/* En-tête */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">

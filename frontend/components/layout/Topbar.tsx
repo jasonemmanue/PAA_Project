@@ -15,7 +15,7 @@ export function Topbar({ ouvrirMenu }: { ouvrirMenu: () => void }) {
   const { t } = useI18n();
 
   return (
-    <header className="paa-banner sticky top-0 z-30">
+    <header className="paa-banner sticky top-0 z-[1100]">
       <div className="flex items-center justify-between gap-3 px-fluid-4 py-3">
         {/* Bouton burger — visible sur mobile et tablette uniquement */}
         <button

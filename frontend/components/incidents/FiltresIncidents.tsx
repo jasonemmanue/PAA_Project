@@ -50,16 +50,19 @@ export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl }: Pr
     return `${apiBaseUrl}/incidents/export?${params.toString()}`;
   }
 
+  /* Sur mobile les filtres empilent verticalement ; sur sm+ ils s'alignent
+     en ligne avec retour à la ligne automatique. Le select prend toute la
+     largeur restante dans sa ligne pour ne jamais déborder du conteneur. */
   const selectCls =
-    "text-sm border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 " +
+    "w-full min-w-0 text-sm border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1.5 " +
     "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none " +
     "focus:ring-2 focus:ring-paa-blue-500";
 
   return (
-    <div className="flex flex-wrap gap-3 items-center py-2">
+    <div className="flex flex-col gap-2 py-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
       {/* Filtre type */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+      <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto">
+        <span className="shrink-0 text-sm text-gray-600 dark:text-gray-400 font-medium">
           {t("incidents.filtreType")}
         </span>
         <select
@@ -74,8 +77,8 @@ export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl }: Pr
       </div>
 
       {/* Filtre période */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+      <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto">
+        <span className="shrink-0 text-sm text-gray-600 dark:text-gray-400 font-medium">
           {t("incidents.filtrePeriode")}
         </span>
         <select
@@ -92,8 +95,8 @@ export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl }: Pr
       </div>
 
       {/* Filtre tronçon */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+      <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto">
+        <span className="shrink-0 text-sm text-gray-600 dark:text-gray-400 font-medium">
           {t("incidents.filtreTroncon")}
         </span>
         <select
@@ -113,15 +116,15 @@ export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl }: Pr
         </select>
       </div>
 
-      {/* Bouton export CSV */}
+      {/* Bouton export CSV — pleine largeur sur mobile, aligné à droite sur sm+ */}
       <a
         href={construireUrlExport()}
         download
         title={t("incidents.exporterCsvTitle")}
-        className="ml-auto flex items-center gap-1.5 rounded-md border border-paa-blue-500
-                   px-3 py-1.5 text-sm font-medium text-paa-blue-700
+        className="flex w-full items-center justify-center gap-1.5 rounded-md border
+                   border-paa-blue-500 px-3 py-1.5 text-sm font-medium text-paa-blue-700
                    hover:bg-paa-blue-50 dark:border-paa-blue-400 dark:text-paa-blue-300
-                   dark:hover:bg-paa-navy-700 transition-colors"
+                   dark:hover:bg-paa-navy-700 transition-colors sm:ml-auto sm:w-auto"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"

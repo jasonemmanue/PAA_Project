@@ -136,9 +136,10 @@ export function CarteIncidents({ incidents }: Props) {
 
   return (
     <div
-      ref={conteneurRef}
-      style={{ height: "380px", width: "100%", borderRadius: "8px", zIndex: 0 }}
-      className="border border-gray-200 dark:border-gray-700"
-    />
+      className="relative overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
+      style={{ height: "380px", width: "100%" }}
+    >
+      <div ref={conteneurRef} className="absolute inset-0" />
+    </div>
   );
 }

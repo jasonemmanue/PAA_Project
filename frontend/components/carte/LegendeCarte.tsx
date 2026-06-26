@@ -28,7 +28,7 @@ export function LegendeCarte() {
 
   return (
     <div
-      className="pointer-events-auto absolute bottom-3 left-3 z-[1000] max-w-[260px]
+      className="pointer-events-auto absolute bottom-3 left-3 z-[450] max-w-[260px]
                  rounded-md app-surface border app-border px-3 py-2 shadow-paa-md
                  text-fluid-xs"
       aria-label={t("carte.legendTitle")}

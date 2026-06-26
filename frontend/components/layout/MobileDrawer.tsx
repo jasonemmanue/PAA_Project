@@ -52,7 +52,7 @@ export function MobileDrawer({
       {/* Voile semi-transparent */}
       <div
         className={clsx(
-          "fixed inset-0 z-40 bg-black/40 transition-opacity lg:hidden",
+          "fixed inset-0 z-[1100] bg-black/40 transition-opacity lg:hidden",
           ouvert ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         aria-hidden
@@ -64,7 +64,7 @@ export function MobileDrawer({
         aria-label="Navigation"
         aria-hidden={!ouvert}
         className={clsx(
-          "fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] app-surface border-r app-border",
+          "fixed inset-y-0 left-0 z-[1200] w-72 max-w-[85vw] app-surface border-r app-border",
           "shadow-paa-lg transition-transform duration-200 lg:hidden",
           ouvert ? "translate-x-0" : "-translate-x-full",
         )}

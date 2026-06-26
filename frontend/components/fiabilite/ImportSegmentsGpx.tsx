@@ -130,7 +130,7 @@ export function ImportSegmentsGpx({ troncons, onImporte, onTracesChange }: Impor
           <select
             value={tronconId}
             onChange={(e) => setTronconId(e.target.value)}
-            className="rounded-md border app-border bg-white dark:bg-paa-navy-900 px-2 py-1.5 text-fluid-sm text-paa-navy-800 dark:text-paa-blue-100"
+            className="w-full min-w-0 rounded-md border app-border bg-white dark:bg-paa-navy-900 px-2 py-1.5 text-fluid-sm text-paa-navy-800 dark:text-paa-blue-100"
           >
             <option value="">{t("segments.tronconAuto")}</option>
             {troncons.map((tr) => (
@@ -147,7 +147,7 @@ export function ImportSegmentsGpx({ troncons, onImporte, onTracesChange }: Impor
           <select
             value={direction}
             onChange={(e) => setDirection(e.target.value)}
-            className="rounded-md border app-border bg-white dark:bg-paa-navy-900 px-2 py-1.5 text-fluid-sm text-paa-navy-800 dark:text-paa-blue-100"
+            className="w-full min-w-0 rounded-md border app-border bg-white dark:bg-paa-navy-900 px-2 py-1.5 text-fluid-sm text-paa-navy-800 dark:text-paa-blue-100"
           >
             <option value="auto">{t("segments.directionAuto")}</option>
             <option value="aller">{t("segments.directionAller")}</option>
@@ -163,7 +163,7 @@ export function ImportSegmentsGpx({ troncons, onImporte, onTracesChange }: Impor
             value={sessionId}
             onChange={(e) => setSessionId(e.target.value)}
             placeholder={t("segments.sessionPlaceholder")}
-            className="rounded-md border app-border bg-white dark:bg-paa-navy-900 px-2 py-1.5 text-fluid-sm text-paa-navy-800 dark:text-paa-blue-100 placeholder:app-text-muted"
+            className="w-full min-w-0 rounded-md border app-border bg-white dark:bg-paa-navy-900 px-2 py-1.5 text-fluid-sm text-paa-navy-800 dark:text-paa-blue-100 placeholder:app-text-muted"
           />
         </div>
       </div>
