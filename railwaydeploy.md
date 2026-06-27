@@ -286,3 +286,188 @@ Après chaque `railway up` :
 - [ ] `curl .../health` → `{"status":"ok"}`
 - [ ] `curl .../collecte/status` → `"actif":true`
 - [ ] Si migration : Console → `alembic upgrade head`
+
+---
+
+## Déploiement du Frontend Next.js sur Railway (P7.2)
+
+> Section ajoutée le **2026-06-27** — guide pas-à-pas pour déployer le frontend
+> en application web accessible publiquement via Railway.
+
+### Pré-requis
+
+- Le backend Railway est déjà en ligne sur `https://backend-production-6cbf.up.railway.app`
+- Le fichier `frontend/railway.toml` est commité (ajouté le 2026-06-27)
+- La CLI Railway est installée et authentifiée (`railway login`)
+
+### Architecture cible
+
+```
+Internet
+   │
+   ├── frontend.up.railway.app → Service "frontend" Railway (Next.js)
+   │                                   │
+   │                                   └── NEXT_PUBLIC_API_BASE_URL
+   │                                         │
+   └── backend-production-6cbf.up.railway.app → Service "backend" Railway (FastAPI)
+```
+
+### Étape 1 — Créer le service frontend dans Railway
+
+**Via le tableau de bord Railway (recommandé) :**
+
+1. Aller sur [railway.com](https://railway.com) → ouvrir le projet `empowering-embrace`
+2. Cliquer **New Service** → **GitHub Repo**
+3. Sélectionner le dépôt `PAA_Project`
+4. **Root Directory** → taper `frontend` (important : le frontend est dans un sous-dossier)
+5. Nommer le service `frontend`
+6. Ne pas encore déployer — aller d'abord à l'étape 2 (variables)
+
+**Via la CLI :**
+```powershell
+# Créer le service depuis le sous-dossier frontend
+railway service create --name frontend
+```
+
+### Étape 2 — Configurer les variables d'environnement
+
+> ⚠️ **Critique** : `NEXT_PUBLIC_*` sont des variables de **build-time** dans Next.js.
+> Elles sont incorporées dans le JavaScript pendant `next build`.
+> Elles DOIVENT être définies AVANT le premier déploiement.
+
+Dans Railway → service `frontend` → onglet **Variables** → ajouter :
+
+| Variable | Valeur |
+|----------|--------|
+| `NEXT_PUBLIC_API_BASE_URL` | `https://backend-production-6cbf.up.railway.app` |
+| `NEXT_PUBLIC_DEFAULT_LANG` | `fr` |
+| `NEXT_PUBLIC_TILE_URL` | `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png` |
+| `NEXT_PUBLIC_TILE_ATTRIBUTION` | `&copy; OpenStreetMap contributors` |
+| `NODE_ENV` | `production` |
+
+**Via la CLI (remplacer `--service frontend` par le nom exact) :**
+```powershell
+railway variables set NEXT_PUBLIC_API_BASE_URL="https://backend-production-6cbf.up.railway.app" --service frontend
+railway variables set NEXT_PUBLIC_DEFAULT_LANG="fr" --service frontend
+railway variables set NEXT_PUBLIC_TILE_URL="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" --service frontend
+railway variables set NEXT_PUBLIC_TILE_ATTRIBUTION="&copy; OpenStreetMap contributors" --service frontend
+railway variables set NODE_ENV="production" --service frontend
+```
+
+### Étape 3 — Configurer le domaine public
+
+1. Dans Railway → service `frontend` → onglet **Settings** → section **Networking**
+2. Cliquer **Generate Domain** → Railway attribue une URL `https://frontend-production-xxxx.up.railway.app`
+3. **Copier cette URL** — elle sera nécessaire pour mettre à jour `ALLOWED_ORIGINS` côté backend
+
+### Étape 4 — Autoriser le CORS côté backend
+
+Le backend filtre les origines autorisées via `ALLOWED_ORIGINS`.
+Une fois l'URL frontend connue, l'ajouter :
+
+```powershell
+# Remplacer https://frontend-production-xxxx.up.railway.app par l'URL réelle
+railway variables set ALLOWED_ORIGINS="https://frontend-production-xxxx.up.railway.app,http://localhost:3000" --service backend
+```
+
+Redéployer le backend pour que la variable soit prise en compte :
+```powershell
+railway up --service backend --detach
+```
+
+### Étape 5 — Déclencher le premier déploiement frontend
+
+**Via le tableau de bord :**
+- Dans le service `frontend` → cliquer **Deploy** (ou attendre le déclenchement auto si lié à la branche `main`)
+
+**Via la CLI :**
+```powershell
+railway up --service frontend --detach
+```
+
+Railway va automatiquement :
+1. Détecter Next.js via Nixpacks
+2. Installer les dépendances (`npm install`)
+3. Builder (`npm run build`)
+4. Démarrer (`npx next start -p $PORT`)
+
+### Étape 6 — Vérification post-déploiement
+
+```powershell
+# Attendre que le déploiement soit "Online"
+railway logs --service frontend
+
+# Vérifier la page d'accueil
+curl -I https://frontend-production-xxxx.up.railway.app/
+# → HTTP/2 200
+
+# Vérifier le splash screen + carte
+# Ouvrir dans le navigateur — le splash HACKATONIA doit apparaître
+```
+
+### Étape 7 — Déploiements suivants
+
+Pour tout changement du frontend :
+```powershell
+git add frontend/
+git commit -m "feat: description du changement"
+git push origin main
+# Railway redéploie automatiquement via webhook GitHub
+```
+
+> Railway surveille la branche `main`. Chaque push déclenche un rebuild automatique
+> du service frontend. Aucune commande `railway up` manuelle n'est nécessaire après
+> la configuration initiale.
+
+---
+
+### Configuration `frontend/railway.toml` (référence)
+
+```toml
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npx next start -p $PORT"
+healthcheckPath = "/"
+healthcheckTimeout = 120
+numReplicas = 1
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+```
+
+**Points clés :**
+- `builder = "NIXPACKS"` : Railway détecte automatiquement Next.js, installe Node.js
+- `startCommand = "npx next start -p $PORT"` : Railway injecte `$PORT` (différent de 3000)
+- Sans ce `startCommand`, Next.js démarrerait sur le port 3000 et Railway ne pourrait pas router le trafic
+- `numReplicas = 1` : un seul process (WebSocket + état en mémoire)
+- Pas de `next.config.js` `output: 'standalone'` nécessaire avec Nixpacks
+
+---
+
+### Problèmes fréquents du frontend Railway
+
+| # | Symptôme | Cause | Solution |
+|---|----------|-------|----------|
+| 1 | La carte n'affiche pas les données | `NEXT_PUBLIC_API_BASE_URL` incorrect ou manquant | Vérifier la variable dans Railway → **rebuild** obligatoire |
+| 2 | Erreurs CORS dans la console | `ALLOWED_ORIGINS` backend ne contient pas l'URL frontend | Ajouter l'URL et redéployer le backend |
+| 3 | Build échoue (`sharp` module) | Binaire natif incompatible | Railway compile `sharp` en natif — normal, attendre la fin du build |
+| 4 | Timeout healthcheck | Next.js met >2 min à démarrer sur un plan hobby | Augmenter `healthcheckTimeout = 180` dans `railway.toml` |
+| 5 | `NEXT_PUBLIC_API_BASE_URL` = `undefined` en prod | Variable ajoutée APRÈS le premier build | Re-déployer pour déclencher un nouveau build avec la variable |
+| 6 | Page blanche au chargement | Hydratation SSR échouée | Vérifier les logs console navigateur — souvent une variable d'env manquante |
+
+---
+
+### Mise à jour ALLOWED_ORIGINS après déploiement frontend (récapitulatif)
+
+```powershell
+# 1. Récupérer l'URL publique du frontend
+railway domain --service frontend
+# → https://frontend-production-xxxx.up.railway.app
+
+# 2. Mettre à jour ALLOWED_ORIGINS côté backend
+railway variables set ALLOWED_ORIGINS="https://frontend-production-xxxx.up.railway.app,http://localhost:3000" --service backend
+
+# 3. Redéployer le backend
+railway up --service backend --detach
+```

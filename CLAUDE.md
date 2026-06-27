@@ -257,7 +257,7 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P6.4** | ⏳ À venir | **Administration + sous-tronçons codifiés** (T1A, T1B, T1C…) comme dans le rapport DEESP. Cf. [§ 6.4](PROMPTS_RESTANTS_DEESP.md). |
 | **P6.5** | ⏳ Optionnel | **ML Random Forest** avec évaluation honnête vs prédicteur niveau 2. Cf. [§ 6.5](PROMPTS_RESTANTS_DEESP.md). |
 | **P7.1**| ⏳ À venir | **Tests + Cache Redis + Optimisations** — pytest pour rapport_paa, cache /carte/etat et /predire, Lighthouse mobile ≥ 80. Cf. [§ 7.1](PROMPTS_RESTANTS_DEESP.md). |
-| **P7.2**| ⏳ À venir | **Déploiement Vercel** (frontend) + ALLOWED_ORIGINS Railway + URL publique finale. Cf. [§ 7.2](PROMPTS_RESTANTS_DEESP.md). |
+| **P7.2**| 🔄 En cours (2026-06-27) | **Déploiement Railway du frontend** — `frontend/railway.toml` créé (Nixpacks, `npx next start -p $PORT`), guide 7 étapes dans `railwaydeploy.md` § « Déploiement du Frontend Next.js sur Railway ». À compléter : créer le service Railway, configurer `NEXT_PUBLIC_API_BASE_URL`, mettre à jour `ALLOWED_ORIGINS` backend. |
 | **P7.3**| ⏳ À venir | **Rapport final article 4** + **trame de pitch 5-7 min** revendiquant l'alignement DEESP. Cf. [§ 7.3](PROMPTS_RESTANTS_DEESP.md). |
 | **P8.1** | ✅ Terminée | **Scraping incidents — fondations** — migration 0011 table `incidents`, scraper RSS multi-source (Fraternité Matin, Abidjan.net, Koaci), job APScheduler 30 min, endpoints `GET /incidents`, `GET /incidents/stats`. |
 | **P8.2** | ✅ Terminée | **NLP légère + géocodage** — extraction lieu/type/sévérité par regex, géocodage Nominatim OSM + fallback Photon, filtre bbox portuaire, attribution `troncon_id` (Haversine 300 m). |
