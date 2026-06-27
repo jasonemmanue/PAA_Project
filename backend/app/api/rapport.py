@@ -182,16 +182,22 @@ async def get_zones_congestionnees(
 ) -> dict[str, Any]:
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
     cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
+    nb_jours = max(1, (fin_utc - debut_utc).days + 1)
+    seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
     return {
         "campagne": campagne,
+        "nb_jours_plage": nb_jours,
         "nb_entrees": len(cong),
         "regles": {
             "critere_mesure": (
                 "Couleur Google Maps : ROUGE OU ORANGE sur ≥ 50 % du tronçon"
             ),
             "seuil_orange_long_pct": 50.0,
-            "regle_jour_indicatif": "≥ 3 occurrences sur le même jour de la semaine",
-            "regle_semaine": "≥ 4 occurrences à la même heure dans la semaine",
+            "seuil_jour_effectif": seuil_j,
+            "seuil_semaine_effectif": seuil_s,
+            "regle_jour_indicatif": f"≥ {seuil_j} occurrence(s) sur le même jour de la semaine",
+            "regle_semaine": f"≥ {seuil_s} occurrence(s) à la même heure dans la semaine",
+            "adaptatif": nb_jours < 28,
         },
         "entrees": [
             {

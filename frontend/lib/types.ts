@@ -390,11 +390,14 @@ export interface EntreeCongestion {
 
 export interface RapportZonesCongestionnees {
   campagne: string;
+  nb_jours_plage: number;
   nb_entrees: number;
   regles: {
-    ratio_congestion_min: number;
+    seuil_jour_effectif: number;
+    seuil_semaine_effectif: number;
     regle_jour_indicatif: string;
     regle_semaine: string;
+    adaptatif: boolean;
   };
   entrees: EntreeCongestion[];
 }

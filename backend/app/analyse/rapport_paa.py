@@ -278,6 +278,20 @@ class CongestionHoraire:
     sous_troncon_nom: str | None = None
 
 
+def seuils_congestion(debut_utc: datetime, fin_utc: datetime) -> tuple[int, int]:
+    """Retourne (seuil_jour, seuil_semaine) adaptés à la durée de la plage.
+
+    Référence DEESP : 28 jours → seuil_jour=3, seuil_semaine=4.
+    En-dessous de 28 jours, les seuils sont proratisés pour que le tableau
+    reste utilisable sur des plages courtes tout en restant proportionnel.
+    """
+    nb_jours = max(1, (fin_utc - debut_utc).days + 1)
+    facteur = nb_jours / 28
+    seuil_jour = max(1, round(3 * facteur))
+    seuil_semaine = max(2, round(4 * facteur))
+    return seuil_jour, seuil_semaine
+
+
 def troncons_congestionnes(
     db: Session,
     debut_utc: datetime,
@@ -340,12 +354,13 @@ def troncons_congestionnes(
     for (tid, sid, wd, h), nb in occurrences.items():
         par_cle_heure[(tid, sid, h)][wd] = nb
 
+    seuil_jour, seuil_semaine = seuils_congestion(debut_utc, fin_utc)
     NOMS_JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
     resultats: list[CongestionHoraire] = []
     for (tid, sid, h), par_jour in par_cle_heure.items():
-        regle_jour = any(nb >= 3 for nb in par_jour.values())
+        regle_jour = any(nb >= seuil_jour for nb in par_jour.values())
         nb_total = sum(par_jour.values())
-        regle_sem = nb_total >= 4
+        regle_sem = nb_total >= seuil_semaine
         if not (regle_jour or regle_sem):
             continue
         t = troncons[tid]

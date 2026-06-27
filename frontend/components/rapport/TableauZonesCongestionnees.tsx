@@ -102,6 +102,16 @@ export function TableauZonesCongestionnees({
         "Critère DEESP par mesure : couleur Google Maps — rouge présent OU orange ≥ 50 % du tronçon."
       }
     >
+      {/* Note seuils adaptatifs si plage < 28 jours */}
+      {rapport?.regles?.adaptatif && (
+        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-fluid-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+          <strong>Seuils adaptés</strong> — plage de {rapport.nb_jours_plage} jour(s)
+          (référence DEESP = 28 j) : congestionné si ≥&nbsp;{rapport.regles.seuil_jour_effectif} occurrence(s) / jour
+          OU ≥&nbsp;{rapport.regles.seuil_semaine_effectif} occurrence(s) / semaine.
+          Élargir la plage vers 28 jours pour appliquer les seuils officiels.
+        </div>
+      )}
+
       {/* Bouton export PDF */}
       <div className="mb-3 flex justify-end">
         <button
