@@ -53,6 +53,7 @@ Le projet suit un découpage en phases. À jour au **2026-06-27** :
 | **P8.1 → P8.5** | ✅ Livrées (2026-06-24) | **Module Incidents & Accidents** — scraping automatique presse ivoirienne, NLP légère, géolocalisation, page dédiée + overlay carte, export CSV |
 | **P9.1** | ✅ Livré (2026-06-27) | **Chatbot guide — Claude (Anthropic)** — bouton Aide flottant sur toutes les pages, relais backend sécurisé (`POST /chatbot/message`), prompt professionnel sans markdown. Prompt enrichi avec le rôle précis des 8 pages : libellés exacts du menu (`Accueil / Carte`, `Indicateurs`, `Rapport DEESP`, `Fiabilité`, `Temps de traversée`, `Heure optimale`, `Incidents`, `Administration`), exemples d'usage portuaire et 4 conseils opérationnels clés. |
 | **P9.2** | ✅ Livré (2026-06-27) | **Fix heure optimale** — correction du bug MIN = MOYEN = MAX dans le tableau des créneaux horaires (`min(ProfilHoraire.min)` / `max(ProfilHoraire.max)` + filtre `fenetre_jours=30`) |
+| **P9.3** | ✅ Livré (2026-06-27) | **RAG chatbot** — injection automatique des données réelles (trafic, temps de traversée, heures optimales, incidents actifs, stats semaine) avant chaque appel Claude. Module `backend/app/rag/contexte.py` : 5 récupérateurs DB + détection d'intention par mots-clés. Zéro appel HTTP interne — requêtes SQLAlchemy directes. |
 
 > Les polylines des 6 tronçons suivent maintenant les vraies routes
 > (boulevard de Marseille, pont Houphouët-Boigny, avenue Christiani…) —
@@ -1966,12 +1967,16 @@ frontend/components/incidents/
 
 ---
 
-### P9 — Chatbot guide intégré (Claude)
+### P9 — Chatbot guide intégré (Claude + RAG)
 
 ```
 backend/app/api/
-  chatbot.py                # POST /chatbot/message (relais Claude)
+  chatbot.py                # POST /chatbot/message (relais Claude + injection RAG)
                             # GET  /chatbot/disponibilite
+
+backend/app/rag/
+  contexte.py               # detecter_intentions() + 5 récupérateurs DB
+                            # construire_contexte_rag() — point d'entrée principal
 
 frontend/components/chatbot/
   ChatbotButton.tsx         # bouton flottant + fenêtre de chat
@@ -1979,6 +1984,16 @@ frontend/components/chatbot/
 
 Le chatbot utilise l'API Claude (Anthropic) via un endpoint backend sécurisé.
 La clé `ANTHROPIC_API_KEY` reste côté serveur — elle n'est jamais exposée dans le navigateur.
+
+**RAG — données injectées automatiquement selon la question :**
+
+| Question type | Données injectées |
+|---|---|
+| État du trafic, congestion, carte | État DEESP + % couleurs + durée de chaque tronçon |
+| Meilleure heure, quand partir, livraison | Top-3 créneaux optimaux du type de jour (ouvrable/week-end) |
+| Temps de traversée, durée, combien de minutes | Dernière mesure Google + écart vs référence 50 km/h |
+| Incidents, accidents, route barrée | Incidents actifs < 6h avec sévérité et source |
+| Statistiques, indicateurs, taux | Min/moy/max + taux congestion depuis le lundi courant |
 
 **Variables d'environnement :**
 

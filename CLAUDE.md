@@ -2593,6 +2593,77 @@ Il couvre aussi :
 `frontend/components/layout/NavItems.tsx`, mettre à jour `SYSTEM_PROMPT`
 dans `backend/app/api/chatbot.py` en conséquence.
 
+### 11.3bis RAG — Retrieval-Augmented Generation (ajouté le 2026-06-27)
+
+Le chatbot injecte automatiquement les données réelles de la base avant chaque
+question nécessitant des chiffres. Le flux complet :
+
+```
+Question utilisateur
+      ↓
+backend/app/rag/contexte.py → detecter_intentions(question)
+      ↓ (si intention détectée)
+Requête DB directe (pas d'appel HTTP interne)
+      ↓
+Bloc texte "DONNÉES RÉELLES DE L'APPLICATION" injecté en tête du message
+      ↓
+Claude reçoit : contexte_rag + "\n\nQuestion de l'utilisateur : ..."
+      ↓
+Réponse basée sur les vraies valeurs temps réel
+```
+
+#### Intentions détectées et données injectées
+
+| Intention | Mots-clés déclencheurs | Données injectées |
+|-----------|------------------------|-------------------|
+| `etat_trafic` | trafic, congestion, état, actuel, carte, fluide… | Dernière mesure < 2h par tronçon : état DEESP, % rouge/orange/vert, durée vs référence |
+| `temps_traversee` | temps, durée, combien, traversée, minutes… | Dernière mesure < 90 min par tronçon avec écart % vs référence 50 km/h |
+| `heure_optimale` | heure, quand, optimal, livrer, créneau, partir… | Top-3 créneaux les plus rapides (7h-19h) pour le type de jour actuel (ouvrable/week-end), basé sur `profils_horaires` 30 jours |
+| `incidents` | incident, accident, route barrée, travaux… | Incidents < 6h dans la zone portuaire avec sévérité, lieu, source et âge |
+| `statistiques` | statistique, indicateur, analyse, taux, semaine… | Min/moy/max + taux de congestion de la semaine en cours par tronçon |
+
+**Règle anti-duplication** : si `etat_trafic` est détecté, `temps_traversee`
+n'est pas ajouté en doublon (l'état inclut déjà les durées).
+
+**Aucun appel HTTP interne** : les récupérateurs interrogent directement la
+`Session` SQLAlchemy pour éviter la latence et les problèmes de routage interne.
+
+#### Fichiers du module RAG
+
+```
+backend/app/rag/
+  __init__.py       # marqueur de package
+  contexte.py       # detecter_intentions() + 5 récupérateurs + construire_contexte_rag()
+```
+
+#### Fonctions exportées par `contexte.py`
+
+| Fonction | Rôle |
+|---|---|
+| `detecter_intentions(question)` | Retourne un `set[str]` d'intentions par correspondance mots-clés |
+| `recuperer_etat_trafic(db)` | État DEESP + couleurs Google + durée de chaque tronçon |
+| `recuperer_temps_traversee(db)` | Durée actuelle + écart vs référence |
+| `recuperer_heure_optimale(db)` | Top-3 créneaux par tronçon pour le type de jour courant |
+| `recuperer_incidents_actifs(db)` | Incidents < 6h avec sévérité et source |
+| `recuperer_statistiques_semaine(db)` | Min/moy/max + taux congestion depuis lundi |
+| `construire_contexte_rag(question, db)` | Point d'entrée : détecte + assemble + retourne le bloc texte |
+
+#### Modification de `POST /chatbot/message`
+
+La signature de l'endpoint reçoit maintenant `db: Session = Depends(get_db)`.
+Le contexte RAG est construit avant la construction des messages Anthropic :
+
+```python
+contexte_rag = await construire_contexte_rag(requete.question, db)
+if contexte_rag:
+    question_enrichie = f"{contexte_rag}\n\nQuestion de l'utilisateur : {requete.question}"
+else:
+    question_enrichie = requete.question
+```
+
+Le log `INFO "RAG activé pour la question"` est émis quand le contexte est injecté
+(utile pour vérifier dans les logs Railway que le RAG se déclenche correctement).
+
 ### 11.4 Frontend — `frontend/components/chatbot/ChatbotButton.tsx`
 
 - Bouton flottant fixe en bas à droite (`z-[1200]`) sur toutes les pages
