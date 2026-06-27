@@ -17,6 +17,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { MobileDrawer } from "./MobileDrawer";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { ChatbotButton } from "@/components/chatbot/ChatbotButton";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
 
@@ -69,6 +70,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           {t("footer.tagline")}
         </footer>
       </div>
+
+      {/* Chatbot flottant Gemini — visible sur toutes les pages */}
+      <ChatbotButton />
     </div>
   );
 }

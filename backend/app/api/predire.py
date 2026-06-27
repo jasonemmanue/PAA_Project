@@ -11,19 +11,26 @@ réels (source_reelle=True) sont disponibles.
 
 from __future__ import annotations
 
+import statistics
+from collections import defaultdict
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db
+from app.models.models import Mesure, ProfilHoraire, SourceMesure, Troncon
 from app.predicteur.profils import predire, _stats_mesures_periode
 
 
 router = APIRouter(prefix="/predire", tags=["temps de traversée par période"])
+
+# Plage horaire DEESP (7h inclus, 19h exclus)
+_H_DEBUT, _H_FIN = 7, 19
 
 
 @router.get(
@@ -106,4 +113,146 @@ async def get_resume(
             "jours_ouvrables": stats_mois["jour_ouvrable"],
             "week_ends": stats_mois["week_end"],
         },
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /predire/heure-optimale
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/heure-optimale",
+    summary="Fenêtre optimale de départ — créneaux DEESP classés par durée",
+    description=(
+        "Retourne les créneaux 7h-18h classés du plus rapide au plus lent "
+        "pour le tronçon demandé, et identifie le top-3 recommandé. "
+        "Source prioritaire : table `profils_horaires` (agrégats nocternes). "
+        "Repli si vide : mesures Google des 30 derniers jours."
+    ),
+)
+async def get_heure_optimale(
+    troncon_id: int = Query(..., description="ID du tronçon"),
+    type_jour: str = Query(
+        "jour_ouvrable",
+        description="'jour_ouvrable', 'week_end' ou 'tous'",
+    ),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    troncon = db.get(Troncon, troncon_id)
+    if not troncon:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tronçon introuvable.")
+
+    fuseau = ZoneInfo(get_settings().tz)
+
+    # Jours de semaine selon type_jour (0=lundi…6=dimanche)
+    if type_jour == "jour_ouvrable":
+        jours_filtre = list(range(5))
+    elif type_jour == "week_end":
+        jours_filtre = [5, 6]
+    else:
+        jours_filtre = list(range(7))
+
+    creneaux: list[dict] = []
+
+    # --- Source 1 : profils horaires (agrégats nocternes) ---
+    rows_profils = (
+        db.execute(
+            select(
+                ProfilHoraire.heure,
+                func.avg(ProfilHoraire.mediane).label("mediane"),
+                func.avg(ProfilHoraire.moyenne).label("moyenne"),
+                func.avg(ProfilHoraire.min).label("p_min"),
+                func.avg(ProfilHoraire.max).label("p_max"),
+                func.sum(ProfilHoraire.nb_mesures).label("nb"),
+            )
+            .where(
+                ProfilHoraire.troncon_id == troncon_id,
+                ProfilHoraire.jour_semaine.in_(jours_filtre),
+                ProfilHoraire.heure >= _H_DEBUT,
+                ProfilHoraire.heure < _H_FIN,
+                ProfilHoraire.nb_mesures > 0,
+            )
+            .group_by(ProfilHoraire.heure)
+            .order_by(ProfilHoraire.heure)
+        ).all()
+    )
+
+    source = "profils_horaires"
+
+    if rows_profils:
+        for p in rows_profils:
+            moy = float(p.moyenne or 0)
+            creneaux.append({
+                "heure": p.heure,
+                "tranche": f"{p.heure:02d}h-{p.heure + 1:02d}h",
+                "moyen_s": round(moy),
+                "min_s": round(float(p.p_min or 0)),
+                "max_s": round(float(p.p_max or 0)),
+                "moyen_mn": round(moy / 60, 1),
+                "min_mn": round(float(p.p_min or 0) / 60, 1),
+                "max_mn": round(float(p.p_max or 0) / 60, 1),
+                "nb_mesures": int(p.nb or 0),
+                "optimal": False,
+            })
+    else:
+        # --- Source 2 : mesures Google 30 derniers jours (repli) ---
+        source = "mesures_recentes_30j"
+        debut_utc = datetime.now(tz=timezone.utc) - timedelta(days=30)
+
+        mesures_db = db.execute(
+            select(Mesure.horodatage, Mesure.duree_trafic_s)
+            .where(
+                Mesure.troncon_id == troncon_id,
+                Mesure.source == SourceMesure.google,
+                Mesure.duree_trafic_s.isnot(None),
+                Mesure.aberrante.is_(False),
+                Mesure.horodatage >= debut_utc,
+            )
+        ).all()
+
+        buckets: dict[int, list[int]] = defaultdict(list)
+        for m in mesures_db:
+            h_local = m.horodatage.astimezone(fuseau).hour
+            weekday = m.horodatage.astimezone(fuseau).weekday()
+            if _H_DEBUT <= h_local < _H_FIN and weekday in jours_filtre:
+                buckets[h_local].append(m.duree_trafic_s)
+
+        for h in sorted(buckets.keys()):
+            vals = buckets[h]
+            if not vals:
+                continue
+            moy = statistics.fmean(vals)
+            creneaux.append({
+                "heure": h,
+                "tranche": f"{h:02d}h-{h + 1:02d}h",
+                "moyen_s": round(moy),
+                "min_s": min(vals),
+                "max_s": max(vals),
+                "moyen_mn": round(moy / 60, 1),
+                "min_mn": round(min(vals) / 60, 1),
+                "max_mn": round(max(vals) / 60, 1),
+                "nb_mesures": len(vals),
+                "optimal": False,
+            })
+
+    # Marquer le top-3 (heures les plus rapides)
+    top3 = sorted(creneaux, key=lambda c: c["moyen_s"])[:3]
+    top3_heures = {c["heure"] for c in top3}
+    for c in creneaux:
+        c["optimal"] = c["heure"] in top3_heures
+
+    # Temps de référence 50 km/h
+    ref_s = int((troncon.distance_m or 0) / 1000 / 50 * 3600) if troncon.distance_m else None
+
+    return {
+        "troncon_id": troncon_id,
+        "troncon_nom": troncon.nom,
+        "type_jour": type_jour,
+        "source": source,
+        "nb_creneaux": len(creneaux),
+        "creneaux": creneaux,
+        "temps_ref_50kmh_s": ref_s,
+        "temps_ref_50kmh_mn": round(ref_s / 60, 1) if ref_s else None,
+        "recommandation": sorted(creneaux, key=lambda c: c["moyen_s"])[:3],
     }

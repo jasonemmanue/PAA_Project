@@ -109,6 +109,27 @@ export function IconIncidents(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function IconHeureOptimale(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...PROPS_PAR_DEFAUT} {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+      <path d="M16.24 7.76a6 6 0 0 1 0 8.49" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
+export function IconChatbot(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...PROPS_PAR_DEFAUT} {...props}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <line x1="9" y1="10" x2="9" y2="10" strokeWidth="3" strokeLinecap="round" />
+      <line x1="12" y1="10" x2="12" y2="10" strokeWidth="3" strokeLinecap="round" />
+      <line x1="15" y1="10" x2="15" y2="10" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function IconGlobe(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...PROPS_PAR_DEFAUT} {...props}>

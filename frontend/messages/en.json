@@ -21,6 +21,7 @@
     "rapport": "DEESP Report",
     "fiabilite": "Reliability",
     "prediction": "Crossing time",
+    "heureOptimale": "Best departure",
     "administration": "Administration",
     "incidents": "Incidents"
   },
@@ -270,6 +271,40 @@
     "addTroncon": "Add a new segment",
     "exportData": "Export data",
     "placeholder": "Administration forms (P6.4) and exports will be added here."
+  },
+  "heureOptimale": {
+    "titre": "Best departure time",
+    "sousTitre": "Recommended time slots to minimize crossing time, based on historical measurements.",
+    "selectTroncon": "Route segment",
+    "selectTypeJour": "Day type",
+    "joursOuvrables": "Weekdays",
+    "weekEnds": "Weekends",
+    "tous": "All days",
+    "top3Titre": "Recommended window (top 3)",
+    "top3Desc": "Time slots with the lowest crossing times.",
+    "tableauTitre": "All DEESP slots (7am-6pm)",
+    "colHeure": "HOUR",
+    "colMoyen": "AVG",
+    "colMin": "MIN",
+    "colMax": "MAX",
+    "colMesures": "SAMPLES",
+    "optimal": "Optimal",
+    "ref50": "50 km/h reference",
+    "aucunCreneau": "Not enough data yet to compute profiles. Hourly collection will gradually fill them.",
+    "sourceProfilsHoraires": "Aggregated profiles (nightly)",
+    "sourceMesures30j": "Raw measurements (30 d)"
+  },
+  "chatbot": {
+    "bouton": "Help",
+    "titre": "PAA-Traverse Assistant",
+    "placeholder": "Ask a question about the app…",
+    "envoyer": "Send",
+    "cleGeminiManquante": "Gemini API key not configured.",
+    "cleGeminiLabel": "Gemini API key (temporary)",
+    "cleGeminiPlaceholder": "AIza...",
+    "cleGeminiInfo": "Get a free key at aistudio.google.com",
+    "messageErreur": "Connection error with Gemini. Check your API key.",
+    "fermer": "Close chat"
   },
   "footer": {
     "tagline": "Autonomous Port of Abidjan — PAA-Traverse hackathon project"

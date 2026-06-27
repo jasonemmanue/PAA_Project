@@ -462,6 +462,35 @@ export interface ResumePrediction {
 }
 
 // ---------------------------------------------------------------------------
+// Heure optimale de départ (P6.3 rétabli)
+// ---------------------------------------------------------------------------
+
+export interface CreneauHoraire {
+  heure: number;
+  tranche: string;
+  moyen_s: number;
+  min_s: number;
+  max_s: number;
+  moyen_mn: number;
+  min_mn: number;
+  max_mn: number;
+  nb_mesures: number;
+  optimal: boolean;
+}
+
+export interface HeureOptimaleResponse {
+  troncon_id: number;
+  troncon_nom: string;
+  type_jour: string;
+  source: string;
+  nb_creneaux: number;
+  creneaux: CreneauHoraire[];
+  temps_ref_50kmh_s: number | null;
+  temps_ref_50kmh_mn: number | null;
+  recommandation: CreneauHoraire[];
+}
+
+// ---------------------------------------------------------------------------
 // Administration (P6.4) — CRUD tronçons + sous-tronçons codifiés
 // ---------------------------------------------------------------------------
 

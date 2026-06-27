@@ -13,6 +13,7 @@ import type {
   CarteEtat,
   CollecteStatus,
   EvolutionResponse,
+  HeureOptimaleResponse,
   ImportGpxResponse,
   Incident,
   IncidentsPage,
@@ -442,6 +443,7 @@ export const api = {
   rapportZonesCongestionnees: getRapportZonesCongestionnees,
   rapportGraphique: getRapportGraphique,
   resumePrediction: getResumePrediction,
+  heureOptimale: getHeureOptimale,
   creerTroncon: postCreerTroncon,
   supprimerTroncon: deleteTroncon,
   sousTroncons: getSousTroncons,
@@ -455,11 +457,20 @@ export const api = {
 };
 
 // ---------------------------------------------------------------------------
-// Temps de traversée par période
+// Temps de traversée par période + heure optimale
 // ---------------------------------------------------------------------------
 
 export function getResumePrediction(tronconId: number): Promise<ResumePrediction> {
   return appel<ResumePrediction>(`/predire/resume?troncon_id=${tronconId}`);
+}
+
+export function getHeureOptimale(
+  tronconId: number,
+  typeJour: "jour_ouvrable" | "week_end" | "tous" = "jour_ouvrable",
+): Promise<HeureOptimaleResponse> {
+  return appel<HeureOptimaleResponse>(
+    `/predire/heure-optimale?troncon_id=${tronconId}&type_jour=${typeJour}`,
+  );
 }
 
 // ---------------------------------------------------------------------------

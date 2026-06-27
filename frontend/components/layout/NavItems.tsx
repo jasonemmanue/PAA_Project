@@ -7,6 +7,7 @@
 
 import {
   IconCarte,
+  IconHeureOptimale,
   IconIndicateurs,
   IconFiabilite,
   IconIncidents,
@@ -27,6 +28,7 @@ export const ENTREES_NAV: EntreeNav[] = [
   { href: "/rapport", labelKey: "nav.rapport", Icon: IconIndicateurs },
   { href: "/fiabilite", labelKey: "nav.fiabilite", Icon: IconFiabilite },
   { href: "/prediction", labelKey: "nav.prediction", Icon: IconPrediction },
+  { href: "/heure-optimale", labelKey: "nav.heureOptimale", Icon: IconHeureOptimale },
   { href: "/incidents", labelKey: "nav.incidents", Icon: IconIncidents },
   { href: "/administration", labelKey: "nav.administration", Icon: IconAdmin },
 ];

@@ -21,6 +21,7 @@
     "rapport": "Rapport DEESP",
     "fiabilite": "Fiabilité",
     "prediction": "Temps de traversée",
+    "heureOptimale": "Heure optimale",
     "administration": "Administration",
     "incidents": "Incidents"
   },
@@ -270,6 +271,40 @@
     "addTroncon": "Ajouter un nouveau tronçon",
     "exportData": "Exporter les données",
     "placeholder": "Les formulaires d'administration (P6.4) et les exports seront ajoutés ici."
+  },
+  "heureOptimale": {
+    "titre": "Heure optimale de départ",
+    "sousTitre": "Créneaux recommandés pour minimiser le temps de traversée, basés sur l'historique des mesures.",
+    "selectTroncon": "Tronçon",
+    "selectTypeJour": "Type de jour",
+    "joursOuvrables": "Jours ouvrables",
+    "weekEnds": "Week-ends",
+    "tous": "Tous les jours",
+    "top3Titre": "Fenêtre recommandée (top 3)",
+    "top3Desc": "Créneaux avec les temps de traversée les plus bas.",
+    "tableauTitre": "Tous les créneaux DEESP (7h-18h)",
+    "colHeure": "HEURE",
+    "colMoyen": "MOYEN",
+    "colMin": "MIN",
+    "colMax": "MAX",
+    "colMesures": "MESURES",
+    "optimal": "Optimal",
+    "ref50": "Référence 50 km/h",
+    "aucunCreneau": "Pas encore assez de mesures pour calculer les profils. La collecte horaire les alimentera progressivement.",
+    "sourceProfilsHoraires": "Profils agrégés (nuit)",
+    "sourceMesures30j": "Mesures brutes (30 j)"
+  },
+  "chatbot": {
+    "bouton": "Aide",
+    "titre": "Assistant PAA-Traverse",
+    "placeholder": "Posez une question sur l'application…",
+    "envoyer": "Envoyer",
+    "cleGeminiManquante": "Clé API Gemini non configurée.",
+    "cleGeminiLabel": "Clé API Gemini (temporaire)",
+    "cleGeminiPlaceholder": "AIza...",
+    "cleGeminiInfo": "Obtenez une clé gratuite sur aistudio.google.com",
+    "messageErreur": "Erreur de connexion à Gemini. Vérifiez votre clé API.",
+    "fermer": "Fermer le chat"
   },
   "footer": {
     "tagline": "Port Autonome d'Abidjan — projet hackathon PAA-Traverse"
