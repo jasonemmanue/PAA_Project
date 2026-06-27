@@ -8,6 +8,7 @@
  */
 
 import clsx from "clsx";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -32,6 +33,7 @@ export function Sidebar({
       aria-label="Navigation principale"
       className={clsx(
         "hidden lg:flex shrink-0 flex-col gap-2 border-r app-border app-surface transition-[width] duration-200",
+        "sticky top-0 h-screen overflow-y-auto",
         replie ? "w-16" : "w-64",
       )}
     >
@@ -42,12 +44,15 @@ export function Sidebar({
           replie ? "justify-center" : "justify-start",
         )}
       >
-        <span
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md
-                     bg-paa-navy-900 text-white font-bold text-sm"
-          aria-hidden
-        >
-          PAA
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md overflow-hidden bg-paa-navy-900">
+          <Image
+            src="/logo-hackathon.jpg"
+            alt="Port Autonome d'Abidjan"
+            width={36}
+            height={36}
+            className="h-full w-full object-cover"
+            priority
+          />
         </span>
         {!replie && (
           <span className="font-semibold text-fluid-base truncate">

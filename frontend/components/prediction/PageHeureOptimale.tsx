@@ -198,11 +198,14 @@ export function PageHeureOptimale() {
 
   // Charger les tronçons au montage
   useEffect(() => {
-    api.troncons().then((list) => {
-      const actifs = Array.isArray(list) ? list.filter((tr) => tr.actif) : [];
-      setTroncons(actifs);
-      if (actifs.length > 0) setTronconId(actifs[0].id);
-    });
+    api.troncons()
+      .then((list) => {
+        // Accepte tous les tronçons non explicitement désactivés
+        const liste = Array.isArray(list) ? list.filter((tr) => tr.actif !== false) : [];
+        setTroncons(liste);
+        if (liste.length > 0) setTronconId(liste[0].id);
+      })
+      .catch(() => setErreur("Impossible de charger les tronçons depuis l'API."));
   }, []);
 
   const charger = useCallback(async () => {

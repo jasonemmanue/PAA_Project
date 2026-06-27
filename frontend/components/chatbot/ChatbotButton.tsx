@@ -140,13 +140,8 @@ export function ChatbotButton() {
   const [saisie, setSaisie] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  // Clé API — variable d'env ou saisie manuelle
-  const [cle, setCle] = useState<string>(
-    typeof window !== "undefined"
-      ? (process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? "")
-      : "",
-  );
-  const [cleTemp, setCleTemp] = useState("");
+  // Clé API — lue depuis NEXT_PUBLIC_GEMINI_API_KEY (substituée au build time par Next.js)
+  const cle = process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? "";
   const basRef = useRef<HTMLDivElement>(null);
 
   // Scroll automatique vers le bas à chaque nouveau message
@@ -160,9 +155,8 @@ export function ChatbotButton() {
     const question = saisie.trim();
     if (!question || envoi) return;
 
-    const cleActive = cle || cleTemp;
-    if (!cleActive) {
-      setErreur(t("chatbot.cleGeminiManquante"));
+    if (!cle) {
+      setErreur("Clé NEXT_PUBLIC_GEMINI_API_KEY manquante dans .env.local");
       return;
     }
 
@@ -172,10 +166,8 @@ export function ChatbotButton() {
     setErreur(null);
 
     try {
-      const reponse = await appelGemini(cleActive, messages, question);
+      const reponse = await appelGemini(cle, messages, question);
       setMessages((prev) => [...prev, { role: "assistant", texte: reponse }]);
-      // Mémoriser la clé temporaire si elle a fonctionné
-      if (!cle && cleTemp) setCle(cleTemp);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : t("chatbot.messageErreur"));
     } finally {
@@ -189,8 +181,6 @@ export function ChatbotButton() {
       envoyer();
     }
   }
-
-  const cleManquante = !cle && !cleTemp;
 
   return (
     <>
@@ -289,34 +279,6 @@ export function ChatbotButton() {
             )}
             <div ref={basRef} />
           </div>
-
-          {/* Saisie clé API si manquante */}
-          {cleManquante && (
-            <div className="border-t app-border px-4 py-2 bg-amber-50 dark:bg-amber-950/30">
-              <label className="flex flex-col gap-1">
-                <span className="text-fluid-xs font-medium text-amber-800 dark:text-amber-300">
-                  {t("chatbot.cleGeminiLabel")}
-                </span>
-                <input
-                  type="password"
-                  value={cleTemp}
-                  onChange={(e) => setCleTemp(e.target.value)}
-                  placeholder={t("chatbot.cleGeminiPlaceholder")}
-                  className="rounded-md border border-amber-300 bg-white px-2 py-1 text-fluid-xs
-                             focus:outline-none focus:ring-1 focus:ring-amber-400
-                             dark:bg-paa-navy-900 dark:text-white"
-                />
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-fluid-xs text-amber-700 underline dark:text-amber-300"
-                >
-                  {t("chatbot.cleGeminiInfo")}
-                </a>
-              </label>
-            </div>
-          )}
 
           {/* Zone de saisie */}
           <div className="flex items-end gap-2 border-t app-border px-3 py-2">
