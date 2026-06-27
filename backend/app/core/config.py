@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     # définir un volume persistant et pointer cette variable dessus.
     gpx_storage_dir: str = Field(default="./data/gpx", alias="GPX_STORAGE_DIR")
 
+    # === Chatbot IA ===
+    # Clé Anthropic pour le chatbot Claude (optionnelle — chatbot bascule sur Gemini si absente)
+    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+
     # === Sécurité de l'API ===
     api_secret_key: str = Field(..., alias="API_SECRET_KEY")
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")

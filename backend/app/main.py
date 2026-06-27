@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agregation import router as agregation_router
+from app.api.chatbot import router as chatbot_router
 from app.api.import_data import router as import_router
 from app.api.carte import router as carte_router
 from app.api.carte import router_ws as carte_ws_router
@@ -220,6 +221,14 @@ _TAGS_METADATA = [
         ),
     },
     {
+        "name": "chatbot",
+        "description": (
+            "Relais vers l'API Claude (Anthropic) pour le chatbot guide intégré. "
+            "La clé ANTHROPIC_API_KEY reste côté serveur — jamais exposée au navigateur. "
+            "Gemini est appelé directement depuis le frontend (clé publique NEXT_PUBLIC_GEMINI_API_KEY)."
+        ),
+    },
+    {
         "name": "diagnostic",
         "description": "Tests ponctuels des sources de mesure (Google, OSRM).",
     },
@@ -298,4 +307,5 @@ app.include_router(rapport_router)
 app.include_router(predire_router)
 app.include_router(administration_router)
 app.include_router(incidents_router)
+app.include_router(chatbot_router)
 app.include_router(diag_router)
