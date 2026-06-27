@@ -471,3 +471,111 @@ railway variables set ALLOWED_ORIGINS="https://frontend-production-xxxx.up.railw
 # 3. Redéployer le backend
 railway up --service backend --detach
 ```
+
+
+---
+
+## Déploiement OSRM permanent sur Render
+
+> Durée : ~30 min (compte Render + 1er démarrage pour l'indexation).
+> Coût : plan **Standard** à **25 $/mois** (2 Go RAM indispensables pour OSRM)
+> + **Persistent Disk 5 Go à 1,25 $/mois** = ~**26,25 $/mois** total.
+> Le plan Starter (512 Mo) est insuffisant — l'indexation plante par OOM.
+
+### Étape 1 — Créer un compte Render
+
+Aller sur <https://render.com> → **Get Started for Free** → s'inscrire
+(email ou GitHub). Ajouter une carte bancaire (pas de débit immédiat
+pour les services Standard tant qu'on ne dépasse pas le plan).
+
+### Étape 2 — Créer le service OSRM
+
+1. Dashboard Render → **New → Web Service**
+2. Choisir **"Deploy an existing image or a public Git repo"** →
+   connecter le dépôt GitHub `jasonemmanue/PAA_Project`
+3. Paramètres :
+   - **Name** : `paa-osrm`
+   - **Region** : `Frankfurt (EU Central)` — meilleure latence vers Abidjan
+   - **Branch** : `main`
+   - **Runtime** : `Docker`
+   - **Dockerfile Path** : `./osrm-render/Dockerfile`
+   - **Docker Context** : `./osrm-render`
+   - **Instance Type** : `Standard` (2 Go RAM, 1 CPU) — **obligatoire**
+4. Cliquer **Advanced** → **Add Disk** :
+   - **Name** : `osrm-data`
+   - **Mount Path** : `/data`
+   - **Size** : `5 GB`
+5. **Create Web Service**
+
+### Étape 3 — Attendre le premier démarrage (10-20 min)
+
+Au premier lancement, le script `entrypoint.sh` :
+1. Télécharge `ivory-coast-latest.osm.pbf` depuis Geofabrik (~50 Mo)
+2. Exécute `osrm-extract` + `osrm-partition` + `osrm-customize` (~10-15 min)
+3. Lance `osrm-routed` sur le port 5000
+
+Vous pouvez suivre les logs en temps réel dans l'onglet **Logs** du service.
+Le service devient **Healthy** quand `osrm-routed` répond sur `/route/v1/...`.
+
+Dès le 2ème démarrage, les fichiers indexés sont sur le Persistent Disk → 
+démarrage en **< 10 secondes** sans re-téléchargement.
+
+### Étape 4 — Récupérer l'URL publique
+
+Une fois **Healthy** (pastille verte), l'URL publique est visible en haut
+du dashboard Render, ex. :
+
+```
+https://paa-osrm.onrender.com
+```
+
+Tester avec curl :
+```bash
+curl "https://paa-osrm.onrender.com/route/v1/driving/-4.028563,5.328119;-3.98196,5.258705?overview=full" | head -c 200
+# Réponse attendue : {"code":"Ok","routes":[{"geometry":"...
+```
+
+### Étape 5 — Connecter Railway au nouvel OSRM
+
+```bash
+railway variables set OSRM_BASE_URL=https://paa-osrm.onrender.com --service backend
+```
+
+Railway redémarre automatiquement le service après le `variables set`.
+
+### Étape 6 — Regénérer les polylines (Console Railway)
+
+```bash
+python -m app.complete_troncons
+# → [OK] T1 CARENA → Palm Beach : 939 chars
+# → [OK] T2 Palm Beach → CARENA : 1081 chars
+# ...
+```
+
+Hard refresh (`Ctrl+Shift+R`) sur la carte → les tracés suivent les vraies routes.
+
+### Étape 7 — Workflow pour chaque nouveau tronçon ou sous-tronçon
+
+1. Créer le tronçon/sous-tronçon via la page Administration
+2. Sur la **Console Railway** du service backend :
+   ```bash
+   python -m app.complete_troncons
+   ```
+3. Hard refresh la carte → nouveau tracé routier visible
+
+> OSRM reste en ligne en permanence sur Render — plus besoin de tunnel
+> Cloudflare ni de machine locale allumée. L'URL Railway pointe vers
+> Render de façon stable.
+
+### Note sur le plan Render
+
+| Plan | RAM | CPU | Prix/mois | Compatible OSRM |
+|------|-----|-----|-----------|-----------------|
+| Free | 512 Mo | 0.1 | 0 $ | ❌ OOM lors de l'indexation |
+| Starter | 512 Mo | 0.5 | 7 $ | ❌ OOM lors de l'indexation |
+| Standard | 2 Go | 1 | 25 $ | ✅ Recommandé |
+| Pro | 4 Go | 2 | 85 $ | ✅ Confort (pas nécessaire) |
+
+> Si le coût est un frein pour la démo, utiliser le tunnel Cloudflare ponctuel
+> (procédure dans CLAUDE.md § 8.5.1) pour générer les polylines, puis couper.
+> Les polylines persistées en base Railway restent affichées même sans OSRM.

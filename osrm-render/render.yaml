@@ -1,0 +1,17 @@
+# Configuration Render pour le service OSRM PAA-Traverse.
+# À copier à la racine du dépôt sous le nom render.yaml si vous utilisez
+# le déploiement Blueprint Render (sinon configurer manuellement via la UI).
+
+services:
+  - type: web
+    name: paa-osrm
+    runtime: docker
+    dockerfilePath: ./osrm-render/Dockerfile
+    dockerContext: ./osrm-render
+    plan: standard          # 2 Go RAM — nécessaire pour l'indexation OSRM
+    healthCheckPath: /route/v1/driving/-4.0,5.3;-3.98,5.26?overview=false
+    disk:
+      name: osrm-data
+      mountPath: /data
+      sizeGB: 5             # Suffit largement pour les fichiers Côte d'Ivoire (~600 Mo)
+    envVars: []             # Aucune variable d'environnement requise
