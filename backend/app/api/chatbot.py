@@ -1,20 +1,25 @@
-"""Endpoint chatbot — relais vers l'API Claude (Anthropic).
+"""Endpoint chatbot — relais vers l'API Claude (Anthropic) avec RAG.
 
 L'API Claude exige une clé secrète qui ne doit pas être exposée dans le
 navigateur. Ce routeur relaie les messages depuis le frontend vers Claude
 en maintenant la clé côté serveur (ANTHROPIC_API_KEY).
 
-Gemini est appelé directement depuis le frontend (clé publique NEXT_PUBLIC_GEMINI_API_KEY)
-et n'a pas besoin de passer par ce routeur.
+RAG (Retrieval-Augmented Generation) : avant chaque appel Claude, le module
+`app.rag.contexte` détecte les intentions de la question et injecte les
+données réelles de la base (état trafic, temps de traversée, heures optimales,
+incidents actifs, statistiques semaine) directement dans le message utilisateur.
 """
 
 import logging
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.db.session import get_db
+from app.rag.contexte import construire_contexte_rag
 
 logger = logging.getLogger("paa.chatbot")
 
@@ -106,20 +111,35 @@ class ReponseChatbot(BaseModel):
     modele: str
 
 
-@router.post("/message", response_model=ReponseChatbot, summary="Relais vers Claude")
-async def relais_claude(requete: RequeteChatbot) -> ReponseChatbot:
-    """Envoie une question à Claude (Anthropic) et retourne la réponse.
+@router.post("/message", response_model=ReponseChatbot, summary="Relais vers Claude avec RAG")
+async def relais_claude(
+    requete: RequeteChatbot,
+    db: Session = Depends(get_db),
+) -> ReponseChatbot:
+    """Envoie une question à Claude (Anthropic) enrichie des données réelles (RAG).
 
-    La clé ANTHROPIC_API_KEY reste côté serveur — elle n'est jamais exposée
-    au navigateur.
+    Avant l'appel Claude, le module RAG détecte l'intention de la question
+    et injecte les données temps réel (trafic, temps de traversée, heures
+    optimales, incidents actifs, statistiques semaine) directement dans
+    le message utilisateur.
+
+    La clé ANTHROPIC_API_KEY reste côté serveur — jamais exposée au navigateur.
     """
     settings = get_settings()
 
     if not settings.anthropic_api_key:
         raise HTTPException(
             status_code=503,
-            detail="ANTHROPIC_API_KEY non configurée sur le serveur. Utilisez Gemini à la place.",
+            detail="ANTHROPIC_API_KEY non configurée sur le serveur.",
         )
+
+    # RAG : enrichir la question avec les données réelles de la DB
+    contexte_rag = await construire_contexte_rag(requete.question, db)
+    if contexte_rag:
+        question_enrichie = f"{contexte_rag}\n\nQuestion de l'utilisateur : {requete.question}"
+        logger.info("RAG activé pour la question (intentions détectées, contexte injecté)")
+    else:
+        question_enrichie = requete.question
 
     # Construction des messages au format Anthropic Messages API
     messages = [
@@ -129,7 +149,7 @@ async def relais_claude(requete: RequeteChatbot) -> ReponseChatbot:
         }
         for m in requete.historique
     ]
-    messages.append({"role": "user", "content": requete.question})
+    messages.append({"role": "user", "content": question_enrichie})
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
