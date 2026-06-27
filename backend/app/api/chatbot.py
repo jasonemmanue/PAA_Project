@@ -50,7 +50,7 @@ Toutes les heures, 24h/24, le système appelle automatiquement l'API Google Rout
 LES 8 PAGES DE L'APPLICATION
 ══════════════════════════════════════
 
-PAGE 1 — CARTE (page d'accueil, accessible via le menu "Carte")
+PAGE 1 — CARTE (page d'accueil, accessible via le menu "Accueil / Carte")
 La carte interactive affiche les 6 tronçons colorés selon leur état actuel : vert pour fluide, rouge pour congestionné, gris pour indéterminé. Le panneau latéral résume les temps et l'état de chaque tronçon. Les incidents actifs de moins de 6 heures sont affichés en superposition sous forme de cercles colorés. L'application zoome automatiquement sur le tronçon le plus congestionné au chargement. Un clic sur un tronçon affiche le pourcentage rouge/orange/vert et l'heure exacte de la dernière mesure.
 
 PAGE 2 — INDICATEURS (accessible via le menu "Indicateurs")
