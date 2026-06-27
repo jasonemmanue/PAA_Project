@@ -156,18 +156,21 @@ async def get_heure_optimale(
     creneaux: list[dict] = []
 
     # --- Source 1 : profils horaires (agrégats nocternes) ---
+    # Fenêtre 30 j uniquement — évite de mélanger les 3 fenêtres (30/60/90)
+    # qui produiraient un triple-comptage et feraient converger min/max vers la moyenne.
+    # min() et max() agrégés sur les jours filtrés pour obtenir les vraies bornes.
     rows_profils = (
         db.execute(
             select(
                 ProfilHoraire.heure,
-                func.avg(ProfilHoraire.mediane).label("mediane"),
                 func.avg(ProfilHoraire.moyenne).label("moyenne"),
-                func.avg(ProfilHoraire.min).label("p_min"),
-                func.avg(ProfilHoraire.max).label("p_max"),
+                func.min(ProfilHoraire.min).label("p_min"),
+                func.max(ProfilHoraire.max).label("p_max"),
                 func.sum(ProfilHoraire.nb_mesures).label("nb"),
             )
             .where(
                 ProfilHoraire.troncon_id == troncon_id,
+                ProfilHoraire.fenetre_jours == 30,
                 ProfilHoraire.jour_semaine.in_(jours_filtre),
                 ProfilHoraire.heure >= _H_DEBUT,
                 ProfilHoraire.heure < _H_FIN,
