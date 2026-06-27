@@ -18,7 +18,7 @@ résolu en (1er du mois, dernier jour du mois) côté serveur.
 from __future__ import annotations
 
 import re
-from datetime import datetime, time, timezone
+from datetime import date as DateType, datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -59,6 +59,21 @@ def _parser_campagne(libelle: str) -> tuple[datetime, datetime]:
     fuseau_local = ZoneInfo(get_settings().tz)
     debut_utc = datetime.combine(debut, time.min, tzinfo=fuseau_local).astimezone(timezone.utc)
     fin_utc = datetime.combine(fin, time.max, tzinfo=fuseau_local).astimezone(timezone.utc)
+    return debut_utc, fin_utc
+
+
+def _bornes_utc(
+    campagne: str,
+    debut_override: DateType | None,
+    fin_override: DateType | None,
+) -> tuple[datetime, datetime]:
+    """Résout les bornes UTC en tenant compte des overrides optionnels debut/fin."""
+    debut_utc, fin_utc = _parser_campagne(campagne)
+    fuseau_local = ZoneInfo(get_settings().tz)
+    if debut_override is not None:
+        debut_utc = datetime.combine(debut_override, time.min, tzinfo=fuseau_local).astimezone(timezone.utc)
+    if fin_override is not None:
+        fin_utc = datetime.combine(fin_override, time.max, tzinfo=fuseau_local).astimezone(timezone.utc)
     return debut_utc, fin_utc
 
 
@@ -113,9 +128,11 @@ async def get_temps_traversee(
     campagne: str = Query(
         ..., description="Format 'AAAA-MM', ex. '2026-02' pour février 2026",
     ),
+    debut: DateType | None = Query(None, description="Date de début (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
+    fin: DateType | None = Query(None, description="Date de fin (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    debut_utc, fin_utc = _parser_campagne(campagne)
+    debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
     stats = rapport_paa.temps_traversee_par_troncon(db, debut_utc, fin_utc)
     return {
         "campagne": campagne,
@@ -159,9 +176,11 @@ async def get_temps_traversee(
 )
 async def get_zones_congestionnees(
     campagne: str = Query(..., description="Format 'AAAA-MM'."),
+    debut: DateType | None = Query(None, description="Date de début (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
+    fin: DateType | None = Query(None, description="Date de fin (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    debut_utc, fin_utc = _parser_campagne(campagne)
+    debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
     cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
     return {
         "campagne": campagne,

@@ -384,18 +384,24 @@ export function getRapportTempsTheoriques(): Promise<RapportTempsTheoriques> {
 
 export function getRapportTempsTraversee(
   campagne: string,
+  debut?: string,
+  fin?: string,
 ): Promise<RapportTempsTraversee> {
-  return appel<RapportTempsTraversee>(
-    `/rapport/temps-traversee?campagne=${encodeURIComponent(campagne)}`,
-  );
+  const p = new URLSearchParams({ campagne });
+  if (debut) p.set("debut", debut);
+  if (fin) p.set("fin", fin);
+  return appel<RapportTempsTraversee>(`/rapport/temps-traversee?${p}`);
 }
 
 export function getRapportZonesCongestionnees(
   campagne: string,
+  debut?: string,
+  fin?: string,
 ): Promise<RapportZonesCongestionnees> {
-  return appel<RapportZonesCongestionnees>(
-    `/rapport/zones-congestionnees?campagne=${encodeURIComponent(campagne)}`,
-  );
+  const p = new URLSearchParams({ campagne });
+  if (debut) p.set("debut", debut);
+  if (fin) p.set("fin", fin);
+  return appel<RapportZonesCongestionnees>(`/rapport/zones-congestionnees?${p}`);
 }
 
 export function getRapportGraphique(

@@ -36,8 +36,21 @@ function defautCampagne(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function premierJourMois(cam: string): string {
+  return `${cam}-01`;
+}
+
+function dernierJourMois(cam: string): string {
+  const [annee, mois] = cam.split("-").map(Number);
+  const j = new Date(annee, mois, 0).getDate(); // dernier jour du mois
+  return `${annee}-${String(mois).padStart(2, "0")}-${String(j).padStart(2, "0")}`;
+}
+
 export function PageRapport() {
-  const [campagne, setCampagne] = useState<string>(defautCampagne());
+  const campagneDefaut = defautCampagne();
+  const [campagne, setCampagne] = useState<string>(campagneDefaut);
+  const [debutRange, setDebutRange] = useState<string>(premierJourMois(campagneDefaut));
+  const [finRange, setFinRange] = useState<string>(dernierJourMois(campagneDefaut));
   const [theoriques, setTheoriques] = useState<RapportTempsTheoriques | null>(null);
   const [traversee, setTraversee] = useState<RapportTempsTraversee | null>(null);
   const [zones, setZones] = useState<RapportZonesCongestionnees | null>(null);
@@ -52,8 +65,8 @@ export function PageRapport() {
       const [t, tt, ttv, zc] = await Promise.all([
         api.troncons(),
         api.rapportTempsTheoriques(),
-        api.rapportTempsTraversee(campagne),
-        api.rapportZonesCongestionnees(campagne),
+        api.rapportTempsTraversee(campagne, debutRange, finRange),
+        api.rapportZonesCongestionnees(campagne, debutRange, finRange),
       ]);
       setTroncons(Array.isArray(t) ? t : []);
       setTheoriques(tt);
@@ -64,7 +77,7 @@ export function PageRapport() {
     } finally {
       setChargement(false);
     }
-  }, [campagne]);
+  }, [campagne, debutRange, finRange]);
 
   useEffect(() => {
     recharger();
@@ -77,24 +90,65 @@ export function PageRapport() {
         sousTitre="Reproduit la structure officielle du rapport DEESP/DEEF (17 tableaux, 12 graphiques)"
       />
 
-      {/* Sélecteur de campagne */}
-      <div className="paa-card flex flex-wrap items-end gap-4 p-fluid-4">
-        <label className="flex flex-col gap-1">
-          <span className="text-fluid-xs font-medium app-text-muted">
-            Campagne (AAAA-MM)
-          </span>
-          <input
-            type="month"
-            value={campagne}
-            onChange={(e) => setCampagne(e.target.value)}
-            className="rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
-                       text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
-                       dark:text-paa-blue-100 min-h-[40px]"
-          />
-        </label>
-        <div className="text-fluid-xs app-text-muted">
-          La campagne couvre du 1er au dernier jour du mois sélectionné. <br />
-          Méthodologie DEESP : 1 mesure/heure × 12 heures × tronçons surveillés × ~30 jours.
+      {/* Sélecteur de campagne + plage de dates */}
+      <div className="paa-card flex flex-col gap-4 p-fluid-4">
+        {/* Ligne 1 : mois + description */}
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-fluid-xs font-medium app-text-muted">
+              Campagne (AAAA-MM)
+            </span>
+            <input
+              type="month"
+              value={campagne}
+              onChange={(e) => {
+                const c = e.target.value;
+                setCampagne(c);
+                setDebutRange(premierJourMois(c));
+                setFinRange(dernierJourMois(c));
+              }}
+              className="rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
+                         text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
+                         dark:text-paa-blue-100 min-h-[40px]"
+            />
+          </label>
+          <p className="text-fluid-xs app-text-muted self-end pb-1">
+            La campagne couvre du 1er au dernier jour du mois sélectionné.<br />
+            Méthodologie DEESP : 1 mesure/heure × 12 heures × tronçons surveillés × ~30 jours.
+          </p>
+        </div>
+
+        {/* Ligne 2 : plage de dates (sous-sélection à l'intérieur du mois) */}
+        <div className="flex flex-wrap items-end gap-3 border-t app-border pt-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-fluid-xs font-medium app-text-muted">Date de début</span>
+            <input
+              type="date"
+              value={debutRange}
+              min={premierJourMois(campagne)}
+              max={finRange}
+              onChange={(e) => setDebutRange(e.target.value)}
+              className="rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
+                         text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
+                         dark:text-paa-blue-100 min-h-[40px]"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-fluid-xs font-medium app-text-muted">Date de fin</span>
+            <input
+              type="date"
+              value={finRange}
+              min={debutRange}
+              max={dernierJourMois(campagne)}
+              onChange={(e) => setFinRange(e.target.value)}
+              className="rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
+                         text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
+                         dark:text-paa-blue-100 min-h-[40px]"
+            />
+          </label>
+          <p className="text-fluid-xs app-text-muted self-end pb-1">
+            Affine l'analyse sur une sous-période précise du mois — le contenu se met à jour automatiquement.
+          </p>
         </div>
       </div>
 
