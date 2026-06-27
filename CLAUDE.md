@@ -264,6 +264,8 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P8.3** | ✅ Terminée | **Frontend page Incidents** — `/incidents/page.tsx`, carte Leaflet markers colorés par sévérité, liste chronologique filtrée, 3 KPI, panneau latéral détail, i18n FR/EN, polling 5 min. |
 | **P8.4** | ✅ Terminée | **Overlay carte principale** — incidents actifs (<6 h) affichés en CircleMarkers sur la carte Accueil, badge rouge compteur dans la nav sidebar + drawer mobile, polling stats 5 min. |
 | **P8.5** | ✅ Terminée | **Qualité & exports** — migration 0012 `fiabilite_source` (0..1) par source, déduplication cross-sources dans `enrichir_incidents()`, `GET /incidents/export` (CSV 12 colonnes), bouton Exporter CSV dans les filtres. |
+| **P9.1** | ✅ Terminée (2026-06-27) | **Chatbot guide — Claude via backend** — endpoint `POST /chatbot/message` + `GET /chatbot/disponibilite`, clé `ANTHROPIC_API_KEY` côté serveur, prompt système professionnel sans markdown. Frontend simplifié : Claude uniquement, plus de sélecteur Gemini. |
+| **P9.2** | ✅ Terminée (2026-06-27) | **Fix bug heure-optimale MIN=MOYEN=MAX** — requête `predire.py` corrigée : `min(ProfilHoraire.min)` / `max(ProfilHoraire.max)` + filtre `fenetre_jours=30` pour éviter le triple-comptage des 3 fenêtres. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -2504,6 +2506,113 @@ Header HTTP : Content-Disposition: attachment; filename="incidents_paa_YYYYMMDD.
 Bouton "Exporter CSV" dans FiltresIncidents (respectant les filtres actifs).
 Appelle GET /incidents/export avec les mêmes paramètres de filtre.
 ```
+
+---
+
+## 11. Phase P9 — Chatbot guide intégré (Claude via backend)
+
+> Phase livrée le **2026-06-27**.
+
+### 11.1 Architecture
+
+Le chatbot est accessible via le bouton flottant **Aide** (coin bas-droit de toutes les pages).
+Il utilise exclusivement l'API Claude (Anthropic) via un relais backend — la clé API ne
+transite jamais dans le navigateur.
+
+```
+Navigateur (ChatbotButton.tsx)
+  └── POST /chatbot/message  →  backend FastAPI  →  api.anthropic.com
+                                 (ANTHROPIC_API_KEY côté serveur)
+```
+
+### 11.2 Backend — `backend/app/api/chatbot.py`
+
+| Endpoint | Méthode | Rôle |
+|---|---|---|
+| `/chatbot/message` | POST | Envoie une question à Claude et retourne la réponse |
+| `/chatbot/disponibilite` | GET | Indique si `ANTHROPIC_API_KEY` est configurée (`{"claude_disponible": true/false}`) |
+
+**Modèle Claude utilisé :** `claude-sonnet-4-6`
+
+**Schéma de la requête :**
+```json
+{
+  "historique": [{"role": "user"|"assistant", "texte": "..."}],
+  "question": "texte de la question (max 2000 caractères)"
+}
+```
+
+**Schéma de la réponse :**
+```json
+{
+  "reponse": "texte de la réponse de Claude",
+  "modele": "claude-sonnet-4-6"
+}
+```
+
+**Gestion des erreurs :**
+- `503` si `ANTHROPIC_API_KEY` absente du serveur
+- `502` si l'API Claude est injoignable ou renvoie une erreur HTTP
+
+### 11.3 Prompt système — style professionnel
+
+Le prompt interdit explicitement tout markdown (`#`, `*`, `-`, backticks) et impose
+une rédaction en prose fluide avec paragraphes. Structure recommandée pour les réponses
+longues : phrase introductive en MAJUSCULES suivie d'un point, puis le texte.
+
+Le prompt couvre toutes les fonctionnalités de l'application :
+- Les 3 axes surveillés et les 6 tronçons
+- La méthode de collecte (Google Routes, 1 mesure/heure, 24h/24)
+- Le critère de congestion DEESP (couleurs Google Maps)
+- Les 8 pages de l'interface (Carte, Indicateurs, Rapport DEESP, Fiabilité,
+  Temps de traversée, Heure optimale, Incidents, Administration)
+- Les conseils opérationnels (planification convois, export PDF, calibration GPX)
+
+### 11.4 Frontend — `frontend/components/chatbot/ChatbotButton.tsx`
+
+- Bouton flottant fixe en bas à droite (`z-[1200]`) sur toutes les pages
+- Fenêtre de chat : 70 vh max, largeur fluide `clamp(300px, 90vw, 420px)`
+- 4 questions suggérées au démarrage (clic → remplit le champ de saisie)
+- Envoi par `Enter` (sans Shift) ou clic sur le bouton
+- Indicateur de frappe animé (`…`) pendant l'appel Claude
+- Erreur affichée en rouge avec le détail renvoyé par le backend
+- Historique de conversation conservé en mémoire (réinitialisé à la fermeture)
+
+### 11.5 Variable d'environnement requise
+
+| Variable | Côté | Rôle |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Backend Railway | Clé API Anthropic — **ne jamais exposer côté frontend** |
+
+Injection Railway :
+```bash
+railway variables set ANTHROPIC_API_KEY=sk-ant-... --service backend
+```
+
+La clé est lue au démarrage via `pydantic-settings` (`app/core/config.py`).
+Un redémarrage du service est nécessaire après injection.
+
+### 11.6 Fix bug heure optimale — MIN = MOYEN = MAX (P9.2)
+
+**Problème :** dans `GET /predire/heure-optimale`, la requête SQL utilisait
+`func.avg(ProfilHoraire.min)` et `func.avg(ProfilHoraire.max)`. En moyennant
+les minimums et maximums sur 5 jours ouvrables × 3 fenêtres (30/60/90 j) = 15 lignes,
+les valeurs convergeaient vers la moyenne → MIN = MOYEN = MAX dans le tableau.
+
+**Correction appliquée (`backend/app/api/predire.py`) :**
+```python
+# Avant (bug)
+func.avg(ProfilHoraire.min).label("p_min"),
+func.avg(ProfilHoraire.max).label("p_max"),
+
+# Après (correct)
+func.min(ProfilHoraire.min).label("p_min"),   # vrai minimum global
+func.max(ProfilHoraire.max).label("p_max"),   # vrai maximum global
+# + filtre ProfilHoraire.fenetre_jours == 30  (évite le triple-comptage)
+```
+
+**Résultat :** les créneaux affichent maintenant des bornes réelles, par exemple
+`07h-08h → min 22.9 min / moyen 23.6 min / max 24.4 min`.
 
 ---
 

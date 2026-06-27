@@ -36,7 +36,7 @@
 
 ## 🗺️ Carnet d'exécution du hackathon
 
-Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-23 :
+Le projet suit un découpage en phases. À jour au **2026-06-27** :
 
 | Phase | Statut | Description rapide |
 |-------|--------|--------------------|
@@ -48,9 +48,11 @@ Le projet suit un découpage en 7 phases (P1 → P7). À jour au 2026-06-23 :
 | **P6.4** | ✅ Livré | **Administration** — ajout de tronçons sans redéploiement |
 | **P6.4bis** | ✅ Livré (2026-06-23) | **Mesure sous-tronçons** (T1A, T1B, T1C…) — scheduler, migration 0009, carte Accueil + Fiabilité, Tableau 16 ventilé |
 | **Polylines réelles** | ✅ En prod | Tracés routiers OSRM persistés en Railway via tunnel Cloudflare (2026-06-23) |
-| **P6.9** | ✅ Livré (2026-06-23) | **Segments GPX libres — précision progressive** — import de sous-portions de parcours sans obligation de couvrir un tronçon complet, accumulation par session, indice de confiance, miroir aller/retour, UI page Fiabilité |
+| **P6.9** | ✅ Livré (2026-06-23) | **Segments GPX libres — précision progressive** — import de sous-portions de parcours, accumulation par session, indice de confiance, miroir aller/retour |
 | P6.5 → P7.3 | ⏳ À faire | ML Random Forest (optionnel), tests, déploiement Vercel, rapport final |
-| **P8.1 → P8.5** | ⏳ À faire (2026-06-24) | **Module Incidents & Accidents** — scraping automatique presse ivoirienne, géolocalisation zone portuaire, page dédiée + overlay carte |
+| **P8.1 → P8.5** | ✅ Livrées (2026-06-24) | **Module Incidents & Accidents** — scraping automatique presse ivoirienne, NLP légère, géolocalisation, page dédiée + overlay carte, export CSV |
+| **P9.1** | ✅ Livré (2026-06-27) | **Chatbot guide — Claude (Anthropic)** — bouton Aide flottant sur toutes les pages, relais backend sécurisé (`POST /chatbot/message`), prompt professionnel sans markdown, réponses en prose fluide |
+| **P9.2** | ✅ Livré (2026-06-27) | **Fix heure optimale** — correction du bug MIN = MOYEN = MAX dans le tableau des créneaux horaires (`min(ProfilHoraire.min)` / `max(ProfilHoraire.max)` + filtre `fenetre_jours=30`) |
 
 > Les polylines des 6 tronçons suivent maintenant les vraies routes
 > (boulevard de Marseille, pont Houphouët-Boigny, avenue Christiani…) —
@@ -1488,6 +1490,7 @@ Puis on ouvre `backend/.env` dans un éditeur et on remplit :
 | `POSTGRES_PASSWORD`     | Mot de passe de la base de données                      | Inventer un mot de passe long           |
 | `API_SECRET_KEY`        | Clé secrète interne du backend                          | Inventer une chaîne aléatoire de ≥ 32 caractères |
 | `GOOGLE_ROUTES_API_KEY` | Clé qui autorise l'appel à Google Routes                | Créer sur [Google Cloud Console](https://console.cloud.google.com/) |
+| `ANTHROPIC_API_KEY`     | Clé pour le chatbot guide intégré (Claude)              | Créer sur [console.anthropic.com](https://console.anthropic.com/) — optionnelle, le chatbot est désactivé si absente |
 
 > ⚠️ Si vous modifiez `POSTGRES_PASSWORD`, n'oubliez pas de le copier aussi
 > dans la ligne `DATABASE_URL` juste en dessous.
@@ -1959,6 +1962,34 @@ frontend/components/incidents/
   CarteIncidents.tsx        # carte Leaflet markers incidents
   ListeIncidents.tsx        # liste chronologique
   FiltresIncidents.tsx      # filtres type/période/tronçon
+```
+
+---
+
+### P9 — Chatbot guide intégré (Claude)
+
+```
+backend/app/api/
+  chatbot.py                # POST /chatbot/message (relais Claude)
+                            # GET  /chatbot/disponibilite
+
+frontend/components/chatbot/
+  ChatbotButton.tsx         # bouton flottant + fenêtre de chat
+```
+
+Le chatbot utilise l'API Claude (Anthropic) via un endpoint backend sécurisé.
+La clé `ANTHROPIC_API_KEY` reste côté serveur — elle n'est jamais exposée dans le navigateur.
+
+**Variables d'environnement :**
+
+| Variable | Côté | Valeur |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Backend | Clé API Anthropic (sk-ant-...) |
+
+**Activer en production Railway :**
+```bash
+railway variables set ANTHROPIC_API_KEY=sk-ant-... --service backend
+# Puis redémarrer le service pour que la clé soit lue
 ```
 
 ### Sources surveillées
