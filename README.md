@@ -51,7 +51,7 @@ Le projet suit un découpage en phases. À jour au **2026-06-27** :
 | **P6.9** | ✅ Livré (2026-06-23) | **Segments GPX libres — précision progressive** — import de sous-portions de parcours, accumulation par session, indice de confiance, miroir aller/retour |
 | P6.5 → P7.3 | ⏳ À faire | ML Random Forest (optionnel), tests, déploiement Vercel, rapport final |
 | **P8.1 → P8.5** | ✅ Livrées (2026-06-24) | **Module Incidents & Accidents** — scraping automatique presse ivoirienne, NLP légère, géolocalisation, page dédiée + overlay carte, export CSV |
-| **P9.1** | ✅ Livré (2026-06-27) | **Chatbot guide — Claude (Anthropic)** — bouton Aide flottant sur toutes les pages, relais backend sécurisé (`POST /chatbot/message`), prompt professionnel sans markdown, réponses en prose fluide |
+| **P9.1** | ✅ Livré (2026-06-27) | **Chatbot guide — Claude (Anthropic)** — bouton Aide flottant sur toutes les pages, relais backend sécurisé (`POST /chatbot/message`), prompt professionnel sans markdown. Prompt enrichi avec le rôle précis des 8 pages : libellés exacts du menu (`Accueil / Carte`, `Indicateurs`, `Rapport DEESP`, `Fiabilité`, `Temps de traversée`, `Heure optimale`, `Incidents`, `Administration`), exemples d'usage portuaire et 4 conseils opérationnels clés. |
 | **P9.2** | ✅ Livré (2026-06-27) | **Fix heure optimale** — correction du bug MIN = MOYEN = MAX dans le tableau des créneaux horaires (`min(ProfilHoraire.min)` / `max(ProfilHoraire.max)` + filtre `fenetre_jours=30`) |
 
 > Les polylines des 6 tronçons suivent maintenant les vraies routes

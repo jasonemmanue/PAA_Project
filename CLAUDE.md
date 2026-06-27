@@ -2560,13 +2560,38 @@ Le prompt interdit explicitement tout markdown (`#`, `*`, `-`, backticks) et imp
 une rédaction en prose fluide avec paragraphes. Structure recommandée pour les réponses
 longues : phrase introductive en MAJUSCULES suivie d'un point, puis le texte.
 
-Le prompt couvre toutes les fonctionnalités de l'application :
-- Les 3 axes surveillés et les 6 tronçons
+**Mise à jour 2026-06-27** : le prompt a été enrichi pour documenter avec précision
+le rôle de chaque page, en utilisant les libellés exacts du menu de navigation
+(`nav.*.labelKey` issus de `frontend/messages/fr.json`). Les libellés vérifiés sont :
+
+| Page | Libellé menu exact | Route |
+|------|--------------------|-------|
+| Carte | `Accueil / Carte` | `/` |
+| Indicateurs | `Indicateurs` | `/indicateurs` |
+| Rapport DEESP | `Rapport DEESP` | `/rapport` |
+| Fiabilité | `Fiabilité` | `/fiabilite` |
+| Temps de traversée | `Temps de traversée` | `/prediction` |
+| Heure optimale | `Heure optimale` | `/heure-optimale` |
+| Incidents | `Incidents` | `/incidents` |
+| Administration | `Administration` | `/administration` |
+
+Le prompt couvre pour chaque page :
+- Le libellé exact du menu et la route Next.js correspondante
+- Le rôle opérationnel précis (quelle question répond cette page ?)
+- Les interactions clés (filtres, exports, imports, tableaux)
+- Des exemples concrets tirés du quotidien portuaire
+
+Il couvre aussi :
+- Les 3 axes surveillés et les 6 tronçons avec distances et temps de référence
 - La méthode de collecte (Google Routes, 1 mesure/heure, 24h/24)
-- Le critère de congestion DEESP (couleurs Google Maps)
-- Les 8 pages de l'interface (Carte, Indicateurs, Rapport DEESP, Fiabilité,
-  Temps de traversée, Heure optimale, Incidents, Administration)
-- Les conseils opérationnels (planification convois, export PDF, calibration GPX)
+- Le critère de congestion DEESP (couleurs Google Maps : rouge / orange ≥ 50 %)
+- 4 conseils opérationnels clés (planification convois, rapport mensuel,
+  analyse durée, calibration GPX)
+
+**Règle de maintenance** : si un libellé de menu est modifié dans
+`frontend/messages/fr.json` ou si une page est ajoutée/supprimée dans
+`frontend/components/layout/NavItems.tsx`, mettre à jour `SYSTEM_PROMPT`
+dans `backend/app/api/chatbot.py` en conséquence.
 
 ### 11.4 Frontend — `frontend/components/chatbot/ChatbotButton.tsx`
 
