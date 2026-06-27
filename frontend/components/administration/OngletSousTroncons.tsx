@@ -268,8 +268,17 @@ export function OngletSousTroncons({
           debut={debut}
           fin={fin}
           polylinesParent={
-            parent && parent.polyline
-              ? [{ id: parent.id, polyline: parent.polyline, couleur: parent.couleur }]
+            parent
+              ? [{
+                  id: parent.id,
+                  polyline: parent.polyline ?? null,
+                  couleur: parent.couleur,
+                  lat_origine: parent.lat_origine,
+                  lon_origine: parent.lon_origine,
+                  lat_destination: parent.lat_destination,
+                  lon_destination: parent.lon_destination,
+                  nom: parent.nom,
+                }]
               : []
           }
           onClick={handleClickCarte}

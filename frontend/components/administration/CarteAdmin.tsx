@@ -29,11 +29,22 @@ const TUILE_URL =
   process.env.NEXT_PUBLIC_TILE_URL ??
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
+interface PolylineParent {
+  id: number;
+  polyline: string | null;
+  couleur: string;
+  lat_origine?: number | null;
+  lon_origine?: number | null;
+  lat_destination?: number | null;
+  lon_destination?: number | null;
+  nom?: string;
+}
+
 interface Props {
   pointActif: "debut" | "fin" | null;
   debut: { lat: number; lon: number } | null;
   fin: { lat: number; lon: number } | null;
-  polylinesParent?: Array<{ id: number; polyline: string | null; couleur: string }>;
+  polylinesParent?: PolylineParent[];
   onClick: (lat: number, lon: number) => void;
 }
 
@@ -51,6 +62,7 @@ export function CarteAdmin({
   const markerFinRef = useRef<LeafletCircle | null>(null);
   const lignePreviewRef = useRef<LeafletPolyline | null>(null);
   const polylinesParentsRefs = useRef<LeafletPolyline[]>([]);
+  const markersParentRefs = useRef<LeafletCircle[]>([]);
   const onClickRef = useRef(onClick);
   onClickRef.current = onClick;
 
@@ -90,27 +102,90 @@ export function CarteAdmin({
     el.style.cursor = pointActif ? "crosshair" : "";
   }, [pointActif]);
 
-  // Polylines tronçons parents (référence en arrière-plan)
+  // Polylines tronçons parents + marqueurs d'extrémité (référence en arrière-plan)
   useEffect(() => {
     const L = LRef.current;
     const map = mapRef.current;
     if (!L || !map) return;
+
+    // Nettoyer les anciens tracés et marqueurs parents
     polylinesParentsRefs.current.forEach((p) => p.remove());
     polylinesParentsRefs.current = [];
+    markersParentRefs.current.forEach((m) => m.remove());
+    markersParentRefs.current = [];
+
     for (const t of polylinesParent ?? []) {
-      if (!t.polyline) continue;
-      try {
-        const coords = decoderPolyline(t.polyline);
-        if (coords.length < 2) continue;
-        const ligne = L.polyline(coords, {
-          color: t.couleur,
+      // Tracé de l'axe parent — épais, bien visible, semi-transparent
+      if (t.polyline) {
+        try {
+          const coords = decoderPolyline(t.polyline);
+          if (coords.length >= 2) {
+            const ligne = L.polyline(coords, {
+              color: t.couleur,
+              weight: 6,
+              opacity: 0.75,
+              dashArray: undefined,
+            })
+              .bindTooltip(t.nom ?? `Axe parent`, {
+                sticky: true,
+                direction: "top",
+                className: "leaflet-tooltip-paa",
+              })
+              .addTo(map);
+            polylinesParentsRefs.current.push(ligne);
+          }
+        } catch {
+          /* polyline invalide → on saute */
+        }
+      }
+
+      // Marqueur DÉBUT de l'axe parent (vert foncé avec libellé)
+      if (t.lat_origine != null && t.lon_origine != null) {
+        const m = L.circleMarker([t.lat_origine, t.lon_origine], {
+          radius: 9,
+          color: "#ffffff",
+          fillColor: "#16a34a",
+          fillOpacity: 1,
           weight: 3,
-          opacity: 0.4,
-          dashArray: "5 5",
-        }).addTo(map);
-        polylinesParentsRefs.current.push(ligne);
+        })
+          .bindTooltip(`Début axe${t.nom ? ` : ${t.nom}` : ""}`, {
+            direction: "top",
+            permanent: false,
+          })
+          .addTo(map);
+        markersParentRefs.current.push(m);
+      }
+
+      // Marqueur FIN de l'axe parent (rouge foncé avec libellé)
+      if (t.lat_destination != null && t.lon_destination != null) {
+        const m = L.circleMarker([t.lat_destination, t.lon_destination], {
+          radius: 9,
+          color: "#ffffff",
+          fillColor: "#dc2626",
+          fillOpacity: 1,
+          weight: 3,
+        })
+          .bindTooltip(`Fin axe${t.nom ? ` : ${t.nom}` : ""}`, {
+            direction: "top",
+            permanent: false,
+          })
+          .addTo(map);
+        markersParentRefs.current.push(m);
+      }
+    }
+
+    // Recadrer la vue sur l'ensemble des parents si au moins un tracé existe
+    const tousLesPoints = polylinesParentsRefs.current.flatMap((p) =>
+      (p.getLatLngs() as [number, number][]).flat()
+    );
+    if (tousLesPoints.length > 0) {
+      try {
+        const bounds = L.latLngBounds(
+          polylinesParentsRefs.current.map((p) => p.getBounds()).reduce((acc, b) => acc.extend(b))
+        );
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
       } catch {
-        /* polyline invalide → on saute */
+        /* ignore si bounds invalide */
       }
     }
   }, [polylinesParent]);
