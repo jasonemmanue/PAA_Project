@@ -44,12 +44,12 @@ export function Sidebar({
           replie ? "justify-center" : "justify-start",
         )}
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md overflow-hidden bg-paa-navy-900">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg overflow-hidden bg-paa-navy-900">
           <Image
             src="/logo-hackathon.jpg"
             alt="Port Autonome d'Abidjan"
-            width={36}
-            height={36}
+            width={48}
+            height={48}
             className="h-full w-full object-cover"
             priority
           />
