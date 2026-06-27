@@ -8,7 +8,6 @@
  */
 
 import clsx from "clsx";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -44,15 +43,12 @@ export function Sidebar({
           replie ? "justify-center" : "justify-start",
         )}
       >
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg overflow-hidden bg-paa-navy-900">
-          <Image
-            src="/logo-hackathon.jpg"
-            alt="Port Autonome d'Abidjan"
-            width={48}
-            height={48}
-            className="h-full w-full object-cover"
-            priority
-          />
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md
+                     bg-paa-navy-900 text-white font-bold text-sm"
+          aria-hidden
+        >
+          PAA
         </span>
         {!replie && (
           <span className="font-semibold text-fluid-base truncate">
