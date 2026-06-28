@@ -1725,59 +1725,46 @@ railway variables --set "COLLECT_END_HOUR=19" --service backend
   --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=*'"` —
   **sans** `alembic upgrade head`.
 
-### 8.5.1 Polylines en production — état au 2026-06-23
+### 8.5.1 Polylines en production — état au 2026-06-28
 
-> **Situation actuelle :** les polylines réelles OSRM sont **déjà persistées**
-> dans la base Railway. Aucune action n'est nécessaire pour les voir — un
-> hard refresh (`Ctrl+Shift+R`) suffit côté navigateur.
+> **Situation actuelle :** les polylines réelles OSRM sont **persistées en base
+> Railway** et **OSRM est hébergé en permanence** sur Google Cloud e2-micro
+> (cf. § 8.8). `OSRM_BASE_URL` est configurée sur Railway → tout nouveau tronçon
+> ou sous-tronçon créé via la page Administration obtient **automatiquement** sa
+> vraie polyline routière sans commande manuelle.
 
 | Tronçon (id) | Polyline | Route suivie |
 |--------------|----------|--------------|
-| 1 CARENA → Palm Beach | 939 cars | Bd de Marseille + pont HB |
-| 2 Palm Beach → CARENA | 1081 cars | Retour complet |
-| 3 Toyota CFAO → Palm Beach | 558 cars | Av. Christiani + port |
-| 4 Palm Beach → Toyota CFAO | 567 cars | Retour |
-| 5 SODECI → Palm Beach | 577 cars | Zone 4 → port |
-| 6 Palm Beach → SODECI | 580 cars | Retour |
+| 1 CARENA → Palm Beach | 940 cars | Bd de Marseille + pont HB |
+| 2 Palm Beach → CARENA | 1083 cars | Retour complet |
+| 3 Toyota CFAO → Palm Beach | 559 cars | Av. Christiani + port |
+| 4 Palm Beach → Toyota CFAO | 569 cars | Retour |
+| 5 SODECI → Palm Beach | 578 cars | Zone 4 → port |
+| 6 Palm Beach → SODECI | 582 cars | Retour |
+| 8 AGL → Grand Moulin | 92 cars | Tracé court |
 
-Ces polylines ont été générées via `python -m app.complete_troncons` lancé
-depuis la Console Railway le 2026-06-23, avec un **tunnel Cloudflare** exposant
-l'OSRM local (préféré à ngrok car le port 22 SSH était bloqué et cloudflared
-ne nécessite pas de compte).
+Ces polylines ont été (re)générées le **2026-06-28** via `python -m app.complete_troncons`
+depuis la Console Railway, avec **OSRM Google Cloud e2-micro** (cf. § 8.8) comme source.
 
-**Pour rejouer `complete_troncons` (idempotent) :**
+**Automatisme à la création (depuis le 2026-06-28) :**
 
-| Ingrédient | Source recommandée |
-|------------|-------------------|
-| OSRM local | `docker compose up osrm` (extrait Côte d'Ivoire déjà indexé localement) |
-| Tunnel HTTPS | `.\cloudflared-windows-amd64.exe tunnel --url http://localhost:5000` → URL `https://xxxx.trycloudflare.com` |
-| Variable Railway | `railway variable set "OSRM_BASE_URL=https://xxxx.trycloudflare.com" --service backend` |
+Les endpoints `POST /administration/troncons` et
+`POST /administration/troncons/{id}/sous-troncons` appellent OSRM
+**directement à la création** si `OSRM_BASE_URL` est configurée
+(`backend/app/api/administration.py` lignes 137-154 et 332-359).
+Plus besoin de relancer `complete_troncons` pour les nouveaux tronçons.
 
-```powershell
-# Windows — cloudflared dans le dossier du projet
-.\cloudflared-windows-amd64.exe tunnel --url http://localhost:5000
-# → https://xxxx.trycloudflare.com
+**`complete_troncons` reste utile pour :**
+- Régénérer en masse les polylines de tronçons existants (migration, changement d'OSRM)
+- Récupérer après une panne OSRM pendant une création
 
-railway variable set "OSRM_BASE_URL=https://xxxx.trycloudflare.com" --service backend
-
-# Console Railway
-python -m app.complete_troncons
-
-# Nettoyage
-railway variable delete OSRM_BASE_URL --service backend
-```
-
-Tableau récapitulatif des scripts de complétion des tronçons :
+Tableau récapitulatif des scripts :
 
 | Script | Coords | Polyline | Distance | Nécessite OSRM |
 |--------|--------|----------|----------|----------------|
 | `seed_troncons` | ❌ NULL | ❌ NULL | distance officielle | ❌ |
 | `set_coords_depuis_seed` | ✅ depuis `coordonnees.py` | inchangée | inchangée | ❌ |
 | `complete_troncons` | ✅ depuis `coordonnees.py` | ✅ **suivant les routes** | recalculée par OSRM | ✅ |
-
-> `complete_sans_osrm.py` (segments droits) a été **supprimé** le 2026-06-23 —
-> jugé trop pauvre visuellement. `complete_troncons` avec tunnel Cloudflare
-> ponctuel est la procédure standard désormais.
 
 ### 8.6 Première initialisation (à faire une seule fois)
 
@@ -2010,6 +1997,106 @@ Le backend bascule automatiquement en mode best-effort (cf. § 2.5) :
 - Les polylines déjà stockées en base restent affichées (pas écrasées)
 - L'endpoint P5 `/terrain/import` continue de fonctionner sans `confiance_matching`
 - `python -m app.complete_troncons` nécessite OSRM — les polylines déjà en base restent affichées (elles ne sont pas écrasées par la bascule)
+
+---
+
+### 8.8 OSRM permanent sur Google Cloud Free Tier e2-micro *(déployé le 2026-06-28)*
+
+> **État actuel :** OSRM tourne en permanence sur une VM Google Cloud e2-micro
+> (`us-central1-f`, projet `sgk-home`). `OSRM_BASE_URL=http://<IP>:5000` est
+> configuré sur Railway. **Coût : 0 €** (Free Tier permanent).
+
+#### Spécifications de la VM
+
+| Paramètre | Valeur |
+|---|---|
+| Nom | `paa-osrm` |
+| Projet GCP | `sgk-home` |
+| Type de machine | `e2-micro` (0.25–2 vCPU, 1 Go RAM) |
+| Région / Zone | `us-central1-f` (Iowa) |
+| OS | Ubuntu 22.04 LTS Minimal (x86/64) |
+| Disque | 30 Go HDD standard |
+| IP externe | statique (voir Console GCP) |
+| Port ouvert | TCP 5000 (règle pare-feu `osrm-5000`) |
+
+#### Données OSRM indexées
+
+| Fichier source | Version | Taille |
+|---|---|---|
+| `ivory-coast-latest.osm.pbf` | 2026-06-26 (Geofabrik) | 85 Mo |
+| Fichiers indexés (`*.osrm.*`) | MLD algorithm | ~600 Mo dans `~/osrm/data/` |
+
+#### Commandes de maintenance
+
+```bash
+# Vérifier que OSRM tourne (depuis SSH ou gcloud)
+docker ps | grep paa-osrm
+
+# Tester la réponse OSRM
+curl -s "http://localhost:5000/route/v1/driving/-4.028563,5.328119;-3.98196,5.258705?overview=false"
+
+# Voir les logs
+docker logs --tail 50 paa-osrm
+
+# Redémarrer si nécessaire (--restart=always le fait automatiquement au boot)
+docker restart paa-osrm
+```
+
+#### Mise à jour des données OSM (tous les 3-6 mois)
+
+```bash
+# SSH dans la VM
+cd ~/osrm/data
+wget -q --show-progress -O ivory-coast-latest.osm.pbf https://download.geofabrik.de/africa/ivory-coast-latest.osm.pbf
+
+# Ré-indexation (avec swap actif)
+docker stop paa-osrm
+docker run --rm -v ~/osrm/data:/data osrm/osrm-backend:latest osrm-extract -p /opt/car.lua /data/ivory-coast-latest.osm.pbf
+docker run --rm -v ~/osrm/data:/data osrm/osrm-backend:latest osrm-partition /data/ivory-coast-latest.osrm
+docker run --rm -v ~/osrm/data:/data osrm/osrm-backend:latest osrm-customize /data/ivory-coast-latest.osrm
+docker start paa-osrm
+```
+
+> **Note swap :** le e2-micro (1 Go RAM) nécessite un fichier swap de 2 Go pour
+> l'indexation OSRM. Le swap est créé une fois et persiste sur le disque :
+> `sudo swapon /swapfile` suffit à le réactiver après un redémarrage.
+> Ajouter `/swapfile none swap sw 0 0` dans `/etc/fstab` pour l'activation automatique.
+
+#### Connexion SSH depuis Windows (gcloud CLI)
+
+```powershell
+# Installer gcloud CLI si absent : https://cloud.google.com/sdk/docs/install
+gcloud auth login
+gcloud config set project sgk-home
+gcloud compute ssh paa-osrm --zone=us-central1-f
+```
+
+#### Intégration Railway
+
+```powershell
+# Variable déjà configurée depuis le 2026-06-28
+railway variables set OSRM_BASE_URL=http://<IP_VM>:5000 --service backend
+
+# Régénérer toutes les polylines (depuis Console Railway)
+python -m app.complete_troncons
+```
+
+#### Automatisme à la création de tronçon/sous-tronçon
+
+Depuis le **2026-06-28**, les endpoints de création appellent OSRM automatiquement :
+
+```python
+# backend/app/api/administration.py — creer_troncon (ligne ~137)
+if settings.osrm_base_url and not payload.waypoints:
+    rep = await osrm.route(origine, destination)  # polyline réelle automatique
+
+# creer_sous_troncon (ligne ~332)
+if settings.osrm_base_url:
+    rep = await osrm.route(debut, fin)  # idem
+```
+
+**`complete_troncons` n'est plus nécessaire pour les nouveaux tronçons.**
+Il reste utile uniquement pour régénérer en masse les polylines existantes.
 
 ---
 
