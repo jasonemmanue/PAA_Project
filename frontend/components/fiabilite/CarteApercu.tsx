@@ -39,6 +39,11 @@ const TUILE_URL =
 const TUILE_ATTR =
   process.env.NEXT_PUBLIC_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors";
 
+const SATELLITE_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const SATELLITE_ATTR =
+  "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community";
+
 const CENTRE_ABIDJAN: [number, number] = [5.29, -4.0];
 const ZOOM_INITIAL = 12;
 
@@ -74,6 +79,8 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
   const polylinesTraces = useRef<LeafletPolyline[]>([]);
   const marqueurs = useRef<LeafletLayer[]>([]);
   const [pret, setPret] = useState(false);
+  const [satellite, setSatellite] = useState(false);
+  const tileLayerRef = useRef<any>(null);
 
   // 1) Initialisation Leaflet (une seule fois)
   useEffect(() => {
@@ -87,7 +94,7 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
         zoom: ZOOM_INITIAL,
         scrollWheelZoom: true,
       });
-      L.tileLayer(TUILE_URL, { attribution: TUILE_ATTR, maxZoom: 19 }).addTo(map);
+      tileLayerRef.current = L.tileLayer(TUILE_URL, { attribution: TUILE_ATTR, maxZoom: 19 }).addTo(map);
       mapRef.current = map;
       setPret(true);
     })();
@@ -97,6 +104,19 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
       mapRef.current = null;
     };
   }, []);
+
+  // Bascule fond de carte OSM ↔ Satellite
+  useEffect(() => {
+    const L = LRef.current;
+    const map = mapRef.current;
+    if (!L || !map || !pret) return;
+    if (tileLayerRef.current) tileLayerRef.current.remove();
+    if (satellite) {
+      tileLayerRef.current = L.tileLayer(SATELLITE_URL, { attribution: SATELLITE_ATTR, maxZoom: 19 }).addTo(map);
+    } else {
+      tileLayerRef.current = L.tileLayer(TUILE_URL, { attribution: TUILE_ATTR, maxZoom: 19 }).addTo(map);
+    }
+  }, [satellite, pret]);
 
   // 2) Affichage de tous les tronçons surveillés (référence) — recalculé quand l'état carte change
   useEffect(() => {
@@ -333,6 +353,15 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
     >
       <div className="relative h-80 w-full overflow-hidden rounded-md sm:h-96 lg:h-[28rem]">
         <div ref={conteneurRef} className="absolute inset-0" />
+        <button
+          onClick={() => setSatellite((v) => !v)}
+          title={satellite ? "Vue OSM" : "Vue satellite"}
+          className="absolute bottom-6 left-2 z-[1050] flex items-center gap-1 rounded bg-white/95
+                     px-2 py-1 text-xs font-semibold shadow border border-gray-200
+                     hover:bg-blue-50 dark:bg-gray-800/95 dark:border-gray-600 dark:text-gray-100"
+        >
+          {satellite ? "🗺 OSM" : "🛰 Satellite"}
+        </button>
         {!aDesContenus && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-fluid-sm app-text-muted">
             {t("fiabilite.apercuPlaceholder")}

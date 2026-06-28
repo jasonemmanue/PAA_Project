@@ -37,6 +37,11 @@ const TUILE_URL =
 const TUILE_ATTR =
   process.env.NEXT_PUBLIC_TILE_ATTRIBUTION ?? "&copy; OpenStreetMap contributors";
 
+const SATELLITE_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const SATELLITE_ATTR =
+  "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community";
+
 // Centre approximatif de la zone portuaire d'Abidjan
 const CENTRE_ABIDJAN: [number, number] = [5.29, -4.0];
 const ZOOM_INITIAL = 12;
@@ -97,6 +102,8 @@ export function CarteLeaflet({
   const [etat, setEtat] = useState<CarteEtat | null>(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [satellite, setSatellite] = useState(false);
+  const tileLayerRef = useRef<any>(null);
 
   // ---- 1. Initialisation Leaflet (une seule fois)
   useEffect(() => {
@@ -120,7 +127,7 @@ export function CarteLeaflet({
         scrollWheelZoom: true,
       });
 
-      L.tileLayer(TUILE_URL, {
+      tileLayerRef.current = L.tileLayer(TUILE_URL, {
         attribution: TUILE_ATTR,
         maxZoom: 19,
       }).addTo(map);
@@ -156,6 +163,27 @@ export function CarteLeaflet({
     // onEtatChange est volontairement omis : on s'en sert juste au chargement initial
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ---- Bascule fond de carte OSM ↔ Satellite
+  useEffect(() => {
+    const L = LRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    if (tileLayerRef.current) {
+      tileLayerRef.current.remove();
+    }
+    if (satellite) {
+      tileLayerRef.current = L.tileLayer(SATELLITE_URL, {
+        attribution: SATELLITE_ATTR,
+        maxZoom: 19,
+      }).addTo(map);
+    } else {
+      tileLayerRef.current = L.tileLayer(TUILE_URL, {
+        attribution: TUILE_ATTR,
+        maxZoom: 19,
+      }).addTo(map);
+    }
+  }, [satellite]);
 
   // ---- 2. (Re)dessin des polylines et de la heatmap quand l'état change
   useEffect(() => {
@@ -466,6 +494,28 @@ export function CarteLeaflet({
         aria-label={t("carte.title")}
         role="region"
       />
+
+      {/* Bouton vue satellite */}
+      <button
+        onClick={() => setSatellite((v) => !v)}
+        title={satellite ? "Basculer en vue OSM" : "Basculer en vue satellite"}
+        className="absolute left-2 bottom-8 z-[1050] flex items-center gap-1.5 rounded-md
+                   bg-white/95 px-2.5 py-1.5 text-fluid-xs font-semibold shadow-paa-sm
+                   border border-gray-200 hover:bg-paa-blue-50 transition-colors
+                   dark:bg-paa-navy-800/95 dark:border-paa-navy-600 dark:text-paa-blue-100 dark:hover:bg-paa-navy-700"
+      >
+        {satellite ? (
+          <>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden><path fillRule="evenodd" d="M9.293 2.293a1 1 0 0 1 1.414 0l7 7A1 1 0 0 1 17 11h-1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6H3a1 1 0 0 1-.707-1.707l7-7Z" clipRule="evenodd" /></svg>
+            OSM
+          </>
+        ) : (
+          <>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden><path d="M4.464 3.162A2 2 0 0 1 6.28 2h7.44a2 2 0 0 1 1.816 1.162l1.154 2.5c.067.145.115.291.145.438A3.508 3.508 0 0 0 16 6H4c-.288 0-.568.035-.835.1.03-.147.078-.293.145-.438l1.154-2.5Z" /><path fillRule="evenodd" d="M2 9.5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6Zm3.72 3.47a.75.75 0 0 1 1.06 0l.47.47V10.5a.75.75 0 0 1 1.5 0v2.94l.47-.47a.75.75 0 1 1 1.06 1.06l-1.72 1.72a.75.75 0 0 1-1.06 0l-1.72-1.72a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
+            Satellite
+          </>
+        )}
+      </button>
 
       {/* Indicateur WS — petit badge en haut à droite de la carte.
           z-[1050] : au-dessus des contrôles Leaflet internes (z-1000 isolés)

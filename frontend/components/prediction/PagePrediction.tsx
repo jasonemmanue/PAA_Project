@@ -213,7 +213,7 @@ export function PagePrediction() {
           ═══════════════════════════════════════════════════════════════ */}
           {resume && (
             <div className="flex flex-col gap-4">
-              {/* Temps actuel */}
+              {/* Temps actuel — une seule valeur (temps récent) */}
               <section className="paa-card p-fluid-4">
                 <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-2">
                   {t("prediction.tempsReel")}
@@ -221,10 +221,8 @@ export function PagePrediction() {
                 <div className="flex flex-wrap gap-2 mb-3">
                   <BadgeSource source={resume.courante.source} libelleSource={LIBELLE_SOURCE} />
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <KpiMn label={t("prediction.labelMin")} mn={resume.courante.prediction.min_mn} couleur="#2ECC71" />
-                  <KpiMn label={t("prediction.labelMoyen")} mn={resume.courante.prediction.moyen_mn} couleur="#3498DB" dominante />
-                  <KpiMn label={t("prediction.labelMax")} mn={resume.courante.prediction.max_mn} couleur="#E74C3C" />
+                <div className="flex items-end gap-3">
+                  <KpiMn label={t("prediction.tempsRecent")} mn={resume.courante.prediction.moyen_mn} couleur="#3498DB" dominante />
                 </div>
               </section>
 

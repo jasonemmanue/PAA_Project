@@ -17,8 +17,9 @@
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/lib/i18n";
-import type { CollecteStatus } from "@/lib/types";
+import type { CollecteStatus, Troncon } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Helpers de fuseau — Africa/Abidjan (UTC+0, pas de DST)
@@ -106,10 +107,13 @@ function formaterProchainCycle(
 
 export function BarrePilotage({
   tronconId,
+  troncons = [],
 }: {
   tronconId: number | null;
+  troncons?: Troncon[];
 }) {
   const { t, locale } = useI18n();
+  const { peutEcrire } = useAuth();
   const [statut, setStatut] = useState<CollecteStatus | null>(null);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -245,24 +249,64 @@ export function BarrePilotage({
 
       {/* Bloc boutons */}
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={basculer}
-          disabled={enCours || statut === null}
-          className={
-            actif
-              ? "btn-secondary"
-              : "btn-primary"
-          }
-        >
-          {enCours ? t("common.loading") : lblBouton}
-        </button>
-        <a href={urlCsv} className="btn-secondary" download>
-          {t("indicateurs.btnExportCsv")}
-        </a>
-        <a href={urlXlsx} className="btn-secondary" download>
-          {t("indicateurs.btnExportXlsx")}
-        </a>
+        {peutEcrire && (
+          <button
+            type="button"
+            onClick={basculer}
+            disabled={enCours || statut === null}
+            className={actif ? "btn-secondary" : "btn-primary"}
+          >
+            {enCours ? t("common.loading") : lblBouton}
+          </button>
+        )}
+        {peutEcrire && (
+          <a href={urlCsv} className="btn-secondary" download>
+            {t("indicateurs.btnExportCsv")}
+          </a>
+        )}
+        {peutEcrire && (
+          <a href={urlXlsx} className="btn-secondary" download>
+            {t("indicateurs.btnExportXlsx")}
+          </a>
+        )}
+        {peutEcrire && troncons.length > 1 && (
+          <>
+            <button
+              type="button"
+              title="Télécharger CSV pour tous les tronçons"
+              className="btn-secondary"
+              onClick={() => {
+                troncons.forEach((tr, i) => {
+                  setTimeout(() => {
+                    const a = document.createElement("a");
+                    a.href = api.urlExportMesures({ troncon_id: tr.id, debut: aujourdHui, format: "csv" });
+                    a.download = `mesures_troncon${tr.id}_${aujourdHui}.csv`;
+                    a.click();
+                  }, i * 600);
+                });
+              }}
+            >
+              {t("indicateurs.btnExportTousCsv")}
+            </button>
+            <button
+              type="button"
+              title="Télécharger Excel pour tous les tronçons"
+              className="btn-secondary"
+              onClick={() => {
+                troncons.forEach((tr, i) => {
+                  setTimeout(() => {
+                    const a = document.createElement("a");
+                    a.href = api.urlExportMesures({ troncon_id: tr.id, debut: aujourdHui, format: "xlsx" });
+                    a.download = `mesures_troncon${tr.id}_${aujourdHui}.xlsx`;
+                    a.click();
+                  }, i * 600);
+                });
+              }}
+            >
+              {t("indicateurs.btnExportTousXlsx")}
+            </button>
+          </>
+        )}
       </div>
     </section>
   );

@@ -16,8 +16,7 @@ import type { ReactNode } from "react";
 
 import "./globals.css";
 
-import { AppShell } from "@/components/layout/AppShell";
-import { SplashScreen } from "@/components/SplashScreen";
+import { ClientLayout } from "@/components/layout/ClientLayout";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { I18nProvider, type Locale } from "@/lib/i18n";
 
@@ -66,10 +65,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="antialiased">
         <ThemeProvider>
           <I18nProvider defaultLocale={langueDefaut}>
-            <AppShell>{children}</AppShell>
-            {/* Splash en sœur : reste en position fixed au-dessus de toute l'app
-                pendant qu'elle continue de charger en arrière-plan. */}
-            <SplashScreen />
+            <ClientLayout>{children}</ClientLayout>
           </I18nProvider>
         </ThemeProvider>
       </body>

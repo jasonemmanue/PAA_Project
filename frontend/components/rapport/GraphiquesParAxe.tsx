@@ -87,7 +87,7 @@ function GraphiqueTroncon({
   const points = data?.points ?? [];
   const labelGraphique = `Graphique ${troncon.id} — ${troncon.nom} — Temps ${
     agregat === "min" ? "minimal" : "maximal"
-  } observé (en Mn)`;
+  } observé (en Min)`;
 
   return (
     <div className="paa-card p-3">

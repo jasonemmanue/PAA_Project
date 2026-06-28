@@ -78,8 +78,8 @@ export function PageAdministration() {
   return (
     <div className="flex flex-col gap-fluid-4">
       <PageHeader
-        titre="Administration — tronçons & sous-tronçons"
-        sousTitre="Ajoutez de nouveaux axes ou subdivisez-les en sous-tronçons codifiés (T1A, T1B…) selon la convention DEESP. Suppression toujours logique : l'historique est préservé."
+        titre="Administration — axes & tronçons"
+        sousTitre="Ajoutez de nouveaux axes ou subdivisez-les en tronçons codifiés (T1A, T1B…) selon la convention DEESP. Suppression toujours logique : l'historique est préservé."
       />
 
       {/* Onglets */}
@@ -108,7 +108,7 @@ export function PageAdministration() {
               : "text-paa-navy-700 hover:bg-paa-blue-50 dark:text-paa-blue-100 dark:hover:bg-paa-navy-700")
           }
         >
-          🔬 Sous-tronçons codifiés (T1A…)
+          🔬 Tronçons codifiés (T1A…)
         </button>
       </div>
 

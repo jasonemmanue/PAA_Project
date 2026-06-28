@@ -3,7 +3,7 @@
 import "leaflet/dist/leaflet.css";
 
 import { useEffect, useRef, useState } from "react";
-import type { Map as LeafletMap } from "leaflet";
+import type { Map as LeafletMap, TileLayer as LeafletTile } from "leaflet";
 
 import type { Incident } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
@@ -37,6 +37,9 @@ export function CarteIncidents({ incidents }: Props) {
   const conteneurRef = useRef<HTMLDivElement>(null);
   const carteRef = useRef<LeafletMap | null>(null);
   const [pret, setPret] = useState(false);
+  const [satellite, setSatellite] = useState(false);
+  const tileLayerRef = useRef<any>(null);
+  const LRef = useRef<typeof import("leaflet") | null>(null);
 
   // Initialisation Leaflet côté client uniquement
   useEffect(() => {
@@ -51,7 +54,8 @@ export function CarteIncidents({ incidents }: Props) {
         zoomControl: true,
       });
 
-      L.tileLayer(TUILE_URL, { attribution: TUILE_ATTR }).addTo(carte);
+      tileLayerRef.current = L.tileLayer(TUILE_URL, { attribution: TUILE_ATTR }).addTo(carte);
+      LRef.current = L as unknown as typeof import("leaflet");
       carteRef.current = carte;
       setPret(true);
     });
@@ -63,6 +67,22 @@ export function CarteIncidents({ incidents }: Props) {
       }
     };
   }, []);
+
+  // Bascule fond de carte OSM ↔ Satellite
+  useEffect(() => {
+    const L = LRef.current;
+    const carte = carteRef.current;
+    if (!L || !carte || !pret) return;
+    if (tileLayerRef.current) (tileLayerRef.current as LeafletTile).remove();
+    if (satellite) {
+      tileLayerRef.current = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { attribution: "Tiles &copy; Esri", maxZoom: 19 },
+      ).addTo(carte);
+    } else {
+      tileLayerRef.current = L.tileLayer(TUILE_URL, { attribution: TUILE_ATTR, maxZoom: 19 }).addTo(carte);
+    }
+  }, [satellite, pret]);
 
   // Mise à jour des markers quand les incidents changent
   useEffect(() => {
@@ -140,6 +160,15 @@ export function CarteIncidents({ incidents }: Props) {
       style={{ height: "380px", width: "100%" }}
     >
       <div ref={conteneurRef} className="absolute inset-0" />
+      <button
+        onClick={() => setSatellite((v) => !v)}
+        title={satellite ? "Vue OSM" : "Vue satellite"}
+        className="absolute bottom-6 left-2 z-[1050] flex items-center gap-1 rounded bg-white/95
+                   px-2 py-1 text-xs font-semibold shadow border border-gray-200
+                   hover:bg-blue-50 dark:bg-gray-800/95 dark:border-gray-600 dark:text-gray-100"
+      >
+        {satellite ? "🗺 OSM" : "🛰 Satellite"}
+      </button>
     </div>
   );
 }

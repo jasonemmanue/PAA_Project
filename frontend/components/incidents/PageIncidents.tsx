@@ -2,6 +2,16 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -113,6 +123,21 @@ export function PageIncidents() {
     (i) => i.actif && i.lat != null && i.lon != null
   );
 
+  // Accidents groupés par mois (format "YYYY-MM")
+  const accidentsParMois: { mois: string; nb: number }[] = (() => {
+    const carte = new Map<string, number>();
+    incidents
+      .filter((i) => i.type_incident === "accident")
+      .forEach((i) => {
+        const d = new Date(i.horodatage_publication);
+        const cle = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        carte.set(cle, (carte.get(cle) ?? 0) + 1);
+      });
+    return Array.from(carte.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([mois, nb]) => ({ mois, nb }));
+  })();
+
   // Tronçon le plus impacté
   const tronconImpacte = (() => {
     if (!stats || !troncons.length) return null;
@@ -210,6 +235,31 @@ export function PageIncidents() {
           apiBaseUrl={process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081"}
         />
       </div>
+
+      {/* Accidents par mois */}
+      {accidentsParMois.length > 0 && (
+        <div className="paa-card p-4">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+            Accidents par mois
+          </h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={accidentsParMois} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" />
+              <XAxis dataKey="mois" tick={{ fontSize: 11 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+              <Tooltip
+                formatter={(v: number) => [`${v} accident(s)`, "Accidents"]}
+                labelFormatter={(l) => `Mois : ${l}`}
+              />
+              <Bar dataKey="nb" name="Accidents" radius={[3, 3, 0, 0]}>
+                {accidentsParMois.map((_entry, i) => (
+                  <Cell key={i} fill="#dc2626" />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Liste chronologique */}
       <div className="paa-card p-4">

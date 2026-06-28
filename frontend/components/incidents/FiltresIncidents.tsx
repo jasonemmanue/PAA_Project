@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/lib/i18n";
 import type { Troncon } from "@/lib/types";
 
@@ -26,14 +27,13 @@ function _periodeVersBackend(p: FiltresPeriode): string {
 
 export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl }: Props) {
   const { t } = useI18n();
+  const { peutEcrire } = useAuth();
 
   const types = [
-    { value: "",              label: t("incidents.filtreTypeTous") },
-    { value: "accident",      label: t("incidents.typeAccident") },
-    { value: "embouteillage", label: t("incidents.typeEmbouteillage") },
-    { value: "route_barree",  label: t("incidents.typeRouteBarree") },
-    { value: "travaux",       label: t("incidents.typeTravaux") },
-    { value: "autre",         label: t("incidents.typeAutre") },
+    { value: "",             label: t("incidents.filtreTypeTous") },
+    { value: "accident",     label: t("incidents.typeAccident") },
+    { value: "route_barree", label: t("incidents.typeRouteBarree") },
+    { value: "travaux",      label: t("incidents.typeTravaux") },
   ];
 
   const periodes: { value: FiltresPeriode; label: string }[] = [
@@ -116,7 +116,8 @@ export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl }: Pr
         </select>
       </div>
 
-      {/* Bouton export CSV — pleine largeur sur mobile, aligné à droite sur sm+ */}
+      {/* Bouton export CSV — visible en mode écriture uniquement */}
+      {peutEcrire && (
       <a
         href={construireUrlExport()}
         download
@@ -141,6 +142,7 @@ export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl }: Pr
         </svg>
         {t("incidents.exporterCsv")}
       </a>
+      )}
     </div>
   );
 }

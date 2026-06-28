@@ -6,9 +6,9 @@ import type { LigneTempsTraversee, RapportTempsTraversee } from "@/lib/types";
 type Agregat = "min" | "moyen" | "max";
 
 const LIBELLE: Record<Agregat, string> = {
-  min: "TEMPS MINIMAL (en Mn)",
-  moyen: "TEMPS MOYEN (en Mn)",
-  max: "TEMPS MAXIMAL (en Mn)",
+  min: "TEMPS MINIMAL (en Min)",
+  moyen: "TEMPS MOYEN (en Min)",
+  max: "TEMPS MAXIMAL (en Min)",
 };
 
 function valeurAgregat(l: LigneTempsTraversee, agregat: Agregat): number | null {

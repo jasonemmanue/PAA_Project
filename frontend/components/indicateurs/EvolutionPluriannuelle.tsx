@@ -79,8 +79,19 @@ export function EvolutionPluriannuelle() {
     entry.n += 1;
     parPeriode.set(cle, entry);
   }
+  // Tri chronologique : "oct_2025" → 202510, "fev_2026" → 202602, etc.
+  const MOIS_NUM: Record<string, number> = {
+    jan: 1, fev: 2, mar: 3, avr: 4, mai: 5, jun: 6,
+    jul: 7, aou: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  };
+  function periodeVersDate(p: string): number {
+    const m = p.match(/^([a-z]+)_(\d{4})$/);
+    if (!m) return 0;
+    return parseInt(m[2]) * 100 + (MOIS_NUM[m[1]] ?? 0);
+  }
+
   const data = Array.from(parPeriode.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => periodeVersDate(a) - periodeVersDate(b))
     .map(([periode, v]) => ({
       periode: formaterPeriode(periode),
       min: v.n > 0 ? Math.round(v.sommeMin / v.n / 60) : 0,

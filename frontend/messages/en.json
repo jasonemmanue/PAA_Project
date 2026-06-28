@@ -80,6 +80,8 @@
     "btnDemarrerCollecte": "Start collection",
     "btnArreterCollecte": "Stop collection",
     "btnExportCsv": "Export CSV",
+    "btnExportTousCsv": "All CSV",
+    "btnExportTousXlsx": "All Excel",
     "btnExportXlsx": "Export Excel",
     "joursOuvrables": "Weekdays",
     "weekEnds": "Weekends"
@@ -192,6 +194,7 @@
     "chargement": "Loading…",
     "erreur": "Error:",
     "tempsReel": "Real-time (Google Maps)",
+    "tempsRecent": "Recent time",
     "ceMois": "This month — Google Maps",
     "cetteSemaine": "This week — Google Maps",
     "mesure": "reading",
@@ -303,7 +306,7 @@
     "cleGeminiLabel": "Gemini API key (temporary)",
     "cleGeminiPlaceholder": "AIza...",
     "cleGeminiInfo": "Get a free key at aistudio.google.com",
-    "messageErreur": "Connection error with Gemini. Check your API key.",
+    "messageErreur": "Connection error with the AI model. Check your configuration.",
     "fermer": "Close chat"
   },
   "footer": {

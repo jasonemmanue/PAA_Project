@@ -80,6 +80,8 @@
     "btnDemarrerCollecte": "Démarrer la collecte",
     "btnArreterCollecte": "Arrêter la collecte",
     "btnExportCsv": "Exporter CSV",
+    "btnExportTousCsv": "Tout CSV",
+    "btnExportTousXlsx": "Tout Excel",
     "btnExportXlsx": "Exporter Excel",
     "joursOuvrables": "Jours ouvrables",
     "weekEnds": "Week-ends"
@@ -192,6 +194,7 @@
     "chargement": "Chargement…",
     "erreur": "Erreur :",
     "tempsReel": "Temps réel (Google Maps)",
+    "tempsRecent": "Temps récent",
     "ceMois": "Ce mois — Google Maps",
     "cetteSemaine": "Cette semaine — Google Maps",
     "mesure": "mesure",
@@ -303,7 +306,7 @@
     "cleGeminiLabel": "Clé API Gemini (temporaire)",
     "cleGeminiPlaceholder": "AIza...",
     "cleGeminiInfo": "Obtenez une clé gratuite sur aistudio.google.com",
-    "messageErreur": "Erreur de connexion à Gemini. Vérifiez votre clé API.",
+    "messageErreur": "Erreur de connexion au modèle IA. Vérifiez votre configuration.",
     "fermer": "Fermer le chat"
   },
   "footer": {
