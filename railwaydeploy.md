@@ -289,10 +289,11 @@ Après chaque `railway up` :
 
 ---
 
-## Déploiement du Frontend Next.js sur Railway (P7.2)
+## Déploiement du Frontend Next.js sur Railway (P7.2 — ✅ terminé 2026-06-28)
 
-> Section ajoutée le **2026-06-27** — guide pas-à-pas pour déployer le frontend
-> en application web accessible publiquement via Railway.
+> Section ajoutée le **2026-06-27**, déploiement effectué le **2026-06-28**.
+> Le frontend tourne en production sur Railway et se redéploie automatiquement
+> à chaque push sur la branche `main`.
 
 ### Pré-requis
 
