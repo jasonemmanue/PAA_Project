@@ -175,14 +175,11 @@ export function CarteAdmin({
     }
 
     // Recadrer la vue sur l'ensemble des parents si au moins un tracé existe
-    const tousLesPoints = polylinesParentsRefs.current.flatMap((p) =>
-      (p.getLatLngs() as [number, number][]).flat()
-    );
-    if (tousLesPoints.length > 0) {
+    if (polylinesParentsRefs.current.length > 0) {
       try {
-        const bounds = L.latLngBounds(
-          polylinesParentsRefs.current.map((p) => p.getBounds()).reduce((acc, b) => acc.extend(b))
-        );
+        const bounds = polylinesParentsRefs.current
+          .map((p) => p.getBounds())
+          .reduce((acc, b) => acc.extend(b));
         map.fitBounds(bounds, { padding: [30, 30], maxZoom: 14 });
       } catch {
         /* ignore si bounds invalide */
