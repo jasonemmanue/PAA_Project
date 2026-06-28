@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
+import Image from "next/image";
 
 import type { NiveauAcces } from "@/contexts/AuthContext";
 
@@ -20,6 +22,48 @@ function getMdpEcriture(): string {
 
 interface Props {
   onAuthentifie: (niveau: NiveauAcces) => void;
+}
+
+/** Icône soleil (mode clair) */
+function IconSoleil({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M12 2.25a.75.75 0 0 1 .75.75v2.25a.75.75 0 0 1-1.5 0V3a.75.75 0 0 1 .75-.75ZM7.5 12a4.5 4.5 0 1 1 9 0 4.5 4.5 0 0 1-9 0ZM18.894 6.166a.75.75 0 0 0-1.06-1.06l-1.591 1.59a.75.75 0 1 0 1.06 1.061l1.591-1.59ZM21.75 12a.75.75 0 0 1-.75.75h-2.25a.75.75 0 0 1 0-1.5H21a.75.75 0 0 1 .75.75ZM17.834 18.894a.75.75 0 0 0 1.06-1.06l-1.59-1.591a.75.75 0 1 0-1.061 1.06l1.59 1.591ZM12 18a.75.75 0 0 1 .75.75V21a.75.75 0 0 1-1.5 0v-2.25A.75.75 0 0 1 12 18ZM7.758 17.303a.75.75 0 0 0-1.061-1.06l-1.591 1.59a.75.75 0 0 0 1.06 1.061l1.591-1.59ZM6 12a.75.75 0 0 1-.75.75H3a.75.75 0 0 1 0-1.5h2.25A.75.75 0 0 1 6 12ZM6.697 7.757a.75.75 0 0 0 1.06-1.06l-1.59-1.591a.75.75 0 0 0-1.061 1.06l1.59 1.591Z" />
+    </svg>
+  );
+}
+
+/** Icône lune (mode sombre) */
+function IconLune({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path fillRule="evenodd" d="M9.528 1.718a.75.75 0 0 1 .162.819A8.97 8.97 0 0 0 9 6a9 9 0 0 0 9 9 8.97 8.97 0 0 0 3.463-.69.75.75 0 0 1 .981.98 10.503 10.503 0 0 1-9.694 6.46c-5.799 0-10.5-4.7-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 0 1 .818.162Z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+/** Bouton de bascule thème clair ↔ sombre */
+function BoutonTheme() {
+  const { resolvedTheme, setTheme } = useTheme();
+  const [monte, setMonte] = useState(false);
+  useEffect(() => setMonte(true), []);
+  if (!monte) return null;
+
+  const estSombre = resolvedTheme === "dark";
+  return (
+    <button
+      onClick={() => setTheme(estSombre ? "light" : "dark")}
+      title={estSombre ? "Passer en mode clair" : "Passer en mode sombre"}
+      className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium
+                 bg-white/70 hover:bg-white text-slate-700 border border-slate-200
+                 dark:bg-slate-800/70 dark:hover:bg-slate-700 dark:text-slate-200 dark:border-slate-600
+                 backdrop-blur-sm transition-all shadow-sm"
+    >
+      {estSombre
+        ? <><IconSoleil className="w-3.5 h-3.5" /> Clair</>
+        : <><IconLune className="w-3.5 h-3.5" /> Sombre</>}
+    </button>
+  );
 }
 
 export function PasswordGate({ onAuthentifie }: Props) {
@@ -70,44 +114,61 @@ export function PasswordGate({ onAuthentifie }: Props) {
     setErreur(null);
   }
 
+  /* Classes communes aux inputs */
+  const inputCls =
+    "w-full px-4 py-2.5 rounded-lg text-sm " +
+    "border border-slate-300 bg-white text-slate-900 placeholder-slate-400 " +
+    "dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500 " +
+    "focus:outline-none focus:ring-2 focus:ring-blue-500 transition";
+
   return (
-    /* Fond plein écran — clair : gris très doux / sombre : marine profond */
     <div
       className={`fixed inset-0 z-[10000] flex flex-col items-center justify-center p-4
-                  bg-slate-100 dark:bg-[#070F1E]
-                  transition-opacity duration-400 ${montre ? "opacity-100" : "opacity-0"}`}
+                  transition-opacity duration-500 ${montre ? "opacity-100" : "opacity-0"}
+                  bg-slate-100 dark:bg-slate-950`}
     >
-      {/* Halos décoratifs */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[400px]
-                        rounded-full bg-paa-blue-200/30 blur-3xl dark:bg-paa-blue-900/20" />
+      {/* ── Filigrane logo PAA ── */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
+        <Image
+          src="/logo-hackathon.jpg"
+          alt=""
+          width={520}
+          height={347}
+          className="select-none opacity-[0.07] dark:opacity-[0.05] grayscale"
+          priority
+        />
       </div>
 
-      {/* Carte centrale */}
-      <div className="relative w-full max-w-sm rounded-2xl shadow-xl
-                      bg-white border border-slate-200
-                      dark:bg-paa-navy-800/80 dark:border-paa-navy-600/50
-                      dark:backdrop-blur-md p-8">
+      {/* ── Barre supérieure : toggle thème ── */}
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        <BoutonTheme />
+      </div>
+
+      {/* ── Carte centrale ── */}
+      <div className="relative w-full max-w-sm rounded-2xl shadow-xl ring-1
+                      bg-white ring-slate-200
+                      dark:bg-slate-900 dark:ring-slate-700
+                      p-8">
 
         {/* Logo + titre */}
-        <div className="flex flex-col items-center gap-2 mb-7">
-          <div className="flex items-center justify-center w-14 h-14 rounded-full
-                          bg-paa-blue-100 dark:bg-paa-blue-900/40">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
-                 className="w-7 h-7 text-paa-blue-600 dark:text-paa-blue-300">
-              <path fillRule="evenodd"
-                d="M12 1.5a5.25 5.25 0 0 0-5.25 5.25v3a3 3 0 0 0-3 3v6.75a3 3 0 0 0 3
-                   3h10.5a3 3 0 0 0 3-3v-6.75a3 3 0 0 0-3-3v-3c0-2.9-2.35-5.25-5.25-5.25Zm3.75
-                   8.25v-3a3.75 3.75 0 1 0-7.5 0v3h7.5Z"
-                clipRule="evenodd" />
-            </svg>
+        <div className="flex flex-col items-center gap-3 mb-7">
+          <div className="relative w-16 h-16 rounded-full overflow-hidden shadow ring-2 ring-slate-200 dark:ring-slate-600">
+            <Image
+              src="/logo-hackathon.jpg"
+              alt="Logo Port Autonome d'Abidjan"
+              fill
+              className="object-cover"
+              sizes="64px"
+            />
           </div>
-          <h1 className="text-xl font-bold text-paa-navy-900 dark:text-paa-blue-100">
-            PAA-Traverse
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Port Autonome d&apos;Abidjan — Team HACKATONIA
-          </p>
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              PAA-Traverse
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Port Autonome d&apos;Abidjan — Team HACKATONIA
+            </p>
+          </div>
         </div>
 
         {!modifierMdp ? (
@@ -123,11 +184,7 @@ export function PasswordGate({ onAuthentifie }: Props) {
               onKeyDown={(e) => e.key === "Enter" && valider()}
               placeholder="••••••••••••"
               autoFocus
-              className="w-full px-4 py-2.5 rounded-lg text-base
-                         border border-slate-300 bg-white text-slate-900 placeholder-slate-400
-                         dark:border-paa-navy-500 dark:bg-paa-navy-900/60 dark:text-slate-100 dark:placeholder-slate-500
-                         focus:outline-none focus:ring-2 focus:ring-paa-blue-400
-                         mb-3 transition"
+              className={`${inputCls} mb-3`}
             />
 
             {erreur && (
@@ -137,9 +194,9 @@ export function PasswordGate({ onAuthentifie }: Props) {
             <button
               onClick={valider}
               className="w-full py-2.5 rounded-lg font-semibold text-base
-                         bg-paa-blue-600 hover:bg-paa-blue-700 text-white
-                         dark:bg-paa-blue-500 dark:hover:bg-paa-blue-600
-                         transition mb-2.5 focus:outline-none focus:ring-2 focus:ring-paa-blue-400"
+                         bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white
+                         transition mb-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                         dark:focus:ring-offset-slate-900 shadow-md"
             >
               Accéder →
             </button>
@@ -148,17 +205,17 @@ export function PasswordGate({ onAuthentifie }: Props) {
               onClick={() => { setModifierMdp(true); setErreur(null); setMessageSucces(null); }}
               className="w-full py-2 rounded-lg text-sm font-medium
                          text-slate-500 hover:text-slate-700 hover:bg-slate-100
-                         dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-paa-navy-700
-                         border border-slate-200 dark:border-paa-navy-600
+                         dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800
+                         border border-slate-200 dark:border-slate-700
                          transition"
             >
               Modifier un mot de passe
             </button>
 
             {/* Légende niveaux */}
-            <div className="mt-5 pt-4 border-t border-slate-200 dark:border-paa-navy-600 flex flex-col gap-1.5">
+            <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-paa-blue-500 shrink-0" />
+                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
                 <span className="text-xs text-slate-500 dark:text-slate-400">
                   <strong className="text-slate-700 dark:text-slate-300">Lecture</strong> — consultation uniquement
                 </span>
@@ -186,8 +243,8 @@ export function PasswordGate({ onAuthentifie }: Props) {
                   onClick={() => setTypeChangement(type)}
                   className={`flex-1 py-1.5 rounded-md text-sm font-medium transition
                     ${typeChangement === type
-                      ? "bg-paa-blue-600 text-white dark:bg-paa-blue-500"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-paa-navy-700 dark:text-slate-300 dark:hover:bg-paa-navy-600"
+                      ? "bg-blue-600 text-white shadow"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     }`}
                 >
                   {type === "lecture" ? "Lecture" : "Lecture/Écriture"}
@@ -200,20 +257,14 @@ export function PasswordGate({ onAuthentifie }: Props) {
               value={ancienMdp}
               onChange={(e) => { setAncienMdp(e.target.value); setErreur(null); }}
               placeholder="Ancien mot de passe"
-              className="w-full px-4 py-2.5 rounded-lg text-sm mb-2
-                         border border-slate-300 bg-white text-slate-900 placeholder-slate-400
-                         dark:border-paa-navy-500 dark:bg-paa-navy-900/60 dark:text-slate-100 dark:placeholder-slate-500
-                         focus:outline-none focus:ring-2 focus:ring-paa-blue-400 transition"
+              className={`${inputCls} mb-2`}
             />
             <input
               type="password"
               value={nouveauMdp}
               onChange={(e) => { setNouveauMdp(e.target.value); setErreur(null); }}
               placeholder="Nouveau mot de passe (min. 6 car.)"
-              className="w-full px-4 py-2.5 rounded-lg text-sm mb-3
-                         border border-slate-300 bg-white text-slate-900 placeholder-slate-400
-                         dark:border-paa-navy-500 dark:bg-paa-navy-900/60 dark:text-slate-100 dark:placeholder-slate-500
-                         focus:outline-none focus:ring-2 focus:ring-paa-blue-400 transition"
+              className={`${inputCls} mb-3`}
             />
 
             {erreur && (
@@ -226,9 +277,9 @@ export function PasswordGate({ onAuthentifie }: Props) {
             <button
               onClick={changerMotDePasse}
               className="w-full py-2.5 rounded-lg font-semibold text-sm
-                         bg-paa-blue-600 hover:bg-paa-blue-700 text-white
-                         dark:bg-paa-blue-500 dark:hover:bg-paa-blue-600
-                         transition mb-2 focus:outline-none focus:ring-2 focus:ring-paa-blue-400"
+                         bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white
+                         transition mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                         dark:focus:ring-offset-slate-900 shadow-md"
             >
               Mettre à jour
             </button>
@@ -242,8 +293,8 @@ export function PasswordGate({ onAuthentifie }: Props) {
               }}
               className="w-full py-2 rounded-lg text-sm font-medium
                          text-slate-500 hover:text-slate-700 hover:bg-slate-100
-                         dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-paa-navy-700
-                         border border-slate-200 dark:border-paa-navy-600 transition"
+                         dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800
+                         border border-slate-200 dark:border-slate-700 transition"
             >
               ← Retour
             </button>
