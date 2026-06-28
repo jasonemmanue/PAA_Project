@@ -266,6 +266,15 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P8.5** | ✅ Terminée | **Qualité & exports** — migration 0012 `fiabilite_source` (0..1) par source, déduplication cross-sources dans `enrichir_incidents()`, `GET /incidents/export` (CSV 12 colonnes), bouton Exporter CSV dans les filtres. |
 | **P9.1** | ✅ Terminée (2026-06-27) | **Chatbot guide — Claude via backend** — endpoint `POST /chatbot/message` + `GET /chatbot/disponibilite`, clé `ANTHROPIC_API_KEY` côté serveur, prompt système professionnel sans markdown. Frontend simplifié : Claude uniquement, plus de sélecteur Gemini. |
 | **P9.2** | ✅ Terminée (2026-06-27) | **Fix bug heure-optimale MIN=MOYEN=MAX** — requête `predire.py` corrigée : `min(ProfilHoraire.min)` / `max(ProfilHoraire.max)` + filtre `fenetre_jours=30` pour éviter le triple-comptage des 3 fenêtres. |
+| **P10.1** | ✅ Terminée (2026-06-28) | **Authentification 2 niveaux** — `PasswordGate` avant splash, mode lecture (`readhackatonia`) vs lecture/écriture (`readwritehackatonia`), mots de passe stockables dans localStorage. Auth pure React state (clear à chaque refresh/onglet). Hook `useAuth()` cache les boutons d'écriture en mode lecture. Cf. § 12.1. |
+| **P10.2** | ✅ Terminée (2026-06-28) | **Refonte portail d'accès** — logo PAA gauche + carte centrale + "HACKATONIA" vertical droit (bleu ciel sky-400) + toggle thème clair/sombre. Layout responsive desktop/mobile. Logo en filigrane sur fond. Thème clair par défaut (`ThemeProvider defaultTheme="light"`). |
+| **P10.3** | ✅ Terminée (2026-06-28) | **Vue satellite sur toutes les cartes** — toggle "🛰 Satellite / 🗺 OSM" sur CarteLeaflet, CarteApercu, CarteIncidents. Tuiles ESRI WorldImagery gratuites (URL `{z}/{y}/{x}`). |
+| **P10.4** | ✅ Terminée (2026-06-28) | **Export global indicateurs** — boutons "Tout CSV" / "Tout Excel" dans `BarrePilotage` téléchargent séquentiellement les mesures des 6+ tronçons (600 ms d'intervalle). Cf. § 12.4. |
+| **P10.5** | ✅ Terminée (2026-06-28) | **Distinction axes / tronçons** — migration **0013** ajoute `troncons.est_axe` (Boolean NOT NULL DEFAULT TRUE). IDs ≤ 6 → True (axes officiels DEESP), IDs > 6 → False. Sélecteur Indicateurs en `<optgroup>` séparés. Formulaire Admin avec radio Axe/Tronçon (défaut Tronçon). Chatbot mis à jour. Cf. § 12.5. |
+| **P10.6** | ✅ Terminée (2026-06-28) | **PDF Tableau 16 — téléchargement direct** — endpoint `GET /rapport/zones-congestionnees/pdf` génère PDF natif via **fpdf2** (pure Python, léger). Frontend télécharge via fetch + Blob + `<a download>` — pas de popup, pas d'aperçu. Évite jspdf et ses vulnérabilités critiques dompurify. Cf. § 12.6. |
+| **P10.7** | ✅ Terminée (2026-06-28) | **Import CSV/Excel évolution pluriannuelle** — endpoint `POST /import/evolution-csv` accepte CSV ou Excel à 7 colonnes (`axe, sens, periode, type_jour, temps_min_s, temps_moyen_s, temps_max_s`). Idempotent (UPSERT par clé). Bouton dans `EvolutionPluriannuelle` (mode écriture). Cf. § 12.7. |
+| **P10.8** | ✅ Terminée (2026-06-28) | **Sources scraping incidents configurables** — migration **0014** crée la table `sources_incidents`. CRUD via `/incidents/sources` (GET, POST, PATCH, DELETE). `scraper_toutes_sources()` lit la table en priorité (repli statique). Panneau "⚙ Gérer les sources" sur la page Incidents (mode écriture). Cf. § 12.8. |
+| **P10.9** | ✅ Terminée (2026-06-28) | **Navigation réordonnée + filtres incidents simplifiés + accidents/mois** — ordre menu : Accueil → Rapport → Indicateurs → Temps de traversée → Heure opt → Incidents → Fiabilité → Admin. Filtres incidents réduits à Accident / Route barrée / Travaux. BarChart "Accidents par mois" ajouté. "Mn" → "Min" dans rapport. Tri chronologique Oct 2025 avant Fév 2026. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -2873,3 +2882,281 @@ func.max(ProfilHoraire.max).label("p_max"),   # vrai maximum global
    Ce fichier contient les procédures, pièges connus et la checklist de déploiement.
    Règle critique : **`git add -A` obligatoire avant `railway up`** — les fichiers
    non-trackés sont absents du conteneur.
+
+
+---
+
+## 12. Phase P10 — Refonte UX, auth 2 niveaux, axes/tronçons, PDF direct (2026-06-28)
+
+> Série de 9 améliorations livrées le 2026-06-28 sur les commits
+> `fc680b2 → c8793d9 → 8034b1d → 21cbdd9 → 1ffd54e`. Toutes terminées et
+> déployées en production sur Railway.
+
+### 12.1 Authentification à 2 niveaux — `PasswordGate`
+
+**Fichiers** : `frontend/contexts/AuthContext.tsx`,
+`frontend/components/auth/PasswordGate.tsx`,
+`frontend/components/layout/ClientLayout.tsx`.
+
+**Principe** :
+- Portail mot de passe affiché AVANT le splash screen, à chaque
+  refresh / nouvel onglet (état React pur, sans `sessionStorage`).
+- Deux mots de passe :
+  - `readhackatonia` → niveau **lecture** : consultation uniquement
+  - `readwritehackatonia` → niveau **écriture** : accès complet
+- Stockés dans `localStorage` (clés `paa_mdp_lecture` / `paa_mdp_ecriture`)
+  pour permettre le changement (ancien MDP exigé, nouveau ≥ 6 caractères).
+  Les valeurs hardcodées ci-dessus sont les défauts si rien dans localStorage.
+
+**Cascade d'application** :
+- `app/layout.tsx` enveloppe `{children}` dans `<ClientLayout>`
+- `<ClientLayout>` affiche `<PasswordGate>` tant que `niveau === null`
+- Une fois authentifié, `<AuthProvider>` expose `niveau` et `peutEcrire` via
+  `useAuth()` à tous les composants enfants.
+
+**Boutons d'écriture masqués en mode lecture** :
+- `BarrePilotage` — démarrer/arrêter collecte, export CSV/XLSX, Tout CSV/Excel
+- `FiltresIncidents` — bouton Exporter CSV
+- `EvolutionPluriannuelle` — bouton « Mettre à jour »
+- `GestionSources` — panneau complet
+- `OngletAxes` (Admin) — toute la page
+
+### 12.2 Refonte du portail d'accès
+
+**Layout 3 colonnes sur desktop** (`lg:flex`) :
+
+1. **Gauche** — logo PAA rond 208 px (image `/logo-hackathon.jpg`),
+   cerclé blanc/slate selon thème, ombre 2xl + libellé « PORT AUTONOME D'ABIDJAN »
+2. **Centre** — carte de connexion (titre, input, boutons)
+3. **Droite** — lettres `H-A-C-K-A-T-O-N-I-A` verticales en
+   `text-sky-400 dark:text-sky-300` avec drop-shadow glow bleu
+   + ligne dégradée + « 2026 » rotaté
+
+**Mobile** : logo en haut centré + « HACKATONIA » en pied de page horizontal.
+
+**Fond** : `bg-gradient-to-br from-slate-100 via-blue-50 to-slate-200`
+en clair, `from-slate-950 via-slate-900 to-slate-950` en sombre.
+Logo PAA en filigrane discret (opacity 0.07) sur fond.
+
+**Toggle thème** : `useTheme()` de `next-themes` exposé dans le coin
+supérieur droit du portail (avant authentification).
+**Thème par défaut passé de `"system"` à `"light"`** dans `ThemeProvider.tsx`.
+
+### 12.3 Vue satellite sur toutes les cartes
+
+Toggle « 🛰 Satellite / 🗺 OSM » ajouté en bas à gauche de chaque carte Leaflet :
+- `CarteLeaflet.tsx` (carte principale)
+- `CarteApercu.tsx` (page Fiabilité)
+- `CarteIncidents.tsx` (page Incidents)
+
+**Tuiles satellite** : ESRI WorldImagery (gratuit, sans clé) — URL
+`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}`
+(attention à l'ordre `{z}/{y}/{x}` différent de OSM `{z}/{x}/{y}`).
+
+**Implémentation** : la couche de tuiles est stockée dans une `useRef`,
+un `useEffect([satellite])` retire l'ancienne et ajoute la nouvelle au
+clic du toggle.
+
+### 12.4 Exports globaux page Indicateurs
+
+`BarrePilotage` accepte désormais `troncons: Troncon[]` en prop. Si
+`peutEcrire && troncons.length > 1`, deux boutons supplémentaires
+apparaissent à côté de Exporter CSV / XLSX :
+
+- **Tout CSV** → boucle sur tous les tronçons et déclenche un
+  téléchargement séquentiel (anchor `<a download>`) avec délai 600 ms
+  entre chaque pour éviter le blocage navigateur.
+- **Tout Excel** → idem pour le format XLSX.
+
+Nom des fichiers : `mesures_troncon{id}_{AAAA-MM-JJ}.{csv|xlsx}`.
+
+### 12.5 Distinction axes / tronçons — migration 0013
+
+**Migration** : ajout colonne `troncons.est_axe BOOLEAN NOT NULL DEFAULT TRUE`.
+Initialisation :
+
+```sql
+UPDATE troncons SET est_axe = TRUE  WHERE id <= 6;
+UPDATE troncons SET est_axe = FALSE WHERE id >  6;
+```
+
+**Sémantique** :
+- `est_axe = True` → axe officiel DEESP du cahier des charges (6 initiaux
+  + nouveaux axes créés via Admin avec radio « Axe »)
+- `est_axe = False` → tronçon supplémentaire ajouté en complément
+
+**Distinction purement cosmétique** : la collecte Google, l'agrégation
+nocturne, le rapport DEESP, la calibration GPX traitent identiquement
+les deux catégories. Seule l'UI les sépare.
+
+**Modifications UI** :
+- Formulaire Administration : `<fieldset>` radio « Tronçon (défaut) / Axe »
+- Liste Admin : nouvelle colonne « Catégorie » avec badge AXE / Tronçon
+- `SelecteurTroncon` (Indicateurs, etc.) utilise
+  `<optgroup label="── Axes officiels DEESP ──">` et
+  `<optgroup label="── Tronçons supplémentaires ──">`
+- Backend : `est_axe` exposé dans `/carte/etat`, `/troncons`,
+  `/troncons/{id}`, `/administration/troncons`
+
+**Chatbot** : `SYSTEM_PROMPT` enrichi d'une section
+« DISTINCTION AXES VS TRONÇONS » qui explique au LLM comment
+interpréter le vocabulaire utilisateur.
+
+**Commande pour supprimer/reclasser les tronçons supplémentaires (>6)** :
+
+```bash
+# Console Railway service backend
+python -c "
+from app.db.session import SessionLocal
+from app.models.models import Troncon, Mesure, ProfilHoraire, SousTroncon
+db = SessionLocal()
+ids = [tid for (tid,) in db.query(Troncon.id).filter(Troncon.id > 6).all()]
+db.query(Mesure).filter(Mesure.troncon_id.in_(ids)).delete(synchronize_session=False)
+db.query(ProfilHoraire).filter(ProfilHoraire.troncon_id.in_(ids)).delete(synchronize_session=False)
+db.query(SousTroncon).filter(SousTroncon.troncon_id.in_(ids)).delete(synchronize_session=False)
+db.query(Troncon).filter(Troncon.id.in_(ids)).delete(synchronize_session=False)
+db.commit()
+db.close()
+"
+```
+
+### 12.6 PDF Tableau 16 — téléchargement direct
+
+**Backend** : nouvel endpoint `GET /rapport/zones-congestionnees/pdf`
+dans `backend/app/api/rapport.py` utilise **fpdf2** (pure Python, ~200 ko,
+ajouté à `requirements.txt`).
+
+**Réponse** :
+
+```python
+return Response(
+    content=bytes(pdf.output()),
+    media_type="application/pdf",
+    headers={"Content-Disposition": 'attachment; filename="tableau16_AAAA-MM.pdf"'},
+)
+```
+
+**Frontend** : `TableauZonesCongestionnees.tsx` :
+
+```typescript
+const rep = await fetch(`${API_BASE}/rapport/zones-congestionnees/pdf?campagne=${camp}`);
+const blob = await rep.blob();
+const a = document.createElement("a");
+a.href = URL.createObjectURL(blob);
+a.download = `tableau16_${camp}.pdf`;
+a.click();
+```
+
+Pas de popup, pas d'aperçu, pas de fenêtre `print()` — téléchargement immédiat
+dans le dossier Téléchargements du navigateur.
+
+**Pourquoi pas jsPDF côté client** : `npm install jspdf jspdf-autotable` apporte
+12 CVE **critiques** sur `dompurify` (Railway bloque le build, cf. § 8.2.1).
+`fpdf2` côté serveur évite ce problème sans dépendance OS.
+
+### 12.7 Import CSV/Excel évolution pluriannuelle
+
+**Backend** : `POST /import/evolution-csv` dans `backend/app/api/import_data.py`.
+
+**Format attendu** (7 colonnes, insensible à la casse, espaces → underscore) :
+
+```
+axe,sens,periode,type_jour,temps_min_s,temps_moyen_s,temps_max_s
+"CARENA → Palm Beach",Aller,oct_2025,jour_ouvrable,720,950,1320
+```
+
+**Comportement** : UPSERT sur la clé unique
+`(axe, sens, periode, type_jour)` — un second import ne duplique pas, il
+remplace. Réponse JSON : `{ "nb_ajoutees": N, "nb_majs": M, "message": "…" }`.
+
+**Frontend** : bandeau bleu pâle dans `EvolutionPluriannuelle.tsx`
+(mode écriture uniquement) avec `<input type="file" accept=".csv,.xlsx,.xls">`.
+Rechargement automatique du graphique après import réussi.
+
+### 12.8 Sources scraping incidents — migration 0014
+
+**Migration** : table `sources_incidents` (id, nom, libelle, url, type,
+actif, fiabilite, ajoute_le). Seed initial = 3 sources historiques
+(fraternite_matin, abidjan_net, koaci) avec leurs fiabilités respectives.
+
+**Modèle SQLAlchemy** : `SourceIncident` ajouté dans `models.py`.
+
+**Endpoints** (tag « incidents ») :
+- `GET    /incidents/sources`            → liste
+- `POST   /incidents/sources`            → création (409 si nom déjà pris)
+- `PATCH  /incidents/sources/{id}`       → mise à jour (notamment toggle actif)
+- `DELETE /incidents/sources/{id}`       → suppression définitive
+
+**Lecture par le scheduler** : `scraper_toutes_sources()` dans
+`rss_parser.py` interroge la table en priorité (`actif=True AND type='rss'`).
+**Repli silencieux** sur la constante `SOURCES_RSS` historique si la table
+est inaccessible.
+
+**UI** : composant `GestionSources.tsx` ajouté en bas de la page Incidents,
+visible en mode écriture uniquement. Panneau dépliable
+« ⚙ Gérer les sources de scraping (N) » avec tableau (toggle ON/OFF,
+supprimer) + formulaire d'ajout. Indication : « La source est utilisée au
+prochain cycle de scraping (toutes les 30 min) ».
+
+### 12.9 Améliorations diverses
+
+| Modification | Fichier(s) |
+|---|---|
+| Navigation réordonnée (Rapport avant Indicateurs) | `NavItems.tsx` |
+| Filtres incidents : Accident / Route barrée / Travaux seulement | `FiltresIncidents.tsx` |
+| Graphique « Accidents par mois » (BarChart rouge) | `PageIncidents.tsx` |
+| Tri chronologique Oct 2025 avant Fév 2026 (parseur `oct_2025 → 202510`) | `EvolutionPluriannuelle.tsx` |
+| Tous les « Mn » remplacés par « Min » dans le rapport DEESP | `TableauTempsTraversee.tsx`, `GraphiquesParAxe.tsx` |
+| Bloc temps réel simplifié → une seule valeur « Temps récent » | `PagePrediction.tsx` |
+| Admin : onglet « Sous-tronçons codifiés » renommé « Tronçons codifiés » | `PageAdministration.tsx` |
+| Titre Admin : « axes & tronçons » au lieu de « tronçons & sous-tronçons » | `PageAdministration.tsx` |
+
+### 12.10 Récapitulatif des migrations Alembic
+
+| Migration | Objet |
+|-----------|-------|
+| `0013_troncon_est_axe.py` | Ajoute `troncons.est_axe` |
+| `0014_sources_incidents.py` | Crée la table `sources_incidents` + seed 3 sources |
+
+À appliquer après tout déploiement contenant ces migrations :
+
+```bash
+# Console Railway service backend
+alembic upgrade head
+```
+
+### 12.11 Vérification post-déploiement
+
+```bash
+# 1. Migrations à jour
+alembic current && alembic heads
+
+# 2. Colonne est_axe + table sources_incidents
+python -c "
+from sqlalchemy import text
+from app.db.session import SessionLocal
+db = SessionLocal()
+for r in db.execute(text('SELECT id, nom, est_axe FROM troncons ORDER BY id')).all():
+    print(r.id, r.est_axe, r.nom)
+for r in db.execute(text('SELECT nom, libelle, actif FROM sources_incidents')).all():
+    print(r.nom, r.libelle, r.actif)
+db.close()
+"
+
+# 3. fpdf2 installé
+python -c "import fpdf; print('fpdf2', fpdf.__version__)"
+
+# 4. Endpoint PDF
+python -c "
+import httpx
+r = httpx.get('http://localhost:8000/rapport/zones-congestionnees/pdf?campagne=2026-06', timeout=15)
+print(r.status_code, r.headers.get('content-type'), len(r.content))
+assert r.content[:4] == b'%PDF'
+"
+
+# 5. Endpoint /incidents/sources
+python -c "
+import httpx
+print(httpx.get('http://localhost:8000/incidents/sources', timeout=10).status_code)
+"
+```
