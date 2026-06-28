@@ -337,6 +337,51 @@ La conversion en heure Africa/Abidjan est faite côté client via
 `Intl.DateTimeFormat({ timeZone: "Africa/Abidjan" })` — pas de nouvel endpoint
 backend nécessaire.
 
+### 4.2bis Carte principale — améliorations UX (2026-06-28)
+
+#### Marqueurs début/fin au clic sur un tronçon
+
+**Comportement :** cliquer sur un tronçon dans le panneau latéral (`PanneauTroncons.tsx`)
+appelle `onSelectionner(id)` → `selectionId` est mis à jour dans `PageCarte.tsx` →
+`CarteLeaflet` reçoit `tronconSelectionneId` et réagit dans l'**effet 4**.
+
+**Implémentation (`frontend/components/carte/CarteLeaflet.tsx`)** :
+
+- Deux refs `markerDebutSelRef` et `markerFinSelRef` (`CircleMarker | null`) stockent les
+  markers du tronçon actuellement sélectionné.
+- À chaque changement de `tronconSelectionneId` : les anciens markers sont retirés
+  (`marker.remove()`), puis les nouvelles coordonnées sont lues depuis
+  `troncon.lat_origine ?? troncon.geometrie?.lat_origine` (et idem pour destination).
+- **Marker départ** : `CircleMarker` vert foncé (`fillColor: "#16a34a"`, radius 11)
+  avec tooltip `🟢 Départ : <nom_court>`.
+- **Marker arrivée** : `CircleMarker` rouge foncé (`fillColor: "#dc2626"`, radius 11)
+  avec tooltip `🔴 Arrivée : <nom_court>`.
+- Fonctionne pour **tous** les tronçons — officiels (1-6) et créés via Administration
+  (7, 8…) — dès que leurs coordonnées sont renseignées en base.
+- La désélection (clic sur un autre tronçon ou navigation) retire automatiquement
+  les markers via le cleanup de l'effet.
+
+#### Page statique — seul le panneau défile
+
+**Problème résolu :** la page Carte créait une barre de scroll navigateur car
+`topbar + titre + carte (70 vh) + footer > 100 dvh`.
+
+**Solution (`frontend/components/carte/PageCarte.tsx`)** :
+
+```typescript
+useEffect(() => {
+  const prev = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  return () => { document.body.style.overflow = prev; };
+}, []);
+```
+
+- `overflow: hidden` est appliqué au `<body>` au montage de la page Carte.
+- Il est **automatiquement restauré** à la valeur précédente lors du démontage
+  (navigation vers une autre page) — les autres pages défilent normalement.
+- Le panneau latéral reçoit `h-[45vh] overflow-y-auto` (mobile) et
+  `lg:h-[70vh] overflow-y-auto` (desktop) pour avoir son propre scroll interne.
+
 ### 4.3 P5 — Validation terrain hebdomadaire
 
 **Modèle de données** : la table `releves_terrain` est enrichie par la
@@ -1604,23 +1649,28 @@ Clés ajoutées sous `"prediction"` dans les deux fichiers de messages :
 | `osrm`         | **Hors Railway** — voir § 8.3       | Image OSRM + extrait OSM (~ 800 Mo) trop lourds pour Railway. |
 | `frontend`     | **Railway** service `frontend` (Railpack) | `https://frontend-production-599c.up.railway.app` — déployé le 2026-06-28. |
 
-### 8.2 URL publique du backend
+### 8.2 URLs publiques de production (état au 2026-06-28)
 
-**URL de production (déployée le 2026-06-19) :**
-`https://backend-production-6cbf.up.railway.app`
+| Service | URL | Statut |
+|---------|-----|--------|
+| **Backend FastAPI** | `https://backend-production-6cbf.up.railway.app` | ✅ En ligne |
+| **Frontend Next.js** | `https://frontend-production-599c.up.railway.app` | ✅ En ligne (déployé 2026-06-28) |
+| **Swagger API** | `https://backend-production-6cbf.up.railway.app/docs` | ✅ |
 
-Endpoints critiques :
+Endpoints critiques backend :
 - `GET /health` → `{"status":"ok"}` ✅
 - `GET /collecte/status` → scheduler actif, 6 tronçons, 216 req/jour estimées ✅
 - `GET /carte/etat` → état des 6 tronçons
 - `GET /docs` → Swagger interactif
 
+**Redéploiement automatique** : tout push sur la branche `main` déclenche automatiquement le rebuild des deux services (webhook GitHub configuré sur Railway).
+
 ### 8.2.1 Points d'attention déploiement Railway
 
-> 📖 La procédure complète, tous les pièges rencontrés (P1 → P6.1) et la
+> 📖 La procédure complète, tous les pièges rencontrés (P1 → P7.2) et la
 > checklist de déploiement sont dans [`railwaydeploy.md`](railwaydeploy.md) à la racine.
 
-Résumé des règles critiques :
+**Règles critiques backend :**
 
 - **`git add -A` + commit obligatoires avant `railway up`** — Railway utilise `git archive` et ignore les fichiers non commités. Symptôme classique : la migration ou le fichier que tu viens de créer est absent du conteneur.
 - **`startCommand`** : **ne JAMAIS inclure `alembic upgrade head`** — provoque un `pg_advisory_lock` persistant qui bloque le démarrage 7 minutes puis fait échouer le healthcheck. Lancer les migrations depuis la **Console Railway** après chaque déploiement contenant une nouvelle migration.
@@ -1629,6 +1679,14 @@ Résumé des règles critiques :
 - **`UploadFile` / `Form`** : exige `python-multipart` dans `requirements.txt`.
 - **`numReplicas = 1`** : APScheduler vit en mémoire — toute duplication entraînerait une double collecte.
 - **Premier déploiement** : seed via la Console Railway → `python -m app.seed_troncons`.
+
+**Règles critiques frontend (ajoutées le 2026-06-28) :**
+
+- **Ne pas utiliser `railway up` quand GitHub est la source** — le service est lié au dépôt GitHub ; `railway up` (upload direct) renvoie un 404. Le déploiement se déclenche automatiquement à chaque `git push origin main`.
+- **`NEXT_PUBLIC_*` = variables de build-time** — elles doivent être définies dans Railway **avant** le premier build. Ajouter une variable APRÈS le build déjà effectué n'a aucun effet : il faut redéclencher un déploiement complet.
+- **Vulnérabilités de sécurité bloquent le build** — Railway scan `package-lock.json`. Si un CVE est détecté, le build échoue avec `SECURITY VULNERABILITIES DETECTED`. Corriger dans `package-lock.json` (via `npm install <package>@<version>`) et pousser le lock file mis à jour.
+- **`builder = "RAILPACK"` dans `railway.toml`** — Railway a remplacé Nixpacks par Railpack. Utiliser `RAILPACK` (majuscules) pour que `railway.toml` soit lu entièrement (y compris `startCommand`).
+- **`ALLOWED_ORIGINS` backend** : doit inclure l'URL Railway du frontend. Après chaque changement d'URL frontend, redéployer le backend.
 
 ### 8.3 OSRM : ce qui en a besoin, et options d'hébergement
 

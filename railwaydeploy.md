@@ -422,11 +422,11 @@ git push origin main
 
 ---
 
-### Configuration `frontend/railway.toml` (référence)
+### Configuration `frontend/railway.toml` (référence — état 2026-06-28)
 
 ```toml
 [build]
-builder = "NIXPACKS"
+builder = "RAILPACK"
 
 [deploy]
 startCommand = "npx next start -p $PORT"
@@ -438,39 +438,44 @@ restartPolicyMaxRetries = 10
 ```
 
 **Points clés :**
-- `builder = "NIXPACKS"` : Railway détecte automatiquement Next.js, installe Node.js
-- `startCommand = "npx next start -p $PORT"` : Railway injecte `$PORT` (différent de 3000)
-- Sans ce `startCommand`, Next.js démarrerait sur le port 3000 et Railway ne pourrait pas router le trafic
+- `builder = "RAILPACK"` : nouveau builder Railway (remplace Nixpacks depuis 2026). Détecte automatiquement Node.js/Next.js.
+- `startCommand = "npx next start -p $PORT"` : Railway injecte `$PORT` (différent de 3000) — sans ce `startCommand`, Next.js démarre sur 3000 et Railway ne peut pas router le trafic.
 - `numReplicas = 1` : un seul process (WebSocket + état en mémoire)
-- Pas de `next.config.js` `output: 'standalone'` nécessaire avec Nixpacks
+- Pas de `next.config.js` `output: 'standalone'` nécessaire avec Railpack
 
 ---
 
-### Problèmes fréquents du frontend Railway
+### Problèmes rencontrés lors du déploiement frontend (2026-06-28)
 
-| # | Symptôme | Cause | Solution |
-|---|----------|-------|----------|
-| 1 | La carte n'affiche pas les données | `NEXT_PUBLIC_API_BASE_URL` incorrect ou manquant | Vérifier la variable dans Railway → **rebuild** obligatoire |
-| 2 | Erreurs CORS dans la console | `ALLOWED_ORIGINS` backend ne contient pas l'URL frontend | Ajouter l'URL et redéployer le backend |
-| 3 | Build échoue (`sharp` module) | Binaire natif incompatible | Railway compile `sharp` en natif — normal, attendre la fin du build |
-| 4 | Timeout healthcheck | Next.js met >2 min à démarrer sur un plan hobby | Augmenter `healthcheckTimeout = 180` dans `railway.toml` |
-| 5 | `NEXT_PUBLIC_API_BASE_URL` = `undefined` en prod | Variable ajoutée APRÈS le premier build | Re-déployer pour déclencher un nouveau build avec la variable |
-| 6 | Page blanche au chargement | Hydratation SSR échouée | Vérifier les logs console navigateur — souvent une variable d'env manquante |
+| # | Symptôme | Cause | Solution appliquée |
+|---|----------|-------|--------------------|
+| 1 | `railway up --service frontend` → `Service not found` | Le service n'existe pas encore — `railway up` ne le crée pas | Créer le service manuellement via le tableau de bord Railway (New → Empty service) |
+| 2 | `railway up` → `Failed to upload code 404 Not Found` | Le service est lié à GitHub → conflit avec l'upload direct | Ne pas utiliser `railway up` quand GitHub est la source. Déclencher via push GitHub ou bouton Deploy dans le dashboard |
+| 3 | Build bloqué : `SECURITY VULNERABILITIES DETECTED` | `next@14.2.33` dans `package-lock.json` contient CVE-2025-55184 et CVE-2025-67779 | `npm install next@14.2.35 --no-strict-ssl` → commit `package-lock.json` mis à jour |
+| 4 | `npm install next@14.2.35` → `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | Problème certificat SSL réseau entreprise | `npm install next@14.2.35 --no-strict-ssl` |
+| 5 | Premier déploiement ne se déclenche pas après création du service | Le webhook GitHub n'est pas actif avant le premier push APRÈS la création du service | Faire un commit vide (`git commit --allow-empty`) ou cliquer "Deploy" dans le dashboard |
+| 6 | `startCommand: null` dans les métadonnées du déploiement | `railway.toml` avec `builder = "NIXPACKS"` ignoré par Railpack | Mettre `builder = "RAILPACK"` dans `railway.toml` — Railway lit alors toute la config |
+| 7 | La carte n'affiche pas les données | `NEXT_PUBLIC_API_BASE_URL` incorrect ou manquant | Vérifier la variable dans Railway → **rebuild** obligatoire (`NEXT_PUBLIC_*` = build-time) |
+| 8 | Erreurs CORS dans la console | `ALLOWED_ORIGINS` backend ne contient pas l'URL frontend | `railway variables set ALLOWED_ORIGINS="https://frontend-production-599c.up.railway.app,http://localhost:3000" --service backend` puis redéployer le backend |
+| 9 | `NEXT_PUBLIC_API_BASE_URL` = `undefined` en prod | Variable ajoutée APRÈS le premier build | Re-déployer pour déclencher un nouveau build avec la variable |
+| 10 | Page blanche au chargement | Hydratation SSR échouée | Vérifier les logs console navigateur — souvent une variable d'env manquante |
 
 ---
 
 ### Mise à jour ALLOWED_ORIGINS après déploiement frontend (récapitulatif)
 
+**URL de production actuelle du frontend : `https://frontend-production-599c.up.railway.app`**
+
 ```powershell
-# 1. Récupérer l'URL publique du frontend
+# 1. Récupérer l'URL publique du frontend (si besoin de la retrouver)
 railway domain --service frontend
-# → https://frontend-production-xxxx.up.railway.app
+# → https://frontend-production-599c.up.railway.app
 
 # 2. Mettre à jour ALLOWED_ORIGINS côté backend
-railway variables set ALLOWED_ORIGINS="https://frontend-production-xxxx.up.railway.app,http://localhost:3000" --service backend
+railway variables set ALLOWED_ORIGINS="https://frontend-production-599c.up.railway.app,http://localhost:3000" --service backend
 
-# 3. Redéployer le backend
-railway up --service backend --detach
+# 3. Redéployer le backend (--yes pour ignorer la confirmation interactive)
+railway service redeploy --service backend --yes
 ```
 
 
