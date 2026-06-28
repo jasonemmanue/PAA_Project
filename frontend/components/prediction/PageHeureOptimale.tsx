@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -234,15 +234,15 @@ export function PageHeureOptimale() {
       />
 
       {/* Sélecteurs */}
-      <div className="paa-card flex flex-wrap items-end gap-4 p-fluid-4">
-        <label className="flex flex-col gap-1">
+      <div className="paa-card flex flex-col gap-3 p-fluid-4 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
+        <label className="flex w-full flex-col gap-1 sm:w-auto sm:flex-1 sm:min-w-[200px]">
           <span className="text-fluid-xs font-medium app-text-muted">
             {t("heureOptimale.selectTroncon")}
           </span>
           <select
             value={tronconId ?? ""}
             onChange={(e) => setTronconId(Number(e.target.value))}
-            className="rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
+            className="w-full rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
                        text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
                        dark:text-paa-blue-100 min-h-[40px]"
           >
@@ -254,14 +254,14 @@ export function PageHeureOptimale() {
           </select>
         </label>
 
-        <label className="flex flex-col gap-1">
+        <label className="flex w-full flex-col gap-1 sm:w-auto sm:min-w-[160px]">
           <span className="text-fluid-xs font-medium app-text-muted">
             {t("heureOptimale.selectTypeJour")}
           </span>
           <select
             value={typeJour}
             onChange={(e) => setTypeJour(e.target.value as TypeJour)}
-            className="rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
+            className="w-full rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
                        text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
                        dark:text-paa-blue-100 min-h-[40px]"
           >
@@ -272,7 +272,7 @@ export function PageHeureOptimale() {
         </label>
 
         {resultat && (
-          <div className="self-end pb-1">
+          <div className="sm:self-end sm:pb-1">
             <BadgeSource source={resultat.source} />
           </div>
         )}
