@@ -18,16 +18,16 @@ import io
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.analyse.incidents_nlp import enrichir_incidents
 from app.core.config import get_settings
 from app.db.session import get_db, SessionLocal
-from app.models.models import Incident, Troncon, TypeIncident, SeveriteIncident
+from app.models.models import Incident, SourceIncident, Troncon, TypeIncident, SeveriteIncident
 from app.sources.parsers.rss_parser import scraper_toutes_sources
 
 
@@ -410,3 +410,112 @@ async def enrichir_maintenant(
 
     background_tasks.add_task(_enrichir)
     return {"message": "Enrichissement NLP lancé en arrière-plan."}
+
+
+# ---------------------------------------------------------------------------
+# GESTION DES SOURCES DE SCRAPING — migration 0014
+# ---------------------------------------------------------------------------
+
+
+class SourceIn(BaseModel):
+    """Payload de création / mise à jour d'une source de scraping."""
+    nom: str = Field(..., min_length=2, max_length=80,
+                     description="Identifiant court unique (slug). Ex: 'fraternite_matin'.")
+    libelle: str = Field(..., min_length=2, max_length=200,
+                         description="Nom affiché à l'utilisateur.")
+    url: str = Field(..., min_length=5, max_length=500,
+                     description="URL du flux RSS ou de la page HTML.")
+    type: str = Field("rss", pattern="^(rss|html)$")
+    actif: bool = True
+    fiabilite: float = Field(0.7, ge=0.0, le=1.0)
+
+
+class SourceOut(SourceIn):
+    id: int
+    ajoute_le: datetime
+
+
+@router.get(
+    "/sources",
+    summary="Liste les sources de scraping configurées",
+    response_model=list[SourceOut],
+)
+def lister_sources(db: Session = Depends(get_db)) -> list[SourceOut]:
+    sources = db.execute(
+        select(SourceIncident).order_by(SourceIncident.id)
+    ).scalars().all()
+    return [
+        SourceOut(
+            id=s.id, nom=s.nom, libelle=s.libelle, url=s.url, type=s.type,
+            actif=s.actif, fiabilite=s.fiabilite, ajoute_le=s.ajoute_le,
+        )
+        for s in sources
+    ]
+
+
+@router.post(
+    "/sources",
+    summary="Ajouter une nouvelle source de scraping",
+    description=(
+        "La source devient active au prochain cycle de collecte d'incidents "
+        "(toutes les 30 min). Le scraper RSS supporte la plupart des flux "
+        "standard. Le type HTML est réservé aux sources sans flux RSS."
+    ),
+    response_model=SourceOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def creer_source(payload: SourceIn, db: Session = Depends(get_db)) -> SourceOut:
+    existant = db.execute(
+        select(SourceIncident).where(SourceIncident.nom == payload.nom)
+    ).scalar_one_or_none()
+    if existant is not None:
+        raise HTTPException(409, f"Une source nommée {payload.nom!r} existe déjà.")
+    s = SourceIncident(
+        nom=payload.nom, libelle=payload.libelle, url=payload.url,
+        type=payload.type, actif=payload.actif, fiabilite=payload.fiabilite,
+    )
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return SourceOut(
+        id=s.id, nom=s.nom, libelle=s.libelle, url=s.url, type=s.type,
+        actif=s.actif, fiabilite=s.fiabilite, ajoute_le=s.ajoute_le,
+    )
+
+
+@router.patch(
+    "/sources/{source_id}",
+    summary="Modifier une source (notamment activer/désactiver)",
+    response_model=SourceOut,
+)
+def modifier_source(source_id: int, payload: SourceIn,
+                    db: Session = Depends(get_db)) -> SourceOut:
+    s = db.get(SourceIncident, source_id)
+    if s is None:
+        raise HTTPException(404, f"Source id={source_id} introuvable.")
+    s.nom = payload.nom
+    s.libelle = payload.libelle
+    s.url = payload.url
+    s.type = payload.type
+    s.actif = payload.actif
+    s.fiabilite = payload.fiabilite
+    db.commit()
+    db.refresh(s)
+    return SourceOut(
+        id=s.id, nom=s.nom, libelle=s.libelle, url=s.url, type=s.type,
+        actif=s.actif, fiabilite=s.fiabilite, ajoute_le=s.ajoute_le,
+    )
+
+
+@router.delete(
+    "/sources/{source_id}",
+    summary="Supprimer définitivement une source de scraping",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def supprimer_source(source_id: int, db: Session = Depends(get_db)) -> Response:
+    s = db.get(SourceIncident, source_id)
+    if s is None:
+        raise HTTPException(404, f"Source id={source_id} introuvable.")
+    db.delete(s)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

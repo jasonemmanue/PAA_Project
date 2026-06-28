@@ -17,7 +17,7 @@
  * normalement.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -29,34 +29,75 @@ import {
   YAxis,
 } from "recharts";
 
+import { useAuth } from "@/contexts/AuthContext";
 import { Card } from "@/components/ui/Card";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { LigneEvolution } from "@/lib/types";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
+
 type TypeJour = "Jours ouvrables" | "Week-ends";
 
 export function EvolutionPluriannuelle() {
   const { t } = useI18n();
+  const { peutEcrire } = useAuth();
   const [lignes, setLignes] = useState<LigneEvolution[]>([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
   const [typeJour, setTypeJour] = useState<TypeJour>("Jours ouvrables");
+  const [importEnCours, setImportEnCours] = useState(false);
+  const [messageImport, setMessageImport] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    let annule = false;
-    api
-      .evolution()
-      .then((res) => {
-        if (annule) return;
-        setLignes(Array.isArray(res?.lignes) ? res.lignes : []);
-      })
-      .catch((e) => !annule && setErreur(e instanceof Error ? e.message : String(e)))
-      .finally(() => !annule && setChargement(false));
-    return () => {
-      annule = true;
-    };
-  }, []);
+  async function recharger() {
+    try {
+      const res = await api.evolution();
+      setLignes(Array.isArray(res?.lignes) ? res.lignes : []);
+      setErreur(null);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setChargement(false);
+    }
+  }
+
+  useEffect(() => { recharger(); }, []);
+
+  async function importerFichier(f: File) {
+    setImportEnCours(true);
+    setMessageImport(null);
+    setErreur(null);
+    try {
+      const form = new FormData();
+      form.append("fichier", f);
+      // Détection format : .xlsx/.xls → endpoint SYNTHESE COMPAREE existant
+      //                    .csv ou autre Excel → endpoint générique 7 colonnes
+      const nom = f.name.toLowerCase();
+      let endpoint: string;
+      if (nom.endsWith(".csv")) {
+        endpoint = "/import/evolution-csv";
+      } else {
+        // On tente le format générique en priorité (plus tolérant).
+        // En cas d'échec, basculer manuellement vers /import/evolution si le
+        // fichier est exactement le format FEVRIER_2026.xlsx (SYNTHESE COMPAREE).
+        endpoint = "/import/evolution-csv";
+      }
+      const rep = await fetch(`${API_BASE}${endpoint}`, { method: "POST", body: form });
+      if (!rep.ok) {
+        const txt = await rep.text().catch(() => "");
+        throw new Error(`HTTP ${rep.status} — ${txt || rep.statusText}`);
+      }
+      const data = await rep.json();
+      setMessageImport(data.message ?? "Import réussi.");
+      await recharger();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportEnCours(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
 
   const lignesFiltrees = lignes.filter((l) => l.type_jour === typeJour);
 
@@ -104,6 +145,40 @@ export function EvolutionPluriannuelle() {
       titre={t("indicateurs.evolutionTitle")}
       description={t("indicateurs.evolutionSubtitle")}
     >
+      {/* Bouton import CSV/Excel — visible en mode écriture */}
+      {peutEcrire && (
+        <div className="mb-3 flex flex-col gap-2 rounded-md border border-dashed app-border bg-paa-blue-50/50 p-3 dark:bg-paa-navy-800/50 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-fluid-sm font-semibold text-paa-navy-900 dark:text-paa-blue-100">
+              📥 Mettre à jour les données pluriannuelles
+            </p>
+            <p className="text-fluid-xs app-text-muted">
+              Format CSV ou Excel à 7 colonnes : axe, sens, periode, type_jour,
+              temps_min_s, temps_moyen_s, temps_max_s. Idempotent (UPSERT).
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              disabled={importEnCours}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) importerFichier(f);
+              }}
+              className="text-fluid-xs"
+            />
+            {importEnCours && <span className="text-fluid-xs app-text-muted">Import en cours…</span>}
+          </div>
+        </div>
+      )}
+      {messageImport && (
+        <div className="mb-3 rounded-md border border-statut-fluide/40 bg-statut-fluide/10 px-3 py-2 text-fluid-xs text-statut-fluide">
+          ✅ {messageImport}
+        </div>
+      )}
+
       {/* Toggle Jours ouvrables / Week-ends */}
       <div
         role="group"

@@ -18,6 +18,7 @@ import { useI18n } from "@/lib/i18n";
 import type { Incident, IncidentsPage, StatsIncidents, Troncon } from "@/lib/types";
 
 import { FiltresIncidents, type FiltresEtat } from "./FiltresIncidents";
+import { GestionSources } from "./GestionSources";
 import { ListeIncidents } from "./ListeIncidents";
 
 // Leaflet est client-only — chargement dynamique sans SSR
@@ -235,6 +236,9 @@ export function PageIncidents() {
           apiBaseUrl={process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081"}
         />
       </div>
+
+      {/* Gestion des sources — visible en mode écriture uniquement */}
+      <GestionSources />
 
       {/* Accidents par mois */}
       {accidentsParMois.length > 0 && (

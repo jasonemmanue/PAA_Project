@@ -29,6 +29,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -90,6 +91,11 @@ class Troncon(Base):
 
     # Suppression logique : False = tronçon archivé, historique préservé
     actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Distinction axe officiel DEESP / tronçon supplémentaire (migration 0013)
+    # True  → fait partie des 3 axes officiels du cahier des charges
+    # False → tronçon ajouté en complément via la page Administration
+    est_axe: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # Relations
     mesures: Mapped[list["Mesure"]] = relationship(
@@ -708,3 +714,27 @@ class Incident(Base):
             f"<Incident id={self.id} source={self.source_nom!r} "
             f"type={self.type_incident!r} actif={self.actif}>"
         )
+
+
+# =============================================================================
+# Sources de scraping configurables (migration 0014)
+# =============================================================================
+
+
+class SourceIncident(Base):
+    """Source de scraping (RSS, HTML) configurable depuis l'interface admin."""
+    __tablename__ = "sources_incidents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nom: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    libelle: Mapped[str] = mapped_column(String(200), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    type: Mapped[str] = mapped_column(String(10), nullable=False, default="rss")
+    actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    fiabilite: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)
+    ajoute_le: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<SourceIncident {self.nom!r} actif={self.actif}>"

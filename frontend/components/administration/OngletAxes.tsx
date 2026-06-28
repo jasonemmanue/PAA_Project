@@ -39,6 +39,7 @@ export function OngletAxes({
   const [fin, setFin] = useState<{ lat: number; lon: number } | null>(null);
   const [pointActif, setPointActif] = useState<"debut" | "fin" | null>(null);
   const [couleur, setCouleur] = useState<string>("#9C27B0");
+  const [estAxe, setEstAxe] = useState<boolean>(false); // par défaut tronçon supplémentaire
   const [erreur, setErreur] = useState<string | null>(null);
   const [succes, setSucces] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
@@ -77,6 +78,7 @@ export function OngletAxes({
         lat_destination: fin.lat,
         lon_destination: fin.lon,
         couleur,
+        est_axe: estAxe,
       });
       const ad = t.adoption_collecte;
       const lignes = [
@@ -195,6 +197,25 @@ export function OngletAxes({
             </div>
           </div>
 
+          {/* Catégorie axe / tronçon */}
+          <fieldset className="rounded-md border app-border p-3">
+            <legend className="px-2 text-fluid-xs font-semibold app-text-muted uppercase tracking-wide">
+              Catégorie
+            </legend>
+            <div className="flex flex-wrap gap-3">
+              <label className="flex cursor-pointer items-center gap-2 text-fluid-sm">
+                <input type="radio" name="cat" checked={!estAxe}
+                       onChange={() => setEstAxe(false)} className="accent-paa-blue-600" />
+                <span><strong>Tronçon</strong> — sous-portion du réseau (défaut)</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-fluid-sm">
+                <input type="radio" name="cat" checked={estAxe}
+                       onChange={() => setEstAxe(true)} className="accent-paa-blue-600" />
+                <span><strong>Axe</strong> — axe officiel DEESP (mêmes propriétés que les 6 axes initiaux)</span>
+              </label>
+            </div>
+          </fieldset>
+
           {/* Couleur + bouton */}
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1 text-fluid-sm font-medium">
@@ -261,6 +282,7 @@ export function OngletAxes({
             <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
               <tr className="text-left">
                 <th className="px-3 py-2 font-medium">ID</th>
+                <th className="px-3 py-2 font-medium">Catégorie</th>
                 <th className="px-3 py-2 font-medium">Nom</th>
                 <th className="px-3 py-2 font-medium text-right">Distance</th>
                 <th className="px-3 py-2 font-medium">Couleur</th>
@@ -276,6 +298,17 @@ export function OngletAxes({
                   }
                 >
                   <td className="px-3 py-2 font-mono">{t.id}</td>
+                  <td className="px-3 py-2">
+                    {t.est_axe ? (
+                      <span className="inline-block rounded bg-paa-navy-700 px-2 py-0.5 text-fluid-xs font-semibold text-white">
+                        AXE
+                      </span>
+                    ) : (
+                      <span className="inline-block rounded bg-paa-blue-50 px-2 py-0.5 text-fluid-xs font-semibold text-paa-navy-800 dark:bg-paa-navy-800 dark:text-paa-blue-100">
+                        Tronçon
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">{t.nom}</td>
                   <td className="px-3 py-2 text-right">{t.distance_km} km</td>
                   <td className="px-3 py-2">

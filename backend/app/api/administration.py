@@ -64,6 +64,13 @@ class TronconCreer(BaseModel):
     )
     vitesse_ref_kmh: float = 50.0
     couleur: str = "#1976D2"
+    est_axe: bool = Field(
+        default=False,
+        description=(
+            "Si True, marqué comme axe officiel DEESP. Si False (défaut), "
+            "tronçon supplémentaire ajouté en complément des 6 axes initiaux."
+        ),
+    )
 
 
 class TronconMaj(BaseModel):
@@ -170,6 +177,7 @@ async def creer_troncon(
         vitesse_ref_kmh=payload.vitesse_ref_kmh,
         couleur=payload.couleur,
         actif=True,
+        est_axe=payload.est_axe,
     )
     db.add(troncon)
     db.commit()
@@ -459,6 +467,7 @@ def _serializer_troncon(t: Troncon) -> dict[str, Any]:
         "vitesse_ref_kmh": t.vitesse_ref_kmh,
         "couleur": t.couleur,
         "actif": t.actif,
+        "est_axe": getattr(t, "est_axe", True),
     }
 
 

@@ -1,91 +1,36 @@
 "use client";
 
+import { useState } from "react";
+
 import { Card } from "@/components/ui/Card";
 import type { RapportZonesCongestionnees } from "@/lib/types";
 
-function exporterTableauPdf(rapport: RapportZonesCongestionnees) {
-  const lignes = rapport.entrees.map((e) => {
-    const sousT = e.sous_troncon_code
-      ? `<div><span style="font-family:monospace;font-weight:600">${e.sous_troncon_code}</span><br><span style="font-size:9px;color:#6b7280">${e.sous_troncon_nom ?? ""}</span></div>`
-      : `<em style="font-size:9px;color:#6b7280">axe entier</em>`;
-    const regles = [
-      e.regle_jour_indicatif ? `<span class="badge-j">≥ 3 / jour</span>` : "",
-      e.regle_semaine ? `<span class="badge-s">≥ 4 / sem.</span>` : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-    const jours = Object.entries(e.nb_par_jour_semaine)
-      .map(([j, n]) => `<span class="jour">${j}: ${n}</span>`)
-      .join(" ");
-    return `<tr>
-      <td>${e.troncon_nom}</td>
-      <td>${sousT}</td>
-      <td style="font-family:monospace">${e.tranche}</td>
-      <td style="text-align:right;font-weight:600">${e.nb_total_semaine}</td>
-      <td>${regles}</td>
-      <td>${jours}</td>
-    </tr>`;
-  });
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
-  const html = `<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <title>Tableau 16 — Tronçons congestionnés — ${rapport.campagne}</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; padding: 20px; color: #111; }
-    h2 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
-    .camp { font-size: 10px; font-weight: 600; color: #1a365d; margin-bottom: 4px; }
-    .desc { font-size: 9px; color: #555; margin-bottom: 14px; }
-    table { border-collapse: collapse; width: 100%; }
-    thead tr { background: #1a365d; color: #fff; }
-    th { padding: 6px 8px; text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .4px; }
-    td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; font-size: 10px; }
-    tr:nth-child(even) td { background: #f9fafb; }
-    .badge-j { background: rgba(220,38,38,.12); color: #b91c1c; padding: 1px 5px; border-radius: 3px; font-size: 9px; white-space: nowrap; }
-    .badge-s { background: rgba(217,119,6,.12); color: #b45309; padding: 1px 5px; border-radius: 3px; font-size: 9px; white-space: nowrap; }
-    .jour { background: #eff6ff; padding: 1px 5px; border-radius: 3px; margin: 1px; white-space: nowrap; display: inline-block; }
-    .vide { text-align: center; color: #6b7280; padding: 16px; font-style: italic; }
-    @media print { @page { size: A4 landscape; margin: 1cm; } body { padding: 0; } }
-  </style>
-</head>
-<body>
-  <h2>Tableau 16 — Tronçons congestionnés (règles DEESP)</h2>
-  <p class="camp">Campagne : ${rapport.campagne}</p>
-  <p class="desc">Critère par mesure : rouge présent OU orange ≥ 50 % du tronçon.
-  Congestionné si (a) ≥ 3 × sur un même jour-indicatif à la même heure,
-  OU (b) ≥ 4 × à la même heure dans la semaine.</p>
-  <table>
-    <thead>
-      <tr>
-        <th>AXE</th><th>SOUS-TRONÇON</th><th>TRANCHE HORAIRE</th>
-        <th style="text-align:right">NB / SEM.</th><th>RÈGLE</th><th>RÉPARTITION PAR JOUR</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${
-        rapport.entrees.length > 0
-          ? lignes.join("\n")
-          : '<tr><td colspan="6" class="vide">Aucun tronçon congestionné sur cette campagne.</td></tr>'
-      }
-    </tbody>
-  </table>
-</body>
-</html>`;
-
-  const fenetre = window.open("", "_blank", "width=1100,height=700");
-  if (!fenetre) {
-    alert("Autorisez les pop-ups pour exporter le PDF.");
-    return;
+/**
+ * Téléchargement direct du PDF généré côté backend (fpdf2).
+ * Pas de popup, pas d'aperçu — l'utilisateur reçoit directement le fichier.
+ */
+async function telechargerPdf(campagne: string): Promise<void> {
+  const url = `${API_BASE}/rapport/zones-congestionnees/pdf?campagne=${encodeURIComponent(campagne)}`;
+  try {
+    const rep = await fetch(url);
+    if (!rep.ok) {
+      const txt = await rep.text().catch(() => "");
+      throw new Error(`HTTP ${rep.status} — ${txt || rep.statusText}`);
+    }
+    const blob = await rep.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = `tableau16_${campagne}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  } catch (e) {
+    alert("Échec de téléchargement du PDF : " + (e instanceof Error ? e.message : String(e)));
   }
-  fenetre.document.open();
-  fenetre.document.write(html);
-  fenetre.document.close();
-  setTimeout(() => {
-    fenetre.focus();
-    fenetre.print();
-  }, 400);
 }
 
 export function TableauZonesCongestionnees({
@@ -112,23 +57,9 @@ export function TableauZonesCongestionnees({
         </div>
       )}
 
-      {/* Bouton export PDF */}
-      <div className="mb-3 flex justify-end">
-        <button
-          type="button"
-          disabled={!rapport}
-          onClick={() => rapport && exporterTableauPdf(rapport)}
-          className="inline-flex items-center gap-2 rounded-md bg-paa-navy-700 px-3 py-1.5
-                     text-fluid-xs font-medium text-white shadow-sm transition-colors
-                     hover:bg-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
-                     disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-          </svg>
-          Exporter PDF
-        </button>
-      </div>
+      {/* Bouton export PDF — téléchargement direct via backend fpdf2 */}
+      <BoutonExportPdf campagne={rapport?.campagne ?? ""} actif={!!rapport} />
+
 
       <div className="overflow-x-auto">
         <table className="min-w-full text-fluid-sm">
@@ -199,6 +130,43 @@ export function TableauZonesCongestionnees({
         </table>
       </div>
     </Card>
+  );
+}
+
+function BoutonExportPdf({ campagne, actif }: { campagne: string; actif: boolean }) {
+  const [enCours, setEnCours] = useState(false);
+  return (
+    <div className="mb-3 flex justify-end">
+      <button
+        type="button"
+        disabled={!actif || enCours}
+        onClick={async () => {
+          setEnCours(true);
+          try { await telechargerPdf(campagne); } finally { setEnCours(false); }
+        }}
+        className="inline-flex items-center gap-2 rounded-md bg-paa-navy-700 px-3 py-1.5
+                   text-fluid-xs font-medium text-white shadow-sm transition-colors
+                   hover:bg-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
+                   disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {enCours ? (
+          <>
+            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+              <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+            Génération…
+          </>
+        ) : (
+          <>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+              <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+            Exporter PDF
+          </>
+        )}
+      </button>
+    </div>
   );
 }
 

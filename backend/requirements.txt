@@ -35,4 +35,7 @@ feedparser>=6.0,<7.0          # parsing flux RSS (Fraternité Matin, Abidjan.net
 beautifulsoup4>=4.12,<5.0     # parsing HTML pour les sites sans RSS
 lxml>=5.0,<6.0                # backend HTML rapide pour BeautifulSoup
 
+# --- Génération PDF (Tableau 16 rapport DEESP) ---
+fpdf2>=2.7,<3.0               # pure Python, léger, génère PDF natif sans dépendance OS
+
 psycopg[binary]>=3.1

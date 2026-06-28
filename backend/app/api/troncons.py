@@ -49,6 +49,11 @@ class TronconResume(BaseModel):
     vitesse_ref_kmh: float
     couleur_base: str = Field(description="Couleur officielle du tronçon (réf. cartographique).")
     actif: bool
+    est_axe: bool = Field(
+        default=True,
+        description="True = axe officiel DEESP du cahier des charges, "
+                    "False = tronçon supplémentaire ajouté via Administration.",
+    )
 
 
 class TronconDetail(TronconResume):
@@ -165,7 +170,7 @@ async def lister_troncons(
             ).scalars()
         )
         etat["troncons"].extend([{
-            "id": t.id, "nom": t.nom, "actif": False,
+            "id": t.id, "nom": t.nom, "actif": False, "est_axe": getattr(t, "est_axe", True),
             "distance_m": t.distance_m, "distance_km": round(t.distance_m / 1000.0, 2),
             "statut": "archive",
         } for t in inactifs])
@@ -201,6 +206,7 @@ async def detail_troncon(
         vitesse_ref_kmh=troncon.vitesse_ref_kmh,
         couleur_base=troncon.couleur,
         actif=troncon.actif,
+        est_axe=getattr(troncon, "est_axe", True),
         lat_origine=troncon.lat_origine,
         lon_origine=troncon.lon_origine,
         lat_destination=troncon.lat_destination,

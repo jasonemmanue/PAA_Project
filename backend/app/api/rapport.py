@@ -22,7 +22,7 @@ from datetime import date as DateType, datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.analyse import rapport_paa
@@ -216,6 +216,126 @@ async def get_zones_congestionnees(
             for c in cong
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# GET /rapport/zones-congestionnees/pdf — téléchargement direct
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/zones-congestionnees/pdf",
+    summary="Tableau 16 au format PDF (téléchargement direct)",
+    description=(
+        "Génère un PDF A4 paysage contenant le Tableau 16. Le navigateur "
+        "déclenchera un téléchargement immédiat grâce à l'en-tête "
+        "Content-Disposition: attachment."
+    ),
+    response_class=Response,
+)
+async def get_zones_congestionnees_pdf(
+    campagne: str = Query(..., description="Format 'AAAA-MM'."),
+    debut: DateType | None = Query(None),
+    fin: DateType | None = Query(None),
+    db: Session = Depends(get_db),
+) -> Response:
+    from fpdf import FPDF  # import local : évite de charger fpdf au démarrage
+
+    debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
+    cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
+    seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
+    nb_jours = max(1, (fin_utc - debut_utc).days + 1)
+
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=10)
+    pdf.add_page()
+
+    # En-tête
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 7, "Tableau 16 - Troncons congestionnes (regles DEESP)", ln=True)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(26, 54, 93)
+    pdf.cell(0, 5, f"Campagne : {campagne}    -    {nb_jours} jour(s) analyse(s)", ln=True)
+    pdf.set_text_color(85, 85, 85)
+    pdf.set_font("Helvetica", "", 8)
+    desc = (
+        f"Critere par mesure : couleur Google Maps - ROUGE OU ORANGE >= 50%. "
+        f"Seuils appliques : >= {seuil_j} occurrence(s) / jour-indicatif OU "
+        f">= {seuil_s} occurrence(s) / semaine."
+    )
+    pdf.multi_cell(0, 4, desc)
+    pdf.ln(2)
+
+    # En-tête du tableau
+    pdf.set_fill_color(26, 54, 93)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 8)
+    largeurs = [60, 35, 25, 18, 30, 110]  # mm — total = 278
+    entetes = ["AXE", "SOUS-TRONCON", "TRANCHE", "NB/SEM.", "REGLE", "REPARTITION PAR JOUR"]
+    for w, h in zip(largeurs, entetes):
+        pdf.cell(w, 7, h, border=1, fill=True, align="L")
+    pdf.ln()
+
+    # Lignes
+    pdf.set_text_color(17, 17, 17)
+    pdf.set_font("Helvetica", "", 8)
+    if not cong:
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.set_text_color(107, 114, 128)
+        pdf.cell(sum(largeurs), 10, "Aucun troncon congestionne sur cette campagne.",
+                 border=1, align="C")
+    else:
+        for i, c in enumerate(cong):
+            if i % 2 == 1:
+                pdf.set_fill_color(249, 250, 251)
+                fill = True
+            else:
+                pdf.set_fill_color(255, 255, 255)
+                fill = True
+            sous = (
+                f"{c.sous_troncon_code} - {c.sous_troncon_nom or ''}"
+                if c.sous_troncon_code
+                else "axe entier"
+            )
+            tranche = f"{c.heure:02d}h-{c.heure + 1:02d}h"
+            regles = []
+            if c.regle_jour_indicatif:
+                regles.append(f">={seuil_j}/jour")
+            if c.regle_semaine:
+                regles.append(f">={seuil_s}/sem")
+            regle_txt = " | ".join(regles) or "-"
+            repartition = " ".join(
+                f"{j[:3]}:{n}" for j, n in c.nb_jours_congestionnes_par_type.items()
+            )
+
+            ligne = [
+                (largeurs[0], (c.troncon_nom or "")[:45]),
+                (largeurs[1], sous[:25]),
+                (largeurs[2], tranche),
+                (largeurs[3], str(c.nb_total_semaine)),
+                (largeurs[4], regle_txt),
+                (largeurs[5], repartition[:80]),
+            ]
+            for w, txt in ligne:
+                pdf.cell(w, 6, txt, border=1, fill=fill, align="L")
+            pdf.ln()
+
+    # Pied de page
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "I", 7)
+    pdf.set_text_color(107, 114, 128)
+    pdf.cell(0, 4,
+             "Genere par PAA-Traverse - Port Autonome d'Abidjan - "
+             f"Methodologie DEESP rapport octobre 2025", ln=True)
+
+    # Réponse — bytearray → bytes pour httpx/starlette
+    contenu = bytes(pdf.output())
+    nom = f"tableau16_{campagne}.pdf"
+    return Response(
+        content=contenu,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nom}"'},
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -42,9 +42,14 @@ L'APPLICATION EN UNE PHRASE
 PAA-Traverse mesure en temps réel combien de minutes il faut pour traverser les axes routiers stratégiques de la zone portuaire d'Abidjan, détecte les congestions selon la méthode officielle DEESP du PAA, et recommande les meilleures heures pour circuler.
 
 ══════════════════════════════════════
-LES 3 AXES SURVEILLÉS (6 TRONÇONS)
+LES 3 AXES SURVEILLÉS (6 TRONÇONS DIRIGÉS = AXES)
 ══════════════════════════════════════
 Chaque axe est mesuré dans les 2 sens, ce qui donne 6 tronçons dirigés. Axe 1 : CARENA (Plateau) vers Pharmacie Palm Beach, 14,9 km, temps de référence 17 min 53 s à 50 km/h. Axe 2 : Toyota CFAO (Treichville) vers Pharmacie Palm Beach, 8,0 km, référence 9 min 36 s. Axe 3 : Agence SODECI (Zone 4) vers Pharmacie Palm Beach, 8,3 km, référence 9 min 58 s. Chaque axe est aussi mesuré dans le sens retour, soit 6 tronçons au total. Le temps de référence est le temps théorique en circulation fluide à 50 km/h — quand le temps réel le dépasse largement, c'est le signe d'une congestion.
+
+══════════════════════════════════════
+DISTINCTION AXES VS TRONÇONS
+══════════════════════════════════════
+DEUX CATÉGORIES D'ENTITÉS SURVEILLÉES coexistent dans l'application. Un AXE désigne un itinéraire stratégique officiel du cahier des charges DEESP : les 6 axes initiaux (ids 1 à 6 en base) couvrent les 3 itinéraires CARENA, Toyota CFAO et SODECI vers Pharmacie Palm Beach, chacun dans les deux sens. Un gestionnaire peut créer d'autres axes officiels via la page Administration (case à cocher « Axe »). Un TRONÇON supplémentaire est une portion de route ajoutée en complément (par exemple un raccordement secondaire) via la même page Administration mais avec la case « Tronçon » (option par défaut). Visuellement, le sélecteur de tronçon de la page Indicateurs sépare ces deux catégories en deux groupes nommés « Axes officiels DEESP » et « Tronçons supplémentaires ». Toutes les analyses (collecte Google, indicateurs, rapport DEESP, calibration GPX) traitent identiquement axes et tronçons — la distinction est purement organisationnelle pour aider l'opérateur à se repérer. Quand un utilisateur dit « axe », il pense aux 6 axes officiels ; quand il dit « tronçon », il peut désigner l'un des 6 axes ou bien un tronçon supplémentaire ajouté en Administration. Demande toujours une précision en cas de doute.
 
 ══════════════════════════════════════
 COMMENT LES DONNÉES SONT COLLECTÉES

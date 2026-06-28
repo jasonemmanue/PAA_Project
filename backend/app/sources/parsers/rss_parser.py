@@ -214,7 +214,13 @@ async def scraper_rss_source(
 
 
 async def scraper_toutes_sources(db: Session) -> int:
-    """Lance le scraping séquentiel de toutes les sources RSS configurées.
+    """Lance le scraping séquentiel de toutes les sources RSS actives.
+
+    Depuis la migration 0014, les sources sont stockées dans la table
+    `sources_incidents` et configurables via l'API `/incidents/sources`.
+    Si la table est vide (ou inaccessible), un repli silencieux utilise la
+    constante `SOURCES_RSS` historique pour garantir un fonctionnement
+    nominal après déploiement.
 
     Séquentiel (pas concurrent) pour respecter le délai inter-requêtes et
     ne pas surcharger les serveurs des médias ivoiriens.
@@ -222,12 +228,30 @@ async def scraper_toutes_sources(db: Session) -> int:
     Retourne le total d'incidents insérés pour ce cycle.
     """
     total = 0
-    for source in SOURCES_RSS:
+    sources: list[tuple[str, str]] = []
+    try:
+        from app.models.models import SourceIncident
+        from sqlalchemy import select as _select
+
+        lignes = db.execute(
+            _select(SourceIncident).where(
+                SourceIncident.actif.is_(True),
+                SourceIncident.type == "rss",
+            )
+        ).scalars().all()
+        sources = [(s.url, s.nom) for s in lignes]
+    except Exception:
+        logger.warning(
+            "Lecture des sources DB impossible — repli sur SOURCES_RSS statiques."
+        )
+
+    if not sources:
+        sources = [(s["url"], s["nom"]) for s in SOURCES_RSS]
+
+    for url, nom in sources:
         try:
-            nb = await scraper_rss_source(source["url"], source["nom"], db)
+            nb = await scraper_rss_source(url, nom, db)
             total += nb
         except Exception:
-            logger.exception(
-                "Erreur inattendue lors du scraping de %s.", source["nom"]
-            )
+            logger.exception("Erreur inattendue lors du scraping de %s.", nom)
     return total

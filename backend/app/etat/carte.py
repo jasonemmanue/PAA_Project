@@ -213,6 +213,8 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
             etat_troncons.append({
                 "id": troncon.id,
                 "nom": troncon.nom,
+                # True = axe officiel DEESP, False = tronçon supplémentaire (migration 0013)
+                "est_axe": getattr(troncon, "est_axe", True),
                 "distance_m": troncon.distance_m,
                 "distance_km": round(troncon.distance_m / 1000.0, 2),
                 "vitesse_ref_kmh": troncon.vitesse_ref_kmh,
