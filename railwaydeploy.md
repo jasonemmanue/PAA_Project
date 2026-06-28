@@ -15,8 +15,8 @@
 | Backend FastAPI | `backend` (Dockerfile) | `https://backend-production-6cbf.up.railway.app` ✅ |
 | PostgreSQL | Plugin Railway | Interne Railway ✅ |
 | Redis | Plugin Railway | Interne Railway ✅ |
-| OSRM | Non déployé | Optionnel (voir § OSRM) |
-| Frontend | À déployer en P4/P7 | Vercel ou Railway |
+| OSRM | Google Cloud e2-micro | HTTP port 5000, configuré via `OSRM_BASE_URL` ✅ |
+| Frontend Next.js | `frontend` (Railpack) | `https://frontend-production-599c.up.railway.app` ✅ |
 
 ### État au 2026-06-19
 

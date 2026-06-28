@@ -1602,7 +1602,7 @@ Clés ajoutées sous `"prediction"` dans les deux fichiers de messages :
 | `db`           | **Railway plugin PostgreSQL**       | Provisionnement 1-clic, sauvegardes auto.      |
 | `redis`        | **Railway plugin Redis**            | Idem.                                          |
 | `osrm`         | **Hors Railway** — voir § 8.3       | Image OSRM + extrait OSM (~ 800 Mo) trop lourds pour Railway. |
-| `frontend`     | Railway ou Vercel (à venir P4)      | À décider en P4 selon coût.                   |
+| `frontend`     | **Railway** service `frontend` (Railpack) | `https://frontend-production-599c.up.railway.app` — déployé le 2026-06-28. |
 
 ### 8.2 URL publique du backend
 
