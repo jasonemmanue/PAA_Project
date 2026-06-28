@@ -57,8 +57,8 @@ export function PageCarte() {
           <LegendeCarte />
         </div>
 
-        {/* Panneau liste — colonne droite (1/3 sur desktop) */}
-        <div className="flex flex-col gap-fluid-4">
+        {/* Panneau liste — colonne droite scrollable (hauteur calée sur la carte) */}
+        <div className="h-[45vh] overflow-y-auto lg:h-[70vh]">
           <PanneauTroncons
             etat={etat}
             selectionId={selectionId}

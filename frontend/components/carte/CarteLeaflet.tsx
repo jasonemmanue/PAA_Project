@@ -12,6 +12,7 @@ import "leaflet/dist/leaflet.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  CircleMarker as LeafletCircle,
   Map as LeafletMap,
   Marker as LeafletMarker,
   Polyline as LeafletPolyline,
@@ -86,6 +87,9 @@ export function CarteLeaflet({
   const poiMarkersRef = useRef<LeafletMarker[]>([]);
   // CircleMarkers des incidents actifs (mis à jour à chaque changement d'état)
   const incidentMarkersRef = useRef<any[]>([]);
+  // Marqueurs début (vert) et fin (rouge) du tronçon sélectionné
+  const markerDebutSelRef = useRef<LeafletCircle | null>(null);
+  const markerFinSelRef = useRef<LeafletCircle | null>(null);
   // Garde pour ne déclencher le zoom intelligent qu'une seule fois
   // (sinon la mise à jour WebSocket re-centre toutes les 20 min).
   const zoomInitialFaitRef = useRef(false);
@@ -382,10 +386,17 @@ export function CarteLeaflet({
   );
   const etatWs = useWsCarteEtat(onMessage);
 
-  // ---- 4. Recentrage animé sur sélection
+  // ---- 4. Recentrage animé + marqueurs début/fin sur sélection
   useEffect(() => {
     const L = LRef.current;
     const map = mapRef.current;
+
+    // Supprimer les marqueurs du tronçon précédemment sélectionné
+    markerDebutSelRef.current?.remove();
+    markerDebutSelRef.current = null;
+    markerFinSelRef.current?.remove();
+    markerFinSelRef.current = null;
+
     if (!L || !map || !etat || tronconSelectionneId === null) return;
 
     const troncon = etat.troncons.find((t) => t.id === tronconSelectionneId);
@@ -395,6 +406,40 @@ export function CarteLeaflet({
     if (points.length >= 2) {
       const bounds = L.latLngBounds(points);
       map.flyToBounds(bounds, { padding: [40, 40], duration: 0.8, maxZoom: 16 });
+    }
+
+    // Marqueur DÉBUT (vert foncé) sur le point d'origine du tronçon
+    const latO = troncon.lat_origine ?? troncon.geometrie?.lat_origine;
+    const lonO = troncon.lon_origine ?? troncon.geometrie?.lon_origine;
+    if (latO != null && lonO != null && Number.isFinite(latO) && Number.isFinite(lonO)) {
+      const nomCourt = troncon.nom.split(" → ")[0]?.trim() ?? troncon.nom;
+      markerDebutSelRef.current = L.circleMarker([latO, lonO], {
+        radius: 11,
+        color: "#ffffff",
+        fillColor: "#16a34a",
+        fillOpacity: 1,
+        weight: 3,
+        pane: "markerPane",
+      })
+        .bindTooltip(`🟢 Départ : ${nomCourt}`, { direction: "top", permanent: false })
+        .addTo(map);
+    }
+
+    // Marqueur FIN (rouge foncé) sur le point de destination du tronçon
+    const latD = troncon.lat_destination ?? troncon.geometrie?.lat_destination;
+    const lonD = troncon.lon_destination ?? troncon.geometrie?.lon_destination;
+    if (latD != null && lonD != null && Number.isFinite(latD) && Number.isFinite(lonD)) {
+      const nomCourt = troncon.nom.split(" → ")[1]?.trim() ?? troncon.nom;
+      markerFinSelRef.current = L.circleMarker([latD, lonD], {
+        radius: 11,
+        color: "#ffffff",
+        fillColor: "#dc2626",
+        fillOpacity: 1,
+        weight: 3,
+        pane: "markerPane",
+      })
+        .bindTooltip(`🔴 Arrivée : ${nomCourt}`, { direction: "top", permanent: false })
+        .addTo(map);
     }
 
     const ligne = lignesRef.current.get(tronconSelectionneId);
