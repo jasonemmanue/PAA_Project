@@ -9,7 +9,7 @@
  */
 
 import dynamic from "next/dynamic";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { LegendeCarte } from "@/components/carte/LegendeCarte";
 import { PanneauTroncons } from "@/components/carte/PanneauTroncons";
@@ -36,6 +36,13 @@ export function PageCarte() {
 
   const handleEtat = useCallback((e: CarteEtat) => setEtat(e), []);
   const handleSelectionner = useCallback((id: number) => setSelectionId(id), []);
+
+  // Bloquer le scroll de la page — seul le panneau latéral défile
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
   return (
     <div className="flex flex-col gap-fluid-4">
