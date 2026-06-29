@@ -815,7 +815,16 @@ côté mesures, et `axe + sens + periode + type_jour` côté évolution).
 | **PostgreSQL**  | Plugin Railway managé                | ✅ Provisionné, sauvegardes auto  |
 | **Redis**       | Plugin Railway managé                | ✅ Provisionné                    |
 | **OSRM**        | Non déployé (optionnel)              | ⚠️ Repli 50 km/h utilisé          |
-| **Frontend**    | À déployer en P4                     | ⏳ Vercel ou Railway              |
+| **Frontend**    | Service `frontend` Railway (Railpack) | ✅ En ligne 24h/24                |
+
+### Méthode de déploiement validée (2026-06-29)
+
+- **Déploiement frontend depuis le dossier dédié** : `cd frontend && railway up --service frontend`.
+- **Build de vérification obligatoire** : `npm run build` dans `frontend/` avant tout déploiement.
+- **Règle de cache Railway** : `git add -A && git commit -m "..."` avant `railway up`, sinon les nouveaux fichiers peuvent être absents du conteneur.
+- **Port dynamique** : le frontend doit démarrer avec `npx next start -p $PORT` ; aucun port fixe n'est attendu par Railway.
+- **Variables build-time** : `NEXT_PUBLIC_*` doivent être définies avant le premier build du frontend ; un changement de variable exige un redéploiement complet.
+- **Vérification post-déploiement** : `railway status`, puis `railway logs --service frontend --deployment <id>` pour contrôler le démarrage.
 
 ### Ce qui tourne en continu sur Railway
 
@@ -853,14 +862,17 @@ Au **19 juin 2026** (fin P6.1) :
 [`railwaydeploy.md`](railwaydeploy.md) à la racine. **À lire avant tout
 `railway up`** — notamment :
 
+- **Déploiement frontend validé** : `cd frontend && railway up --service frontend`.
+- **Vérification de build locale obligatoire** : `cd frontend && npm run build` doit réussir avant tout `railway up`.
 - Règle critique : **`git add -A` + commit** avant `railway up` (Railway
   utilise `git archive` et ignore les fichiers non commités).
 - Ne **jamais** mettre `alembic upgrade head` dans le `startCommand`
   (provoque un `pg_advisory_lock` bloquant). Lancer la migration
   **manuellement** depuis la **Console Railway** après chaque déploiement
   qui contient une nouvelle migration.
-- `${PORT}` doit être enveloppé dans `sh -c '...'` pour être interprété.
+- `${PORT}` doit être utilisé dans le start command du frontend (`npx next start -p $PORT`) afin que Railway injecte le bon port.
 - `numReplicas = 1` obligatoire (APScheduler vit en mémoire).
+- `NEXT_PUBLIC_API_BASE_URL` doit être définie dans Railway **avant** le premier build du frontend et tout changement de valeur nécessite un nouveau déploiement complet.
 
 ---
 

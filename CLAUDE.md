@@ -1755,13 +1755,14 @@ cd backend  &&  railway up --service backend  &&  cd ..
 cd frontend  &&  railway up --service frontend  &&  cd ..
 ```
 
-**Règles critiques frontend :**
-
+- **Vérification locale obligatoire avant tout déploiement** : `cd frontend && npm run build` doit réussir localement avant `railway up`.
+- **`startCommand = "npx next start -p $PORT"`** dans [frontend/railway.toml](frontend/railway.toml) : le frontend doit lancer Next.js sur le port dynamique fourni par Railway. Aucun port fixe ne doit être codé en dur.
 - **`railway up --service frontend` depuis `frontend/`** est la méthode fiable. `git push origin main` peut aussi déclencher le rebuild, mais sans garantie de cache invalidation.
 - **`NEXT_PUBLIC_*` = variables de build-time** — elles doivent être définies dans Railway **avant** le premier build. Ajouter une variable APRÈS le build déjà effectué n'a aucun effet : il faut redéclencher un déploiement complet.
 - **Vulnérabilités de sécurité bloquent le build** — Railway scan `package-lock.json`. Si un CVE est détecté, le build échoue avec `SECURITY VULNERABILITIES DETECTED`. Corriger dans `package-lock.json` (via `npm install <package>@<version>`) et pousser le lock file mis à jour.
-- **`builder = "RAILPACK"` dans `railway.toml`** — Railway a remplacé Nixpacks par Railpack. Utiliser `RAILPACK` (majuscules) pour que `railway.toml` soit lu entièrement (y compris `startCommand`).
+- **`builder = "RAILPACK"` dans `frontend/railway.toml`** — Railway a remplacé Nixpacks par Railpack. Utiliser `RAILPACK` (majuscules) pour que `railway.toml` soit lu entièrement (y compris `startCommand`).
 - **`ALLOWED_ORIGINS` backend** : doit inclure l'URL Railway du frontend. Après chaque changement d'URL frontend, redéployer le backend.
+- **Post-déploiement de vérification** : `railway status`, puis `railway logs --service frontend --deployment <id>` pour s'assurer que le service démarre et passe le healthcheck `/`.
 
 ### 8.3 OSRM : ce qui en a besoin, et options d'hébergement
 

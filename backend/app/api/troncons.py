@@ -222,10 +222,16 @@ async def detail_troncon(
 
 
 def _parse_periode(periode: str) -> int:
-    """Convertit '7j' / '30j' / '90j' en nombre de jours entier."""
+    """Convertit '7j' / '30j' / '180j' / '365j' en nombre de jours entier."""
     if not periode.endswith("j"):
-        raise ValueError("La période doit être au format '7j', '30j', '90j', etc.")
-    return int(periode[:-1])
+        raise ValueError("La période doit être au format '1j', '7j', '30j', '90j', '180j' ou '365j'.")
+    try:
+        jours = int(periode[:-1])
+    except ValueError as exc:
+        raise ValueError(
+            "La période doit être un nombre de jours suivi de 'j', par exemple '7j'."
+        ) from exc
+    return jours
 
 
 @router.get(
@@ -255,7 +261,10 @@ def _parse_periode(periode: str) -> int:
 )
 async def indicateurs_troncon(
     troncon_id: int,
-    periode: str = Query("7j", description="Fenêtre d'analyse, ex. `7j`, `30j`, `90j`."),
+    periode: str = Query(
+        "7j",
+        description="Fenêtre d'analyse, ex. `1j`, `7j`, `30j`, `90j`, `180j` ou `365j`.",
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -265,10 +274,10 @@ async def indicateurs_troncon(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
         ) from exc
 
-    if jours < 1 or jours > 90:
+    if jours < 1 or jours > 365:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La période doit être comprise entre 1 et 90 jours.",
+            detail="La période doit être comprise entre 1 et 365 jours.",
         )
 
     settings = get_settings()

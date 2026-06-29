@@ -1,8 +1,12 @@
 [build]
 builder = "RAILPACK"
+# Railpack est le builder recommandé pour les apps Next.js sur Railway.
+# Les déploiements frontend doivent être lancés avec :
+#   cd frontend && railway up --service frontend
 
 [deploy]
-# $PORT est injecté automatiquement par Railway — ne pas mettre de port fixe
+# $PORT est injecté automatiquement par Railway — ne pas mettre de port fixe.
+# Le startCommand doit rester compatible avec le runtime Next.js servant le frontend.
 startCommand = "npx next start -p $PORT"
 healthcheckPath = "/"
 healthcheckTimeout = 120
