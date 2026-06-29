@@ -38,7 +38,7 @@ export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl, type
   const { t } = useI18n();
   const { peutEcrire } = useAuth();
 
-  const typesApi = types.filter((t) => t.actif);
+  const typesApi = types.filter((t) => t.actif && t.slug !== "autre");
 
   const periodes: { value: FiltresPeriode; label: string }[] = [
     { value: "aujourd'hui", label: t("incidents.periodAujourd") },
