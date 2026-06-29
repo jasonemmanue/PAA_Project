@@ -469,6 +469,91 @@ def matrice_congestion(
 
 
 # ---------------------------------------------------------------------------
+# Matrice temps de traversée — par créneau horaire × date (durées brutes)
+# ---------------------------------------------------------------------------
+
+
+def matrice_temps(
+    db: Session,
+    troncon_id: int,
+    debut_utc: datetime,
+    fin_utc: datetime,
+) -> dict:
+    """Retourne pour chaque (date locale, heure DEESP) la durée de traversée en secondes.
+
+    Contrairement à `matrice_congestion` (source=google uniquement), inclut
+    TOUTES les sources (google, terrain, historique_paa_2025…) afin d'afficher
+    les données importées depuis Excel aux côtés des mesures live.
+
+    Résultat :
+      - dates   : liste triée de dates ISO (YYYY-MM-DD)
+      - tranches : [{heure, tranche, par_date}]
+        où par_date[date_str] = {duree_s, source} | None
+    """
+    fuseau = ZoneInfo(get_settings().tz)
+
+    rows = list(
+        db.execute(
+            select(
+                Mesure.horodatage,
+                Mesure.duree_trafic_s,
+                Mesure.source,
+            )
+            .where(
+                Mesure.troncon_id == troncon_id,
+                Mesure.duree_trafic_s.is_not(None),
+                Mesure.aberrante.is_(False),
+                Mesure.horodatage >= debut_utc,
+                Mesure.horodatage <= fin_utc,
+            )
+            .order_by(Mesure.horodatage)
+        ).all()
+    )
+
+    par_date_heure: dict[str, dict[int, dict]] = {}
+    dates_set: set[str] = set()
+
+    for horodatage, duree_s, source in rows:
+        h_local = (
+            horodatage.astimezone(fuseau)
+            if horodatage.tzinfo
+            else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+        )
+        if not _dans_plage_deesp(h_local):
+            continue
+        date_str = h_local.date().isoformat()
+        heure = h_local.hour
+        dates_set.add(date_str)
+        # La dernière mesure de l'heure gagne (ordre chronologique dans la requête)
+        par_date_heure.setdefault(date_str, {})[heure] = {
+            "duree_s": duree_s,
+            "source": source.value if hasattr(source, "value") else str(source),
+        }
+
+    dates_list = sorted(dates_set)
+
+    tranches = []
+    for h in range(DEESP_HEURE_DEBUT, DEESP_HEURE_FIN):
+        par_date = {
+            date_str: par_date_heure.get(date_str, {}).get(h)
+            for date_str in dates_list
+        }
+        if any(v is not None for v in par_date.values()):
+            tranches.append({
+                "heure": h,
+                "tranche": f"{h:02d}h-{h + 1:02d}h",
+                "par_date": par_date,
+            })
+
+    return {
+        "troncon_id": troncon_id,
+        "nb_mesures": len(rows),
+        "dates": dates_list,
+        "tranches": tranches,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Graphiques 1-12 — séries pour BarChart (min/max par jour x type-jour)
 # ---------------------------------------------------------------------------
 

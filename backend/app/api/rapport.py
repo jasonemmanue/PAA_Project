@@ -23,7 +23,7 @@ from datetime import date as DateType, datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.analyse import rapport_paa
@@ -35,6 +35,32 @@ from app.db.session import get_db
 logger = logging.getLogger("paa.rapport")
 
 router = APIRouter(prefix="/rapport", tags=["rapport DEESP"])
+
+
+# ---------------------------------------------------------------------------
+# Helper — sanitisation pour fpdf2 (Helvetica ne supporte que Latin-1)
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_pdf(texte: str) -> str:
+    """Remplace les caractères hors Latin-1 avant écriture dans fpdf2.
+
+    fpdf2 avec la police Helvetica n'accepte que le jeu de caractères
+    Latin-1 (ISO 8859-1). Cette fonction convertit les caractères Unicode
+    courants en équivalents ASCII, puis encode/décode en Latin-1 (errors=replace)
+    pour neutraliser tout résidu.
+    """
+    remplacements = {
+        "→": "->",   "←": "<-",   "↔": "<->",
+        "≥": ">=",   "≤": "<=",   "×": "x",    "÷": "/",
+        "–": "-",    "—": "-",    "…": "...",
+        "’": "'",  "‘": "'",
+        "“": '"',  "”": '"',
+        "°": " deg",
+    }
+    for char, repl in remplacements.items():
+        texte = texte.replace(char, repl)
+    return texte.encode("latin-1", errors="replace").decode("latin-1")
 
 
 # ---------------------------------------------------------------------------
@@ -330,12 +356,12 @@ async def get_zones_congestionnees_pdf(
             )
 
             ligne = [
-                (largeurs[0], (c.troncon_nom or "")[:45]),
-                (largeurs[1], sous[:25]),
+                (largeurs[0], _sanitize_pdf((c.troncon_nom or "")[:45])),
+                (largeurs[1], _sanitize_pdf(sous[:25])),
                 (largeurs[2], tranche),
                 (largeurs[3], str(c.nb_total_semaine)),
                 (largeurs[4], regle_txt),
-                (largeurs[5], repartition[:80]),
+                (largeurs[5], _sanitize_pdf(repartition[:80])),
             ]
             for w, txt in ligne:
                 pdf.cell(w, 6, txt, border=1, fill=fill, align="L")
@@ -767,6 +793,175 @@ async def export_rapport_word(
         ),
         headers={"Content-Disposition": f'attachment; filename="{nom}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /rapport/matrice-temps — matrice durées brutes heure × date
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/matrice-temps",
+    summary="Matrice de temps de traversée par créneau horaire × date",
+    description=(
+        "Pour le tronçon sélectionné et la plage de dates, renvoie pour chaque "
+        "créneau horaire DEESP (07h-19h) et chaque date la durée de traversée "
+        "observée (en secondes) — toutes sources confondues (google, terrain, "
+        "historique). Permet de visualiser les temps réels sans agrégation."
+    ),
+)
+async def get_matrice_temps(
+    campagne: str = Query(..., description="Format 'AAAA-MM'."),
+    troncon_id: int = Query(..., description="ID du tronçon à analyser."),
+    debut: DateType | None = Query(None),
+    fin: DateType | None = Query(None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.models.models import Troncon
+    logger.info(
+        "GET /rapport/matrice-temps — troncon_id=%d campagne=%r debut=%s fin=%s",
+        troncon_id, campagne, debut, fin,
+    )
+    troncon = db.get(Troncon, troncon_id)
+    if troncon is None:
+        raise HTTPException(status_code=404, detail=f"Tronçon {troncon_id} introuvable.")
+    debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
+    result = rapport_paa.matrice_temps(db, troncon_id, debut_utc, fin_utc)
+    return {
+        "troncon_nom": troncon.nom,
+        "distance_m": troncon.distance_m,
+        "vitesse_ref_kmh": troncon.vitesse_ref_kmh,
+        "temps_ref_s": round(troncon.distance_m / (troncon.vitesse_ref_kmh * 1000 / 3600)),
+        **result,
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /rapport/import-mesures-excel — import Excel/CSV de mesures manuelles
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/import-mesures-excel",
+    summary="Import Excel/CSV de mesures de temps de traversée",
+    description=(
+        "Accepte un fichier Excel (.xlsx, .xls) ou CSV (.csv) avec les colonnes :\n\n"
+        "- `date` (YYYY-MM-DD ou DD/MM/YYYY)\n"
+        "- `heure` (entier 0-23)\n"
+        "- `troncon_id` (entier)\n"
+        "- `duree_mn` (décimal, minutes)\n\n"
+        "Insère dans la table `mesures` avec `source=historique_paa_2025`. "
+        "Les doublons (même troncon + même horodatage exact) sont ignorés silencieusement."
+    ),
+)
+async def import_mesures_excel(
+    fichier: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    import io
+    from datetime import time as dtime
+    from zoneinfo import ZoneInfo
+
+    import pandas as pd
+    from sqlalchemy import select as sa_select
+
+    from app.models.models import Mesure, SourceMesure, Troncon
+
+    logger.info("POST /rapport/import-mesures-excel — fichier=%s", fichier.filename)
+
+    contenu = await fichier.read()
+    nom = (fichier.filename or "").lower()
+    try:
+        if nom.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(contenu))
+        else:
+            df = pd.read_excel(io.BytesIO(contenu))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Lecture du fichier échouée : {exc}")
+
+    # Normalisation des noms de colonnes (minuscules, espaces → underscore)
+    df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+    cols_requises = {"date", "heure", "troncon_id", "duree_mn"}
+    manquantes = cols_requises - set(df.columns)
+    if manquantes:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Colonnes manquantes : {', '.join(sorted(manquantes))}. "
+                f"Colonnes trouvées : {', '.join(df.columns.tolist())}."
+            ),
+        )
+
+    fuseau = ZoneInfo(get_settings().tz)
+    nb_inserees = 0
+    nb_doublons = 0
+    erreurs: list[str] = []
+
+    for i, row in df.iterrows():
+        try:
+            date_val = pd.to_datetime(row["date"]).date()
+            heure = int(row["heure"])
+            if not (0 <= heure <= 23):
+                erreurs.append(f"Ligne {i + 2} : heure {heure} invalide (0-23)")
+                continue
+            troncon_id_val = int(row["troncon_id"])
+            duree_mn = float(row["duree_mn"])
+            if duree_mn <= 0:
+                erreurs.append(f"Ligne {i + 2} : duree_mn invalide ({duree_mn})")
+                continue
+            duree_s = int(round(duree_mn * 60))
+
+            dt_local = datetime.combine(date_val, dtime(heure, 0, 0), tzinfo=fuseau)
+            dt_utc = dt_local.astimezone(timezone.utc)
+
+            troncon = db.get(Troncon, troncon_id_val)
+            if troncon is None:
+                erreurs.append(f"Ligne {i + 2} : tronçon {troncon_id_val} introuvable")
+                continue
+
+            # Doublon : même tronçon + même horodatage exact
+            existe = db.execute(
+                sa_select(Mesure.id).where(
+                    Mesure.troncon_id == troncon_id_val,
+                    Mesure.source == SourceMesure.historique_paa_2025,
+                    Mesure.horodatage == dt_utc,
+                ).limit(1)
+            ).first()
+            if existe:
+                nb_doublons += 1
+                continue
+
+            vitesse_kmh = round(troncon.distance_m / duree_s * 3.6, 2) if duree_s > 0 else 0.0
+            db.add(Mesure(
+                troncon_id=troncon_id_val,
+                horodatage=dt_utc,
+                duree_trafic_s=duree_s,
+                duree_sans_trafic_s=None,
+                source=SourceMesure.historique_paa_2025,
+                vitesse_moyenne_kmh=vitesse_kmh,
+                aberrante=False,
+                est_congestionne=None,
+                pourcentage_rouge=None,
+                pourcentage_orange=None,
+                pourcentage_vert=None,
+            ))
+            nb_inserees += 1
+        except Exception as exc:
+            erreurs.append(f"Ligne {i + 2} : {exc}")
+
+    if nb_inserees > 0:
+        db.commit()
+
+    logger.info(
+        "import-mesures-excel : %d insérées, %d doublons, %d erreurs",
+        nb_inserees, nb_doublons, len(erreurs),
+    )
+    return {
+        "nb_inserees": nb_inserees,
+        "nb_doublons": nb_doublons,
+        "erreurs": erreurs[:20],
+        "message": f"{nb_inserees} mesure(s) importée(s), {nb_doublons} doublon(s) ignoré(s).",
+    }
 
 
 # ---------------------------------------------------------------------------

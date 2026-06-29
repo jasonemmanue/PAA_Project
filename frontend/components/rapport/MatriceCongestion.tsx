@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import type { Troncon } from "@/lib/types";
 
+const FENETRE_JOURS = 7;
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
 interface CellData {
@@ -88,6 +90,7 @@ export function MatriceCongestion({
   const [data, setData] = useState<MatriceData | null>(null);
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [fenetre, setFenetre] = useState(0);
 
   const charger = useCallback(async () => {
     if (tronconId === null) return;
@@ -114,10 +117,17 @@ export function MatriceCongestion({
   }, [campagne, debutRange, finRange, tronconId]);
 
   useEffect(() => {
+    setFenetre(0); // reset au changement de période
     charger();
   }, [charger]);
 
   const tronconNom = data?.troncon_nom ?? troncons.find((t) => t.id === tronconId)?.nom ?? "";
+
+  // Fenêtre glissante de 7 jours sur les dates disponibles
+  const datesVisibles = data
+    ? data.dates.slice(fenetre * FENETRE_JOURS, (fenetre + 1) * FENETRE_JOURS)
+    : [];
+  const maxFenetre = data ? Math.max(0, Math.ceil(data.dates.length / FENETRE_JOURS) - 1) : 0;
 
   return (
     <Card
@@ -160,6 +170,34 @@ export function MatriceCongestion({
       )}
 
       {!chargement && data && data.tranches.length > 0 && (
+        <>
+          {/* Navigation 7 jours — affiché uniquement si la période dépasse 7 jours */}
+          {data.dates.length > FENETRE_JOURS && (
+            <div className="mb-3 flex items-center gap-2 text-fluid-xs">
+              <button
+                type="button"
+                disabled={fenetre === 0}
+                onClick={() => setFenetre((f) => f - 1)}
+                className="px-3 py-1 rounded-md border app-border disabled:opacity-40
+                           hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
+              >
+                ← 7 jours précédents
+              </button>
+              <span className="app-text-muted">
+                Semaine {fenetre + 1} / {maxFenetre + 1}
+              </span>
+              <button
+                type="button"
+                disabled={fenetre >= maxFenetre}
+                onClick={() => setFenetre((f) => f + 1)}
+                className="px-3 py-1 rounded-md border app-border disabled:opacity-40
+                           hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
+              >
+                7 jours suivants →
+              </button>
+            </div>
+          )}
+
         <div className="overflow-x-auto">
           <table className="text-fluid-xs border-collapse">
             <thead>
@@ -172,7 +210,7 @@ export function MatriceCongestion({
                 >
                   CRÉNEAU
                 </th>
-                {data.dates.map((d) => {
+                {datesVisibles.map((d) => {
                   const we = estWeekend(d);
                   return (
                     <th
@@ -201,13 +239,15 @@ export function MatriceCongestion({
             </thead>
             <tbody>
               {data.tranches.map((tr) => {
-                const nbCong = Object.values(tr.par_date).filter(
+                // Compte uniquement sur les dates visibles dans la fenêtre courante
+                const nbCong = datesVisibles.filter(
+                  (d) => tr.par_date[d]?.est_congestionne === true,
+                ).length;
+                // Total sur TOUTES les dates (pour le badge ≥4× représentatif)
+                const nbCongTotal = Object.values(tr.par_date).filter(
                   (c) => c?.est_congestionne === true,
                 ).length;
-                const rowHighlight =
-                  nbCong >= 4
-                    ? "bg-red-50 dark:bg-red-950/20"
-                    : "";
+                const rowHighlight = nbCong >= 4 ? "bg-red-50 dark:bg-red-950/20" : "";
                 return (
                   <tr
                     key={tr.heure}
@@ -220,9 +260,9 @@ export function MatriceCongestion({
                                  text-paa-navy-900 dark:text-paa-blue-100 text-[11px]"
                     >
                       {tr.tranche}
-                      {nbCong >= 4 && (
+                      {nbCongTotal >= 4 && (
                         <span
-                          title="≥ 4 occurrences congestionnées cette semaine (règle DEESP)"
+                          title="≥ 4 occurrences congestionnées sur l'ensemble de la période (règle DEESP)"
                           className="ml-2 inline-block rounded bg-red-100 dark:bg-red-900/40
                                      px-1 text-[9px] text-red-700 dark:text-red-300 font-semibold"
                         >
@@ -230,8 +270,8 @@ export function MatriceCongestion({
                         </span>
                       )}
                     </td>
-                    {/* Cellules par date */}
-                    {data.dates.map((d) => {
+                    {/* Cellules pour les dates de la fenêtre courante */}
+                    {datesVisibles.map((d) => {
                       const we = estWeekend(d);
                       return (
                         <td
@@ -244,7 +284,7 @@ export function MatriceCongestion({
                         </td>
                       );
                     })}
-                    {/* Total congestions pour ce créneau */}
+                    {/* Total congestions sur la fenêtre visible */}
                     <td
                       className={`px-2 py-1.5 text-center font-semibold
                                   ${nbCong >= 4 ? "text-red-600 dark:text-red-400" : "app-text-muted"}`}
@@ -258,9 +298,12 @@ export function MatriceCongestion({
           </table>
 
           <p className="mt-2 text-[10px] app-text-muted">
-            {tronconNom} — {debutRange} → {finRange} — Surligné en rouge si le créneau cumule ≥ 4 congestions (règle DEESP ≥ 4 / semaine).
+            {tronconNom} — {debutRange} → {finRange}
+            {data.dates.length > FENETRE_JOURS && ` — Fenêtre ${fenetre + 1}/${maxFenetre + 1} (${datesVisibles[0]} → ${datesVisibles[datesVisibles.length - 1]})`}
+            {" "}— Surligné en rouge si le créneau cumule ≥ 4 congestions sur la fenêtre (règle DEESP).
           </p>
         </div>
+        </>
       )}
 
       {!chargement && data && data.tranches.length === 0 && (

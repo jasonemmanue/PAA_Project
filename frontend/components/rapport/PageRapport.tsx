@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/ui/PageHeader";
 import { MatriceCongestion } from "@/components/rapport/MatriceCongestion";
+import { MatriceTemps } from "@/components/rapport/MatriceTemps";
 import { TableauTempsTheoriques } from "@/components/rapport/TableauTempsTheoriques";
 import { TableauTempsTraversee } from "@/components/rapport/TableauTempsTraversee";
 import { TableauZonesCongestionnees } from "@/components/rapport/TableauZonesCongestionnees";
@@ -204,6 +205,16 @@ export function PageRapport() {
 
       {/* Matrice détaillée congestion — créneaux × dates (par tronçon) */}
       <MatriceCongestion
+        campagne={campagne}
+        debutRange={debutRange}
+        finRange={finRange}
+        tronconId={tronconId}
+        troncons={troncons}
+        onTronconChange={setTronconId}
+      />
+
+      {/* Matrice temps de traversée — durées réelles (mm:ss) par créneau × date */}
+      <MatriceTemps
         campagne={campagne}
         debutRange={debutRange}
         finRange={finRange}
