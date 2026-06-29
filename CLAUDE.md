@@ -281,6 +281,7 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **🏁 v1.0.0** | ✅ **Hackathon terminé (2026-06-29)** | Toutes les phases P1 → P10.12 livrées et déployées en production. Backend Railway + Frontend Railway opérationnels 24h/24. |
 | **P10.13** | ✅ Terminée (2026-06-29) | **Nettoyage code mort post-hackathon** — suppression du panneau "Mettre à jour les données pluriannuelles" dans `EvolutionPluriannuelle.tsx` (devenu inutile). Suppression du router `/import/*` (`backend/app/api/import_data.py`) : les 3 endpoints `POST /import/base-nettoyee`, `POST /import/evolution`, `POST /import/evolution-csv` n'avaient plus de caller frontend. Les scripts CLI `app/import_evolution.py` et `app/import_base_nettoyee.py` sont conservés. Renommage `NB JO` → `NB MESURES JO` et `NB WE` → `NB MESURES WE` dans `TableauTempsTraversee.tsx`. |
 | **P10.14** | ✅ Terminée (2026-06-29) | **Matrice congestion + fix PDF CORS + réordonnancement page DEESP** — Cf. § 13.1 et § 13.2. |
+| **P10.15** | ✅ Terminée (2026-06-30) | **Matrice temps de traversée + fix PDF Unicode + navigation 7 jours + import Excel mesures** — Cf. § 13.3. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -2928,6 +2929,147 @@ func.max(ProfilHoraire.max).label("p_max"),   # vrai maximum global
 
 **Résultat :** les créneaux affichent maintenant des bornes réelles, par exemple
 `07h-08h → min 22.9 min / moyen 23.6 min / max 24.4 min`.
+
+---
+
+## 13. Phase P10.15 — Matrice temps + fix PDF Unicode + navigation 7 jours (2026-06-30)
+
+### 13.1 Fix `FPDFUnicodeEncodingException` — PDF Tableau 16
+
+**Problème :** l'endpoint `GET /rapport/zones-congestionnees/pdf` levait une
+`FPDFUnicodeEncodingException` car les noms de tronçons contiennent `→`
+(ex. `CARENA (Plateau) → Pharmacie Palm Beach`). fpdf2 avec la police Helvetica
+n'accepte que le jeu de caractères Latin-1 (ISO 8859-1).
+
+**Solution (`backend/app/api/rapport.py`) :** ajout d'une fonction helper
+`_sanitize_pdf(texte: str) -> str` qui :
+
+1. Remplace explicitement les caractères Unicode courants par leurs équivalents ASCII :
+   `→` → `->`, `←` → `<-`, `≥` → `>=`, `≤` → `<=`, `×` → `x`, `–`/`—` → `-`, etc.
+2. Encode en Latin-1 avec `errors="replace"` pour neutraliser tout résidu.
+3. Applique cette transformation à **toutes** les chaînes dynamiques avant `pdf.cell()` :
+   `c.troncon_nom`, `sous_troncon_nom`, `repartition`.
+
+```python
+def _sanitize_pdf(texte: str) -> str:
+    remplacements = {
+        "→": "->",  "←": "<-",  "↔": "<->",
+        "≥": ">=",  "≤": "<=",  "×": "x",   "÷": "/",
+        "–": "-",   "—": "-",   "…": "...",
+        "’": "'", "“": '"', "”": '"',
+    }
+    for char, repl in remplacements.items():
+        texte = texte.replace(char, repl)
+    return texte.encode("latin-1", errors="replace").decode("latin-1")
+```
+
+> **Règle d'or :** toute nouvelle chaîne issue de la DB passée à `pdf.cell()` ou
+> `pdf.multi_cell()` doit être encapsulée dans `_sanitize_pdf()`.
+
+### 13.2 Matrice « Temps de traversée » — création complète (P10.15)
+
+#### Principe
+
+Nouveau tableau identique en structure à la « Matrice congestion » (créneaux
+horaires × dates) mais affichant les **durées réelles en mm:ss** au lieu des
+pastilles rouge/vert.
+
+Contrairement à `matrice_congestion` (source=`google` uniquement), cette matrice
+inclut **toutes les sources** (`google`, `terrain`, `historique_paa_2025`) pour
+permettre d'afficher les données importées depuis Excel aux côtés des mesures live.
+
+#### Backend
+
+**Nouvelle fonction `matrice_temps()` (`backend/app/analyse/rapport_paa.py`) :**
+
+- Filtre : `duree_trafic_s IS NOT NULL`, `aberrante = False`, plage DEESP 07h-19h
+- Toutes sources confondues (pas de filtre `source = google`)
+- Par créneau horaire × date locale : la **dernière mesure** de l'heure gagne
+  (ordre chronologique dans la requête)
+- Retourne `{troncon_id, nb_mesures, dates: [...], tranches: [{heure, tranche, par_date}]}`
+  où chaque cellule = `{duree_s, source}` ou `null`
+
+**Nouvel endpoint `GET /rapport/matrice-temps`** (tag « rapport DEESP ») :
+
+```
+?campagne=AAAA-MM&troncon_id=N&debut=AAAA-MM-JJ&fin=AAAA-MM-JJ
+```
+
+Réponse enrichie avec `troncon_nom`, `distance_m`, `vitesse_ref_kmh`,
+`temps_ref_s` (calculé depuis `distance_m / (vitesse_ref_kmh × 1000/3600)`).
+
+**Nouvel endpoint `POST /rapport/import-mesures-excel`** (tag « rapport DEESP ») :
+
+- Accepte multipart/form-data avec champ `fichier` (Excel `.xlsx`/`.xls` ou CSV `.csv`)
+- Colonnes attendues : `date` (YYYY-MM-DD), `heure` (0-23), `troncon_id` (entier),
+  `duree_mn` (décimal, minutes)
+- Normalise les noms de colonnes (minuscules, espaces → underscore)
+- Insère dans `mesures` avec `source=historique_paa_2025`
+- Doublon : même `(troncon_id, source, horodatage exact)` → ignoré silencieusement
+- Réponse : `{nb_inserees, nb_doublons, erreurs: [...], message: "..."}`
+- Dépendances : `pandas` + `openpyxl` (déjà dans `requirements.txt`)
+
+#### Frontend
+
+**Nouveau composant `MatriceTemps.tsx` (`frontend/components/rapport/`) :**
+
+| Fonctionnalité | Détail |
+|---|---|
+| Affichage | Cellules `mm:ss` (ex. `23:15`), — si pas de donnée |
+| Code couleur | Basé sur le ratio `duree_s / temps_ref_s` : vert ≤ 1,0 / lime ≤ 1,3 / orange ≤ 1,5 / rouge > 1,5 |
+| Colonne moyenne | Droite du tableau : moyenne des durées visibles de la fenêtre, colorée selon le même ratio |
+| Tooltip | Au survol : durée + source (`source: google`) |
+| Week-ends | Colonnes légèrement grisées, `opacity-80` |
+| Bouton Import | « 📥 Importer Excel » visible en mode écriture (`peutEcrire`) — déclenche `POST /rapport/import-mesures-excel` |
+| Feedback import | Message inline `✓ N insérées, M doublons` ou `Erreur : ...` |
+| Sélecteur tronçon | Même composant `<select>` que MatriceCongestion, partage l'état `tronconId` |
+
+**Intégration dans `PageRapport.tsx` :**
+
+`<MatriceTemps>` est placé immédiatement **sous** `<MatriceCongestion>`, avant le
+Tableau 16. Les deux matrices partagent les mêmes props (`campagne`, `debutRange`,
+`finRange`, `tronconId`, `troncons`, `onTronconChange`).
+
+### 13.3 Navigation 7 jours — `MatriceCongestion` et `MatriceTemps`
+
+Les deux composants affichent désormais des boutons de navigation quand la période
+sélectionnée dépasse 7 jours (ex. mois complet = 30 jours).
+
+**Comportement :**
+
+- État `fenetre: number` (0-indexed, reset à 0 à chaque changement de période/tronçon)
+- `datesVisibles = data.dates.slice(fenetre * 7, (fenetre + 1) * 7)`
+- `maxFenetre = Math.max(0, Math.ceil(data.dates.length / 7) - 1)`
+- Boutons « ← 7 jours précédents » (disabled si `fenetre === 0`) et
+  « 7 jours suivants → » (disabled si `fenetre >= maxFenetre`)
+- Libellé « Semaine {fenetre+1} / {maxFenetre+1} »
+
+**Règle DEESP ≥4× dans `MatriceCongestion` :**
+
+- Badge `≥4×` basé sur **toutes** les dates de la période (`nbCongTotal`)
+  — pas seulement la fenêtre visible → représentatif de la période complète
+- Colonne « Total 🟥 » basée sur les **dates visibles** uniquement → cohérent
+  avec ce qu'on voit dans la fenêtre
+- Surlignage rouge de la ligne si `nbCong >= 4` sur la fenêtre visible
+
+### 13.4 Format Excel attendu pour l'import
+
+| Colonne | Type | Exemple | Notes |
+|---|---|---|---|
+| `date` | date | `2026-06-15` ou `15/06/2026` | `pd.to_datetime()` accepte les deux formats |
+| `heure` | entier | `8` | 0-23 (heure de la mesure en heure locale Africa/Abidjan) |
+| `troncon_id` | entier | `1` | Doit exister dans la table `troncons` |
+| `duree_mn` | décimal | `23.5` | Minutes décimales → converti en secondes entiers |
+
+Les noms de colonnes sont **insensibles à la casse** et les espaces sont
+normalisés en `_` (ex. `Durée Mn` → `duree_mn`). Les colonnes supplémentaires
+sont ignorées.
+
+**Erreurs retournées par ligne** (les 20 premières, format `Ligne N: message`) :
+- Tronçon inconnu
+- Heure invalide (hors 0-23)
+- Durée ≤ 0
+- Erreur de parsing date/valeur
 
 ---
 
