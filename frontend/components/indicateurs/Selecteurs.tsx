@@ -66,8 +66,8 @@ export function SelecteurTroncon({
 // ---------------------------------------------------------------------------
 // Sélecteur de période
 // ---------------------------------------------------------------------------
-export type Periode = "24h" | "7j" | "30j" | "90j";
-const PERIODES: Periode[] = ["24h", "7j", "30j", "90j"];
+export type Periode = "24h" | "7j" | "30j" | "90j" | "6mois" | "1an";
+const PERIODES: Periode[] = ["24h", "7j", "30j", "90j", "6mois", "1an"];
 
 export function SelecteurPeriode({
   valeur,
@@ -103,13 +103,12 @@ export function SelecteurPeriode({
               )}
             >
               {t(
-                p === "24h"
-                  ? "indicateurs.periode24h"
-                  : p === "7j"
-                    ? "indicateurs.periode7j"
-                    : p === "30j"
-                      ? "indicateurs.periode30j"
-                      : "indicateurs.periode90j",
+                p === "24h" ? "indicateurs.periode24h"
+                : p === "7j" ? "indicateurs.periode7j"
+                : p === "30j" ? "indicateurs.periode30j"
+                : p === "90j" ? "indicateurs.periode90j"
+                : p === "6mois" ? "indicateurs.periode6mois"
+                : "indicateurs.periode1an",
               )}
             </button>
           );

@@ -3,10 +3,8 @@
 /**
  * Page Indicateurs — orchestration des sous-composants.
  *
- * Layout responsive :
- *  - mobile (<768)  : tout empilé verticalement
- *  - tablette       : sélecteurs en ligne, graphiques empilés
- *  - desktop (≥1024): courbe + heatmap côte à côte, évolution en bas
+ * Layout responsive : tout empilé verticalement (heatmap horaire supprimée).
+ * Périodes disponibles : 24h / 7j / 30j / 90j / 6 mois / 1 an.
  */
 
 import { useEffect, useState } from "react";
@@ -14,7 +12,6 @@ import { useEffect, useState } from "react";
 import { BarrePilotage } from "@/components/indicateurs/BarrePilotage";
 import { CourbeJournee } from "@/components/indicateurs/CourbeJournee";
 import { EvolutionPluriannuelle } from "@/components/indicateurs/EvolutionPluriannuelle";
-import { HeatmapHoraire } from "@/components/indicateurs/HeatmapHoraire";
 import { KpiCards } from "@/components/indicateurs/KpiCards";
 import {
   SelecteurPeriode,
@@ -34,6 +31,8 @@ const FENETRES: Record<Periode, number> = {
   "7j": 7,
   "30j": 30,
   "90j": 90,
+  "6mois": 180,
+  "1an": 365,
 };
 
 export function PageIndicateurs() {
@@ -144,11 +143,8 @@ export function PageIndicateurs() {
       {/* KPIs (temps min/moyen/max + verdict couleur DEESP) */}
       <KpiCards snapshot={indicateurs?.snapshot ?? null} />
 
-      {/* Graphiques principaux : courbe + heatmap côte à côte en desktop */}
-      <div className="grid gap-fluid-4 lg:grid-cols-2">
-        <CourbeJournee serie={serie} />
-        <HeatmapHoraire tronconId={tronconId} />
-      </div>
+      {/* Courbe d'évolution du temps de traversée — pleine largeur */}
+      <CourbeJournee serie={serie} />
 
       {/* Évolution pluriannuelle — pleine largeur, filtrée par tronçon sélectionné */}
       <EvolutionPluriannuelle tronconId={tronconId} />

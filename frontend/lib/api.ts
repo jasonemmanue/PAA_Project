@@ -132,11 +132,15 @@ export function getMesures(params?: {
 
 export function getIndicateursTroncon(
   id: number,
-  periode: "24h" | "7j" | "30j" | "90j" = "7j",
+  periode: "24h" | "7j" | "30j" | "90j" | "6mois" | "1an" = "7j",
 ): Promise<IndicateursPeriode> {
-  // Le backend attend un format `Nj` (1j, 7j, 30j, 90j). L'UI garde l'étiquette
-  // « 24 h » pour la lisibilité — on traduit ici en `1j`.
-  const periodeApi = periode === "24h" ? "1j" : periode;
+  // Le backend attend un format `Nj`. L'UI utilise des étiquettes lisibles —
+  // on traduit : "24h"→"1j", "6mois"→"180j", "1an"→"365j".
+  const periodeApi =
+    periode === "24h" ? "1j"
+    : periode === "6mois" ? "180j"
+    : periode === "1an" ? "365j"
+    : periode;
   return appel<IndicateursPeriode>(
     `/troncons/${id}/indicateurs?periode=${periodeApi}`,
   );

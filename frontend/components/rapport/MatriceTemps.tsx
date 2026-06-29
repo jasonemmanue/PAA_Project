@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Card } from "@/components/ui/Card";
-import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 import type { Troncon } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
@@ -77,14 +77,10 @@ export function MatriceTemps({
   troncons,
   onTronconChange,
 }: Props) {
-  const { peutEcrire } = useAuth();
   const [data, setData] = useState<MatriceTempsData | null>(null);
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [fenetre, setFenetre] = useState(0);
-  const [importEnCours, setImportEnCours] = useState(false);
-  const [msgImport, setMsgImport] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const charger = useCallback(async () => {
     if (tronconId === null) return;
@@ -124,32 +120,6 @@ export function MatriceTemps({
     : 0;
   const ref_s = data?.temps_ref_s ?? 0;
 
-  async function importerExcel(e: React.ChangeEvent<HTMLInputElement>) {
-    const fichier = e.target.files?.[0];
-    if (!fichier) return;
-    setImportEnCours(true);
-    setMsgImport(null);
-    try {
-      const formData = new FormData();
-      formData.append("fichier", fichier);
-      const rep = await fetch(`${API_BASE}/rapport/import-mesures-excel`, {
-        method: "POST",
-        body: formData,
-      });
-      const json = await rep.json();
-      if (!rep.ok) throw new Error(json?.detail ?? `HTTP ${rep.status}`);
-      setMsgImport(
-        `✓ ${json.nb_inserees} mesure(s) importée(s), ${json.nb_doublons} doublon(s) ignoré(s).`,
-      );
-      charger();
-    } catch (err) {
-      setMsgImport(`Erreur : ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setImportEnCours(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
-
   return (
     <Card
       titre="Temps de traversée — créneaux horaires × dates"
@@ -184,36 +154,17 @@ export function MatriceTemps({
           </span>
         )}
 
-        {/* Bouton d'import Excel — mode écriture uniquement */}
-        {peutEcrire && (
-          <>
-            <label
-              className={`inline-flex items-center gap-2 cursor-pointer rounded-md
-                          border border-paa-blue-300 px-3 py-1.5 text-fluid-xs
-                          text-paa-blue-700 dark:text-paa-blue-300
-                          hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors
-                          ${importEnCours ? "opacity-60 pointer-events-none" : ""}`}
-            >
-              {importEnCours ? "Import en cours…" : "📥 Importer Excel"}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={importerExcel}
-                disabled={importEnCours}
-              />
-            </label>
-            {msgImport && (
-              <span
-                className={`text-fluid-xs ${
-                  msgImport.startsWith("Erreur") ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"
-                }`}
-              >
-                {msgImport}
-              </span>
-            )}
-          </>
+        {/* Bouton d'export Excel — télécharge les mesures brutes de la période */}
+        {tronconId !== null && (
+          <a
+            href={api.urlExportMesures({ troncon_id: tronconId, debut: debutRange, fin: finRange, format: "xlsx" })}
+            download={`matrice_temps_troncon${tronconId}_${debutRange}_${finRange}.xlsx`}
+            className="inline-flex items-center gap-2 rounded-md border border-paa-blue-300
+                       px-3 py-1.5 text-fluid-xs text-paa-blue-700 dark:text-paa-blue-300
+                       hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
+          >
+            📊 Exporter Excel
+          </a>
         )}
       </div>
 
@@ -358,29 +309,12 @@ export function MatriceTemps({
             </table>
           </div>
 
-          {peutEcrire && (
-            <p className="mt-2 text-[10px] app-text-muted">
-              Format Excel attendu :{" "}
-              <code className="bg-gray-100 dark:bg-paa-navy-800 px-1 rounded">
-                date, heure, troncon_id, duree_mn
-              </code>
-              {" "}— une ligne par mesure. Insère avec{" "}
-              <code className="bg-gray-100 dark:bg-paa-navy-800 px-1 rounded">
-                source=historique_paa_2025
-              </code>
-              .
-            </p>
-          )}
         </>
       )}
 
       {!chargement && data && data.tranches.length === 0 && (
         <p className="text-fluid-sm app-text-muted">
-          Aucune mesure dans la plage DEESP (07h–19h) pour ce tronçon sur la période
-          sélectionnée.
-          {peutEcrire && (
-            <> Importez un fichier Excel pour alimenter cette vue.</>
-          )}
+          Aucune mesure dans la plage DEESP (07h–19h) pour ce tronçon sur la période sélectionnée.
         </p>
       )}
     </Card>

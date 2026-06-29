@@ -27,8 +27,9 @@ import { Card } from "@/components/ui/Card";
 import { useI18n } from "@/lib/i18n";
 import type { PointSerie, SerieTemporelle } from "@/lib/types";
 
-const COULEUR_MOYENNE = "#E74C3C";  // temps moyen avec trafic
-const COULEUR_MAX = "#F39C12";      // temps maximal observé
+const COULEUR_MIN = "#2ECC71";       // temps minimal observé
+const COULEUR_MOYENNE = "#E74C3C";   // temps moyen avec trafic
+const COULEUR_MAX = "#F39C12";       // temps maximal observé
 const COULEUR_REFERENCE = "#4CC9F0"; // référence 50 km/h
 
 function formaterHeureCourte(iso: string): string {
@@ -72,11 +73,13 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
 
   const data = points.map((p) => ({
     heure: formaterHeureCourte(p.instant_local),
+    min: sToMin(p.min_s),
     moyenne: sToMin(p.moyenne_s),
     max: sToMin(p.max_s),
     nb: p.nb_mesures,
   }));
 
+  const labelMin = locale === "fr" ? "Temps minimal (min)" : "Minimum time (min)";
   const labelMoyenne =
     locale === "fr" ? "Temps moyen (min)" : "Average time (min)";
   const labelMax = locale === "fr" ? "Temps maximal (min)" : "Maximum time (min)";
@@ -119,6 +122,7 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
               }}
               formatter={(value: unknown, key: string) => {
                 const labels: Record<string, string> = {
+                  min: labelMin,
                   moyenne: labelMoyenne,
                   max: labelMax,
                 };
@@ -137,6 +141,16 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
                 fill: COULEUR_REFERENCE,
                 fontSize: 11,
               }}
+            />
+            <Line
+              type="monotone"
+              dataKey="min"
+              name={labelMin}
+              stroke={COULEUR_MIN}
+              strokeWidth={1.5}
+              strokeDasharray="3 3"
+              dot={false}
+              connectNulls
             />
             <Line
               type="monotone"
@@ -164,6 +178,7 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
 
       {/* Légende textuelle sous le graphique */}
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-fluid-xs app-text-muted">
+        <LegendItem color={COULEUR_MIN} label={labelMin} dashed />
         <LegendItem color={COULEUR_MOYENNE} label={labelMoyenne} />
         <LegendItem color={COULEUR_MAX} label={labelMax} dashed />
         <LegendItem color={COULEUR_REFERENCE} label={t("indicateurs.courbeReference")} dashed />
