@@ -221,12 +221,15 @@ export function PagePrediction() {
                 <div className="flex justify-center mb-3">
                   <BadgeSource source={resume.courante.source} libelleSource={LIBELLE_SOURCE} />
                 </div>
-                {/* Valeurs Min / Moyen / Max centrées */}
+                {/* Option B — Moy. = mesure Google instantanée, Min/Max = bornes 7j même type de jour */}
                 <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto text-center">
                   <div className="paa-card p-3">
                     <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMin")}</div>
                     <div className="mt-1 text-fluid-xl font-bold text-statut-fluide">
-                      {resume.courante.prediction.min_mn ?? "—"} {t("prediction.uniteMn")}
+                      {resume.courante.bornes_7j?.min_mn ?? resume.courante.prediction.min_mn ?? "—"} {t("prediction.uniteMn")}
+                    </div>
+                    <div className="mt-1 text-[10px] app-text-muted">
+                      {locale === "fr" ? "7 j même type" : "7 d same type"}
                     </div>
                   </div>
                   <div className="paa-card p-3" style={{ borderTop: "3px solid #3498DB" }}>
@@ -234,11 +237,17 @@ export function PagePrediction() {
                     <div className="mt-1 text-fluid-2xl font-bold text-paa-blue-500">
                       {resume.courante.prediction.moyen_mn ?? "—"} {t("prediction.uniteMn")}
                     </div>
+                    <div className="mt-1 text-[10px] app-text-muted">
+                      {locale === "fr" ? "actuel (Google)" : "current (Google)"}
+                    </div>
                   </div>
                   <div className="paa-card p-3">
                     <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMax")}</div>
                     <div className="mt-1 text-fluid-xl font-bold text-statut-congestionne">
-                      {resume.courante.prediction.max_mn ?? "—"} {t("prediction.uniteMn")}
+                      {resume.courante.bornes_7j?.max_mn ?? resume.courante.prediction.max_mn ?? "—"} {t("prediction.uniteMn")}
+                    </div>
+                    <div className="mt-1 text-[10px] app-text-muted">
+                      {locale === "fr" ? "7 j même type" : "7 d same type"}
                     </div>
                   </div>
                 </div>
@@ -271,11 +280,8 @@ export function PagePrediction() {
                     />
                   </div>
                 </div>
-                {resume.courante.avertissement && (
-                  <p className="mt-3 text-fluid-xs text-yellow-600 dark:text-yellow-400 text-center italic">
-                    {resume.courante.avertissement}
-                  </p>
-                )}
+                {/* Avertissement masqué — les bornes 7j suffisent à informer l'utilisateur,
+                    inutile d'évoquer la calibration GPX qui est un détail technique. */}
               </section>
 
               {/* Ce mois Google */}

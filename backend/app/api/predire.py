@@ -24,7 +24,11 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.models import Mesure, ProfilHoraire, SourceMesure, Troncon
-from app.predicteur.profils import predire, _stats_mesures_periode
+from app.predicteur.profils import (
+    predire,
+    _stats_mesures_periode,
+    _prediction_jour_type,
+)
 
 
 router = APIRouter(prefix="/predire", tags=["temps de traversée par période"])
@@ -83,6 +87,19 @@ async def get_resume(
     stats_semaine = _stats_mesures_periode(db, troncon_id, debut_semaine_utc, maintenant_utc)
     stats_mois = _stats_mesures_periode(db, troncon_id, debut_mois_utc, maintenant_utc)
 
+    # Bornes 7 j même type de jour — toujours calculées pour informer l'UI
+    # (min/max stables même quand le moyen vient de la mesure Google instantanée)
+    troncon = db.get(Troncon, troncon_id)
+    bornes_7j = None
+    if troncon is not None:
+        pred_n2 = _prediction_jour_type(db, troncon, maintenant_utc)
+        if pred_n2 is not None:
+            bornes_7j = {
+                "min_mn": pred_n2.min_mn,
+                "moyen_mn": pred_n2.moyen_mn,
+                "max_mn": pred_n2.max_mn,
+            }
+
     return {
         "troncon_id": pred.troncon_id,
         "troncon_nom": pred.troncon_nom,
@@ -94,6 +111,7 @@ async def get_resume(
                 "moyen_mn": pred.moyen_mn,
                 "max_mn": pred.max_mn,
             },
+            "bornes_7j": bornes_7j,
             "source": pred.source,
             "confiance": round(pred.confiance, 3),
             "calibration_appliquee": pred.calibration_appliquee,

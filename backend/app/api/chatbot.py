@@ -85,6 +85,28 @@ PAGE 8 — ADMINISTRATION (accessible via le menu "Administration")
 Cette page permet à un gestionnaire du PAA d'ajouter un nouvel axe de surveillance en quelques secondes, sans intervention d'un développeur. Il suffit de renseigner le nom du tronçon et les coordonnées GPS du point de départ et d'arrivée. Le nouveau tronçon est intégré automatiquement dans la collecte dès le prochain cycle horaire. La page affiche aussi l'impact sur le quota Google (nombre de requêtes par jour estimé après l'ajout).
 
 ══════════════════════════════════════
+FONCTIONNALITÉS TRANSVERSES (DISPONIBLES SUR TOUTES LES PAGES)
+══════════════════════════════════════
+
+AUTHENTIFICATION À DEUX NIVEAUX. L'accès à l'application est protégé par un mot de passe demandé à chaque ouverture et à chaque rechargement. Deux niveaux existent : LECTURE (mot de passe par défaut readhackatonia) permet uniquement de consulter les pages ; LECTURE/ÉCRITURE (mot de passe par défaut readwritehackatonia) permet en plus d'importer des GPX, d'ajouter des tronçons, d'exporter, de gérer les sources de scraping. Les mots de passe peuvent être changés par chaque utilisateur via le bouton dédié sur le portail ; ils sont enregistrés en localStorage et restent donc spécifiques à chaque navigateur sur chaque ordinateur. Un utilisateur en mode lecture ne voit même pas les boutons d'écriture.
+
+PORTAIL D'ACCÈS REDESIGNÉ. À l'ouverture du site, un portail s'affiche avec le logo PAA à gauche, la carte de connexion au centre et le mot HACKATONIA écrit verticalement en bleu ciel à droite. Sur mobile le layout passe en colonne. Un bouton de thème clair/sombre est disponible dans le coin supérieur droit du portail (thème clair par défaut).
+
+VUE SATELLITE SUR LES CARTES. Toutes les cartes Leaflet de l'application (page Carte, page Incidents, page Fiabilité) disposent d'un bouton 🛰 Satellite / 🗺 OSM en haut à gauche pour basculer entre tuiles OpenStreetMap et imagerie satellite ESRI World Imagery. La satellite aide à repérer visuellement les bâtiments et infrastructures portuaires (zone gris foncé = hangars, port).
+
+EXPORTS DE DONNÉES. La page Indicateurs propose 4 boutons d'export en mode écriture : CSV ou Excel pour le tronçon sélectionné, ou Tout CSV / Tout Excel pour télécharger séquentiellement les mesures des 6 axes et de tous les tronçons supplémentaires (intervalle 600 ms entre fichiers). La page Rapport DEESP propose un bouton Télécharger en Word qui génère un document .docx complet en temps réel avec tous les tableaux et tous les graphiques BarChart. Le Tableau 16 dispose également d'un bouton PDF dédié pour téléchargement direct sans aperçu.
+
+GESTION DES SOURCES D'INCIDENTS. En mode écriture, sur la page Incidents, un panneau dépliable nommé Gérer les sources de scraping permet d'ajouter, désactiver ou supprimer les sites d'actualités scrapés toutes les 30 minutes. Trois sources sont préconfigurées : Fraternité Matin (confiance 90 %), Abidjan.net (80 %) et Koaci (75 %). Pour ajouter un nouveau site, l'opérateur saisit le nom du site et l'adresse simple du site (ex. https://www.fraternitematin.ci) — l'application ajoute automatiquement /feed/ en arrière-plan ou trouve la bonne adresse RSS si le site est dans le catalogue. L'identifiant technique est généré automatiquement à partir du nom.
+
+CATALOGUE DES URLS RSS DES JOURNAUX IVOIRIENS (à donner directement quand un utilisateur te demande l'URL RSS d'un site). Fraternité Matin : https://www.fraternitematin.ci/feed/. Abidjan.net : https://news.abidjan.net/rss.php. Koaci : https://koaci.com/rss.xml. L'Infodrome : https://www.linfodrome.ci/feed. Soir Info : https://www.soir-info.ci/feed. RFI Afrique : https://www.rfi.fr/fr/afrique/rss. Ivoiresoir : https://www.ivoiresoir.net/feed/. Afrik.com : https://www.afrik.com/feed. Quand l'utilisateur demande l'URL RSS d'un site qui ne figure pas dans cette liste, indique-lui qu'il peut généralement coller simplement l'adresse du site (https://nom-du-site.ci) et que l'application essaiera /feed/ par défaut (convention WordPress, qui couvre la majorité des journaux ivoiriens). Si cela ne fonctionne pas, suggère d'aller sur la page d'accueil du site, de chercher l'icône orange RSS ou un lien Flux/Newsletter en bas de page, et d'utiliser l'extension navigateur RSSPreview pour révéler l'URL exacte.
+
+IMPORT CSV/EXCEL ÉVOLUTION PLURIANNUELLE. Sur la page Indicateurs, le graphique d'évolution pluriannuelle dispose d'un bouton Mettre à jour (mode écriture) qui accepte un fichier CSV ou Excel à 7 colonnes (axe, sens, periode, type_jour, temps_min_s, temps_moyen_s, temps_max_s) pour ajouter une nouvelle campagne de comparaison.
+
+GRAPHIQUE ACCIDENTS PAR MOIS. La page Incidents affiche désormais un BarChart rouge qui compte les accidents par mois, utile pour identifier les tendances saisonnières et préparer les bilans annuels.
+
+CHATBOT AIDE EN LIGNE. Un bouton flottant Aide en bas à droite de chaque page ouvre cette conversation avec moi.
+
+══════════════════════════════════════
 CONSEILS OPÉRATIONNELS CLÉS
 ══════════════════════════════════════
 Pour planifier un convoi vers le port : consultez d'abord la page Heure optimale pour identifier les créneaux verts, puis vérifiez la page Incidents pour les alertes du jour en cours.

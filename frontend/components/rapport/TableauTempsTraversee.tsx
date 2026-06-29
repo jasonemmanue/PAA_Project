@@ -50,8 +50,9 @@ export function TableauTempsTraversee({
               <Th>RUBRIQUE</Th>
               <Th>TRONÇON</Th>
               <Th className="text-right">JOURS OUVRABLES</Th>
+              <Th className="text-right">NB JO</Th>
               <Th className="text-right">WEEK-ENDS</Th>
-              <Th className="text-right">NB MESURES</Th>
+              <Th className="text-right">NB WE</Th>
             </tr>
           </thead>
           <tbody>
@@ -59,18 +60,19 @@ export function TableauTempsTraversee({
               <tr key={nom} className="border-t app-border">
                 <Td>{LIBELLE[agregat]}</Td>
                 <Td>{nom}</Td>
-                <Td className="text-right font-semibold">
-                  {vals.ouvrable ?? "—"}
+                <Td className={`text-right font-semibold ${vals.nbJo === 0 ? "app-text-muted italic" : ""}`}>
+                  {vals.nbJo === 0 ? "aucune mesure" : vals.ouvrable ?? "—"}
                 </Td>
-                <Td className="text-right font-semibold">{vals.we ?? "—"}</Td>
-                <Td className="text-right text-fluid-xs app-text-muted">
-                  {vals.nbJo + vals.nbWe}
+                <Td className="text-right text-fluid-xs app-text-muted">{vals.nbJo}</Td>
+                <Td className={`text-right font-semibold ${vals.nbWe === 0 ? "app-text-muted italic" : ""}`}>
+                  {vals.nbWe === 0 ? "aucune mesure" : vals.we ?? "—"}
                 </Td>
+                <Td className="text-right text-fluid-xs app-text-muted">{vals.nbWe}</Td>
               </tr>
             ))}
             {entrees.length === 0 && (
               <tr>
-                <Td colSpan={5}>
+                <Td colSpan={6}>
                   <span className="app-text-muted">
                     {rapport
                       ? "Aucune mesure réelle sur cette campagne."

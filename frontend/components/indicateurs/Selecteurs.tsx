@@ -28,9 +28,10 @@ export function SelecteurTroncon({
 }) {
   const { t } = useI18n();
   const liste = Array.isArray(troncons) ? troncons : [];
-  // est_axe par défaut true (rétro-compatibilité avec anciens enregistrements)
-  const axes     = liste.filter((tr) => tr.est_axe !== false);
-  const autres   = liste.filter((tr) => tr.est_axe === false);
+  // Fallback : si est_axe absent (migration 0013 non appliquée), IDs ≤ 6 = axes officiels.
+  const estAxe = (tr: Troncon) => tr.est_axe ?? (tr.id <= 6);
+  const axes   = liste.filter(estAxe);
+  const autres = liste.filter((tr) => !estAxe(tr));
   return (
     <label className="flex flex-col gap-1">
       <span className="text-fluid-xs font-medium app-text-muted">

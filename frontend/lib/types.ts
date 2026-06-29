@@ -443,6 +443,7 @@ export interface ResumePrediction {
     instant_local: string;
     type_jour: "jour_ouvrable" | "week_end";
     prediction: { min_mn: number | null; moyen_mn: number | null; max_mn: number | null };
+    bornes_7j: { min_mn: number | null; moyen_mn: number | null; max_mn: number | null } | null;
     source: SourcePrediction;
     confiance: number;
     calibration_appliquee: number;

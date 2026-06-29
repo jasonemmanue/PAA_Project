@@ -62,7 +62,9 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
   for (const tr of etat.troncons) compteurs[tr.classe_congestion]++;
 
   // Comptage axes vs tronçons
-  const nbAxes = etat.troncons.filter((tr) => tr.est_axe !== false).length;
+  // Fallback : si est_axe absent (migration 0013 non appliquée), les IDs ≤ 6
+  // sont les 6 axes officiels du seed initial.
+  const nbAxes = etat.troncons.filter((tr) => tr.est_axe ?? (tr.id <= 6)).length;
   const nbTroncons = etat.troncons.length - nbAxes;
 
   // Tri par gravité décroissante : congestionnés (worst rouge%) en tête

@@ -275,10 +275,13 @@ export function OngletAxes({
         />
       </Card>
 
-      {/* Liste des axes et tronçons existants */}
+      {/* Liste des axes et tronçons existants
+          Fallback : si la migration 0013 n'est pas appliquée (est_axe undefined),
+          on considère que les IDs 1-6 sont les axes officiels du seed initial. */}
       <Card titre={(() => {
         const actifs = troncons.filter((t) => t.actif);
-        const nAxes = actifs.filter((t) => t.est_axe).length;
+        const estAxeReel = (t: { id: number; est_axe?: boolean }) => t.est_axe ?? (t.id <= 6);
+        const nAxes = actifs.filter(estAxeReel).length;
         const nTr = actifs.length - nAxes;
         return `${nAxes} axe${nAxes > 1 ? "s" : ""} actif${nAxes > 1 ? "s" : ""}${nTr > 0 ? ` + ${nTr} tronçon${nTr > 1 ? "s" : ""}` : ""}`;
       })()}>
@@ -304,7 +307,7 @@ export function OngletAxes({
                 >
                   <td className="px-3 py-2 font-mono">{t.id}</td>
                   <td className="px-3 py-2">
-                    {t.est_axe ? (
+                    {(t.est_axe ?? (t.id <= 6)) ? (
                       <span className="inline-block rounded bg-paa-navy-700 px-2 py-0.5 text-fluid-xs font-semibold text-white">
                         AXE
                       </span>
