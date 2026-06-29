@@ -277,7 +277,8 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P10.9** | ✅ Terminée (2026-06-28) | **Navigation réordonnée + filtres incidents simplifiés + accidents/mois** — ordre menu : Accueil → Rapport → Indicateurs → Temps de traversée → Heure opt → Incidents → Fiabilité → Admin. Filtres incidents réduits à Accident / Route barrée / Travaux. BarChart "Accidents par mois" ajouté. "Mn" → "Min" dans rapport. Tri chronologique Oct 2025 avant Fév 2026. |
 | **P10.10** | ✅ Terminée (2026-06-29) | **Types d'incidents dynamiques + filtre zone portuaire strict** — migration **0015** convertit `type_incident` de ENUM vers VARCHAR(50) + crée la table `types_incidents` (slug, libelle, regex, actif). CRUD `/incidents/types` (GET/POST/PATCH/DELETE). Scraper : double filtre TYPE + ZONE obligatoires (un article sur « travaux à Yakassé-Feyassé » est écarté). NLP : `classifier_type()` lit les types depuis la DB. Frontend : `FiltresIncidents` charge les types depuis l'API + nouveau panneau `GestionTypes.tsx`. Cf. § 12.10. |
 | **P10.11** | ✅ Terminée (2026-06-29) | **UX GestionTypes — mots-clés simples + mise à jour instantanée** — Le formulaire d'ajout de type remplace le champ regex brut par un champ **mots-clés** (virgule comme séparateur) ; la regex est générée automatiquement avec aperçu temps réel. L'état `typesIncidents` est remonté dans `PageIncidents` et partagé entre `FiltresIncidents` (prop `types`) et `GestionTypes` (callback `onTypeChange`) — ajout/suppression/toggle se reflète **instantanément** dans le dropdown du filtre sans rechargement. Type « Autre » (fallback NLP) masqué dans le tableau et dans le filtre — reste en base. Chatbot mis à jour : sait proposer des mots-clés adaptés sur demande. |
-| **🏁 v1.0.0** | ✅ **Hackathon terminé (2026-06-29)** | Toutes les phases P1 → P10.11 livrées et déployées en production. Backend Railway + Frontend Railway opérationnels 24h/24. |
+| **P10.12** | ✅ Terminée (2026-06-29) | **Évolution pluriannuelle dynamique par tronçon** — Refonte du graphique `EvolutionPluriannuelle` : accepte `tronconId` en prop, affiche les **2 campagnes historiques les plus récentes** (depuis `evolution_indicateur`, filtrées par axe+sens du tronçon sélectionné) + le **mois calendaire courant en cours de collecte** (calculé en temps réel depuis `mesures`, depuis le 1er du mois). Nouveau endpoint `GET /evolution/troncon/{id}`. Auto-refresh 5 min du mois courant. Badge « en cours » sur la barre du mois actif. Oct 2025 disparaît automatiquement dès qu'une 3e campagne historique existe. Tronçons > 6 (sans historique) : seul le mois courant est affiché. |
+| **🏁 v1.0.0** | ✅ **Hackathon terminé (2026-06-29)** | Toutes les phases P1 → P10.12 livrées et déployées en production. Backend Railway + Frontend Railway opérationnels 24h/24. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -830,6 +831,55 @@ en valeur dans le pitch.
 | **P6.2** | ✅ Terminée *(refondu 2026-06-24)* | **Temps de traversée par période** — Google Maps en avant (temps actuel + ce mois + cette semaine), confrontation terrain GPX en bas. Cf. § 4.7. | `GET /predire/resume?troncon_id=` + `GET /terrain/segments/resume/{id}` |
 | ~~P6.3~~ | ❌ Retiré (2026-06-23) | ~~Heure optimale d'acheminement~~ — module supprimé : code backend (`app/api/heure_optimale.py`, `app/predicteur/heure_optimale.py`) et UI (`OngletHeureOptimale.tsx`) retirés du dépôt. | — |
 | **P6.4** | ✅ Terminée | **Ajout de nouveaux parcours** — interface admin frontend + endpoint backend pour créer un nouveau tronçon sans redéploiement. | `POST /administration/troncons` |
+
+### 4.4.1 Évolution pluriannuelle dynamique par tronçon (P10.12 — 2026-06-29)
+
+**Endpoint :** `GET /evolution/troncon/{id}` — tag Swagger « évolution pluriannuelle »
+
+**Réponse JSON :**
+
+```json
+{
+  "troncon_id": 1,
+  "troncon_nom": "CARENA → Pharmacie Palm Beach",
+  "a_donnees_historiques": true,
+  "campagnes": [
+    {
+      "periode": "fev_2026",
+      "periode_label": "Fév 2026",
+      "source": "historique",
+      "jours_ouvrables": { "min_mn": 18.2, "moyen_mn": 22.5, "max_mn": 31.0 },
+      "week_ends": { "min_mn": 15.0, "moyen_mn": 19.2, "max_mn": 26.0 }
+    },
+    {
+      "periode": "jun_2026",
+      "periode_label": "Juin 2026 (en cours)",
+      "source": "live",
+      "debut": "2026-06-01",
+      "fin": "2026-06-29",
+      "nb_mesures_total": 87,
+      "jours_ouvrables": { "min_mn": 17.0, "moyen_mn": 21.3, "max_mn": 29.0, "nb_mesures": 67 },
+      "week_ends": { "min_mn": 14.5, "moyen_mn": 18.0, "max_mn": 24.5, "nb_mesures": 20 }
+    }
+  ]
+}
+```
+
+**Mapping tronçon → axe+sens (`backend/app/api/evolution.py`, `_TRONCON_VERS_AXE_SENS`) :**
+
+| `troncon_id` | `axe` | `sens` |
+|---|---|---|
+| 1 | CARENA → Pharmacie Palm Beach | Aller |
+| 2 | CARENA → Pharmacie Palm Beach | Retour |
+| 3 | Toyota CFAO → Pharmacie Palm Beach | Aller |
+| 4 | Toyota CFAO → Pharmacie Palm Beach | Retour |
+| 5 | Agence SODECI → Pharmacie Palm Beach | Aller |
+| 6 | Agence SODECI → Pharmacie Palm Beach | Retour |
+| > 6 | — pas de données historiques — | — |
+
+**Fenêtre glissante automatique :** les campagnes historiques sont triées chronologiquement ; le frontend n'affiche que les **2 plus récentes** (`slice(-2)`). Quand une 3e campagne (ex. oct_2026) sera importée, Oct 2025 disparaîtra automatiquement du graphique — sans modification de code.
+
+**Mois courant en temps réel :** calculé depuis la table `mesures` (source=`google`, `aberrante=False`, depuis le 1er du mois calendaire courant en heure Africa/Abidjan). Polling frontend toutes les **5 minutes**.
 
 ### 4.7 Page « Temps de traversée par période » (P6.2 refondu — 2026-06-24)
 
