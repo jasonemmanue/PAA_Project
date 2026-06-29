@@ -79,7 +79,7 @@ export function GestionSources() {
       const rep = await fetch(`${API_BASE}/incidents/sources/${s.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...s, actif: !s.actif }),
+        body: JSON.stringify({ actif: !s.actif }),
       });
       if (!rep.ok) throw new Error(`HTTP ${rep.status}`);
       await recharger();

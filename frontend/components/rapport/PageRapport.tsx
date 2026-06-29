@@ -83,12 +83,51 @@ export function PageRapport() {
     recharger();
   }, [recharger]);
 
+  const [exportEnCours, setExportEnCours] = useState(false);
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
+
+  async function exporterWord() {
+    setExportEnCours(true);
+    try {
+      const url = `${API_BASE}/rapport/export/word?campagne=${campagne}&debut=${debutRange}&fin=${finRange}`;
+      const rep = await fetch(url);
+      if (!rep.ok) throw new Error(`HTTP ${rep.status}`);
+      const blob = await rep.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `rapport_deesp_${campagne}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      alert(`Échec de l'export Word : ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setExportEnCours(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-fluid-4">
       <PageHeader
         titre="Rapport DEESP — Évaluation du temps de traversée"
         sousTitre="Reproduit la structure officielle du rapport DEESP/DEEF (17 tableaux, 12 graphiques)"
       />
+
+      {/* Bouton d'export Word — page complète en temps réel */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={exporterWord}
+          disabled={exportEnCours || chargement}
+          className="inline-flex items-center gap-2 rounded-md bg-paa-blue-500 px-4 py-2
+                     text-fluid-sm font-semibold text-white shadow-paa-sm
+                     hover:bg-paa-blue-600 transition-colors
+                     disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {exportEnCours ? "Génération du document…" : "📄 Télécharger en Word (.docx)"}
+        </button>
+      </div>
 
       {/* Sélecteur de campagne + plage de dates */}
       <div className="paa-card flex flex-col gap-4 p-fluid-4">

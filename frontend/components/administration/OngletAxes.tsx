@@ -275,8 +275,13 @@ export function OngletAxes({
         />
       </Card>
 
-      {/* Liste des tronçons existants */}
-      <Card titre={`Tronçons actifs (${troncons.filter((t) => t.actif).length})`}>
+      {/* Liste des axes et tronçons existants */}
+      <Card titre={(() => {
+        const actifs = troncons.filter((t) => t.actif);
+        const nAxes = actifs.filter((t) => t.est_axe).length;
+        const nTr = actifs.length - nAxes;
+        return `${nAxes} axe${nAxes > 1 ? "s" : ""} actif${nAxes > 1 ? "s" : ""}${nTr > 0 ? ` + ${nTr} tronçon${nTr > 1 ? "s" : ""}` : ""}`;
+      })()}>
         <div className="overflow-x-auto">
           <table className="min-w-full text-fluid-sm">
             <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">

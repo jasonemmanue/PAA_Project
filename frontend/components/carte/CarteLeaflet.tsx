@@ -495,11 +495,11 @@ export function CarteLeaflet({
         role="region"
       />
 
-      {/* Bouton vue satellite */}
+      {/* Bouton vue satellite — en haut à gauche, au-dessus du cadran temps réel */}
       <button
         onClick={() => setSatellite((v) => !v)}
         title={satellite ? "Basculer en vue OSM" : "Basculer en vue satellite"}
-        className="absolute left-2 bottom-8 z-[1050] flex items-center gap-1.5 rounded-md
+        className="absolute left-2 top-2 z-[1050] flex items-center gap-1.5 rounded-md
                    bg-white/95 px-2.5 py-1.5 text-fluid-xs font-semibold shadow-paa-sm
                    border border-gray-200 hover:bg-paa-blue-50 transition-colors
                    dark:bg-paa-navy-800/95 dark:border-paa-navy-600 dark:text-paa-blue-100 dark:hover:bg-paa-navy-700"

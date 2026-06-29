@@ -110,7 +110,7 @@ const COULEUR_SOURCE: Record<SourcePrediction, string> = {
 // ---------------------------------------------------------------------------
 
 export function PagePrediction() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const LIBELLE_SOURCE: Record<SourcePrediction, string> = {
     google_routes: t("prediction.sourceGoogle"),
@@ -213,17 +213,69 @@ export function PagePrediction() {
           ═══════════════════════════════════════════════════════════════ */}
           {resume && (
             <div className="flex flex-col gap-4">
-              {/* Temps actuel — une seule valeur (temps récent) */}
+              {/* Temps actuel — 3 niveaux de cascade, centré */}
               <section className="paa-card p-fluid-4">
-                <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-2">
+                <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-3 text-center">
                   {t("prediction.tempsReel")}
                 </h2>
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="flex justify-center mb-3">
                   <BadgeSource source={resume.courante.source} libelleSource={LIBELLE_SOURCE} />
                 </div>
-                <div className="flex items-end gap-3">
-                  <KpiMn label={t("prediction.tempsRecent")} mn={resume.courante.prediction.moyen_mn} couleur="#3498DB" dominante />
+                {/* Valeurs Min / Moyen / Max centrées */}
+                <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto text-center">
+                  <div className="paa-card p-3">
+                    <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMin")}</div>
+                    <div className="mt-1 text-fluid-xl font-bold text-statut-fluide">
+                      {resume.courante.prediction.min_mn ?? "—"} {t("prediction.uniteMn")}
+                    </div>
+                  </div>
+                  <div className="paa-card p-3" style={{ borderTop: "3px solid #3498DB" }}>
+                    <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMoy")}</div>
+                    <div className="mt-1 text-fluid-2xl font-bold text-paa-blue-500">
+                      {resume.courante.prediction.moyen_mn ?? "—"} {t("prediction.uniteMn")}
+                    </div>
+                  </div>
+                  <div className="paa-card p-3">
+                    <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMax")}</div>
+                    <div className="mt-1 text-fluid-xl font-bold text-statut-congestionne">
+                      {resume.courante.prediction.max_mn ?? "—"} {t("prediction.uniteMn")}
+                    </div>
+                  </div>
                 </div>
+                {/* Cascade des 3 niveaux */}
+                <div className="mt-4 max-w-lg mx-auto">
+                  <p className="text-fluid-xs font-semibold app-text-muted mb-2 text-center uppercase tracking-wide">
+                    {locale === "fr" ? "Cascade de collecte" : "Collection cascade"}
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    <CascadeNiveau
+                      niveau={1}
+                      actif={resume.courante.source === "google_routes"}
+                      libelle={locale === "fr" ? "Mesure Google ±15 min" : "Google measurement ±15 min"}
+                      confiance="100%"
+                      couleur="#2ECC71"
+                    />
+                    <CascadeNiveau
+                      niveau={2}
+                      actif={resume.courante.source === "mesures_jour_type_7j"}
+                      libelle={locale === "fr" ? "Moyenne même type de jour (7 j)" : "Same day-type average (7 d)"}
+                      confiance={`${Math.round(resume.courante.confiance * 100)}%`}
+                      couleur="#3498DB"
+                    />
+                    <CascadeNiveau
+                      niveau={3}
+                      actif={resume.courante.source === "vitesse_ref_50kmh"}
+                      libelle={locale === "fr" ? "Référence 50 km/h" : "50 km/h reference"}
+                      confiance="30%"
+                      couleur="#95A5A6"
+                    />
+                  </div>
+                </div>
+                {resume.courante.avertissement && (
+                  <p className="mt-3 text-fluid-xs text-yellow-600 dark:text-yellow-400 text-center italic">
+                    {resume.courante.avertissement}
+                  </p>
+                )}
               </section>
 
               {/* Ce mois Google */}
@@ -480,5 +532,28 @@ function BadgeSource({ source, libelleSource }: { source: SourcePrediction; libe
       <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: c }} />
       {libelleSource[source]}
     </span>
+  );
+}
+
+function CascadeNiveau({ niveau, actif, libelle, confiance, couleur }: {
+  niveau: number; actif: boolean; libelle: string; confiance: string; couleur: string;
+}) {
+  return (
+    <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-fluid-xs transition-all ${
+      actif
+        ? "border-2 font-semibold shadow-sm"
+        : "border border-dashed opacity-50"
+    }`}
+      style={actif ? { borderColor: couleur, backgroundColor: `${couleur}11` } : undefined}
+    >
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white text-[10px] font-bold"
+            style={{ backgroundColor: actif ? couleur : "#CBD5E1" }}>
+        {niveau}
+      </span>
+      <span className="flex-1">{libelle}</span>
+      <span className="font-mono text-fluid-xs" style={{ color: actif ? couleur : undefined }}>
+        {actif ? `✓ ${confiance}` : confiance}
+      </span>
+    </div>
   );
 }

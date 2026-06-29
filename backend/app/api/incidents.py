@@ -483,22 +483,28 @@ def creer_source(payload: SourceIn, db: Session = Depends(get_db)) -> SourceOut:
     )
 
 
+class SourcePatch(BaseModel):
+    """Payload partiel pour PATCH — tous les champs optionnels."""
+    nom: str | None = None
+    libelle: str | None = None
+    url: str | None = None
+    type: str | None = None
+    actif: bool | None = None
+    fiabilite: float | None = Field(None, ge=0.0, le=1.0)
+
+
 @router.patch(
     "/sources/{source_id}",
     summary="Modifier une source (notamment activer/désactiver)",
     response_model=SourceOut,
 )
-def modifier_source(source_id: int, payload: SourceIn,
+def modifier_source(source_id: int, payload: SourcePatch,
                     db: Session = Depends(get_db)) -> SourceOut:
     s = db.get(SourceIncident, source_id)
     if s is None:
         raise HTTPException(404, f"Source id={source_id} introuvable.")
-    s.nom = payload.nom
-    s.libelle = payload.libelle
-    s.url = payload.url
-    s.type = payload.type
-    s.actif = payload.actif
-    s.fiabilite = payload.fiabilite
+    for champ, valeur in payload.model_dump(exclude_unset=True).items():
+        setattr(s, champ, valeur)
     db.commit()
     db.refresh(s)
     return SourceOut(

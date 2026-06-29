@@ -29,14 +29,17 @@ export function TableauTempsTraversee({
   description: string;
 }) {
   // Group lines by troncon_nom so we can show 2 cols (jour_ouvrable / week_end)
-  const parTroncon = new Map<string, { ouvrable: number | null; we: number | null }>();
+  const parTroncon = new Map<string, { ouvrable: number | null; we: number | null; nbJo: number; nbWe: number }>();
   for (const l of rapport?.lignes ?? []) {
     const v = valeurAgregat(l, agregat);
-    const slot = parTroncon.get(l.troncon_nom) ?? { ouvrable: null, we: null };
-    if (l.type_jour === "jour_ouvrable") slot.ouvrable = v;
-    else slot.we = v;
+    const slot = parTroncon.get(l.troncon_nom) ?? { ouvrable: null, we: null, nbJo: 0, nbWe: 0 };
+    if (l.type_jour === "jour_ouvrable") { slot.ouvrable = v; slot.nbJo = l.nb_mesures; }
+    else { slot.we = v; slot.nbWe = l.nb_mesures; }
     parTroncon.set(l.troncon_nom, slot);
   }
+
+  // Ne garder que les tronçons ayant au moins 1 mesure
+  const entrees = Array.from(parTroncon.entries()).filter(([, v]) => v.nbJo > 0 || v.nbWe > 0);
 
   return (
     <Card titre={titre} description={description}>
@@ -48,10 +51,11 @@ export function TableauTempsTraversee({
               <Th>TRONÇON</Th>
               <Th className="text-right">JOURS OUVRABLES</Th>
               <Th className="text-right">WEEK-ENDS</Th>
+              <Th className="text-right">NB MESURES</Th>
             </tr>
           </thead>
           <tbody>
-            {Array.from(parTroncon.entries()).map(([nom, vals]) => (
+            {entrees.map(([nom, vals]) => (
               <tr key={nom} className="border-t app-border">
                 <Td>{LIBELLE[agregat]}</Td>
                 <Td>{nom}</Td>
@@ -59,14 +63,17 @@ export function TableauTempsTraversee({
                   {vals.ouvrable ?? "—"}
                 </Td>
                 <Td className="text-right font-semibold">{vals.we ?? "—"}</Td>
+                <Td className="text-right text-fluid-xs app-text-muted">
+                  {vals.nbJo + vals.nbWe}
+                </Td>
               </tr>
             ))}
-            {parTroncon.size === 0 && (
+            {entrees.length === 0 && (
               <tr>
-                <Td colSpan={4}>
+                <Td colSpan={5}>
                   <span className="app-text-muted">
                     {rapport
-                      ? "Pas de mesures sur cette campagne (mois sélectionné sans données collectées)."
+                      ? "Aucune mesure réelle sur cette campagne."
                       : "Chargement…"}
                   </span>
                 </Td>

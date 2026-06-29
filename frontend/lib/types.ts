@@ -103,6 +103,7 @@ export interface EtatSousTronconCarte {
 export interface EtatTronconCarte {
   id: number;
   nom: string;
+  est_axe?: boolean;
   distance_m?: number;
   distance_km?: number;
   polyline: string | null;

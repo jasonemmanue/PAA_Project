@@ -38,4 +38,8 @@ lxml>=5.0,<6.0                # backend HTML rapide pour BeautifulSoup
 # --- Génération PDF (Tableau 16 rapport DEESP) ---
 fpdf2>=2.7,<3.0               # pure Python, léger, génère PDF natif sans dépendance OS
 
+# --- Export Word (Rapport DEESP complet : tableaux + graphiques) ---
+python-docx>=1.1,<2.0         # génération .docx natif
+matplotlib>=3.8,<4.0          # rendu PNG des graphiques BarChart embarqués dans le .docx
+
 psycopg[binary]>=3.1

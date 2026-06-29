@@ -339,6 +339,295 @@ async def get_zones_congestionnees_pdf(
 
 
 # ---------------------------------------------------------------------------
+# GET /rapport/export/word — export complet en .docx (tableaux + graphiques)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/export/word",
+    summary="Export Word (.docx) complet du Rapport DEESP",
+    description=(
+        "Génère un document Word A4 paysage contenant en temps réel : "
+        "Tableau 1 (théoriques), Tableaux 3-15 (min/moyen/max), "
+        "Graphiques 1-12 (BarChart embarqués en PNG), Tableau 16 "
+        "(zones congestionnées). Téléchargement direct côté navigateur."
+    ),
+    response_class=Response,
+)
+async def export_rapport_word(
+    campagne: str = Query(..., description="Format 'AAAA-MM'."),
+    debut: DateType | None = Query(None),
+    fin: DateType | None = Query(None),
+    db: Session = Depends(get_db),
+) -> Response:
+    # Imports locaux : évitent de charger matplotlib/docx au démarrage du serveur
+    import io
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from docx import Document
+    from docx.enum.section import WD_ORIENTATION
+    from docx.enum.table import WD_ALIGN_VERTICAL
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    from docx.shared import Cm, Pt, RGBColor
+
+    debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
+    nb_jours = max(1, (fin_utc - debut_utc).days + 1)
+
+    # Données
+    theoriques = rapport_paa.temps_theoriques(db)
+    stats = rapport_paa.temps_traversee_par_troncon(db, debut_utc, fin_utc)
+    cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
+    seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
+
+    # Tronçons actifs (pour graphiques)
+    from sqlalchemy import select
+    from app.models.models import Troncon
+    troncons = list(
+        db.execute(
+            select(Troncon).where(Troncon.actif.is_(True)).order_by(Troncon.id)
+        ).scalars()
+    )
+
+    # ---- Construction du document ----
+    doc = Document()
+    section = doc.sections[0]
+    section.orientation = WD_ORIENTATION.LANDSCAPE
+    section.page_width, section.page_height = section.page_height, section.page_width
+    section.left_margin = Cm(1.5)
+    section.right_margin = Cm(1.5)
+    section.top_margin = Cm(1.5)
+    section.bottom_margin = Cm(1.5)
+
+    NAVY = RGBColor(0x1A, 0x36, 0x5D)
+    GRIS = RGBColor(0x6B, 0x72, 0x80)
+    BLANC = RGBColor(0xFF, 0xFF, 0xFF)
+
+    def shade(cell, hex_color: str) -> None:
+        tc_pr = cell._tc.get_or_add_tcPr()
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), hex_color)
+        tc_pr.append(shd)
+
+    def ajouter_titre(texte: str, niveau: int = 1) -> None:
+        p = doc.add_paragraph()
+        run = p.add_run(texte)
+        run.bold = True
+        run.font.color.rgb = NAVY
+        run.font.size = Pt(14 if niveau == 1 else 12)
+
+    def ajouter_paragraphe(texte: str, italique: bool = False, taille: int = 9) -> None:
+        p = doc.add_paragraph()
+        run = p.add_run(texte)
+        run.italic = italique
+        run.font.size = Pt(taille)
+        run.font.color.rgb = GRIS
+
+    # En-tête
+    titre = doc.add_paragraph()
+    r = titre.add_run("RAPPORT DEESP — ÉVALUATION DU TEMPS DE TRAVERSÉE")
+    r.bold = True
+    r.font.size = Pt(16)
+    r.font.color.rgb = NAVY
+    titre.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    sous = doc.add_paragraph()
+    rs = sous.add_run(f"Campagne : {campagne}    •    {nb_jours} jour(s) analysé(s)")
+    rs.font.size = Pt(10)
+    rs.font.color.rgb = GRIS
+    sous.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    ajouter_paragraphe(
+        "Port Autonome d'Abidjan — Méthodologie DEESP/DEEF "
+        "(rapport octobre 2025). Reproduction fidèle des 17 tableaux et "
+        "12 graphiques officiels. Données collectées en temps réel via Google Routes.",
+        italique=True,
+    )
+    doc.add_paragraph()
+
+    # ---- Tableau 1 — Temps théoriques 50 km/h ----
+    ajouter_titre("Tableau 1 — Temps théoriques à 50 km/h", niveau=1)
+    tab1 = doc.add_table(rows=1, cols=3)
+    tab1.style = "Light Grid Accent 1"
+    hdr = tab1.rows[0].cells
+    for i, txt in enumerate(("AXE", "DISTANCE (km)", "TEMPS À 50 km/h")):
+        hdr[i].text = txt
+        shade(hdr[i], "1A365D")
+        for p in hdr[i].paragraphs:
+            for run in p.runs:
+                run.bold = True
+                run.font.color.rgb = BLANC
+                run.font.size = Pt(9)
+    for tt in theoriques:
+        row = tab1.add_row().cells
+        row[0].text = tt.axe
+        row[1].text = f"{tt.distance_km:.2f}"
+        row[2].text = tt.temps_50kmh_str
+        for c in row:
+            for p in c.paragraphs:
+                for run in p.runs:
+                    run.font.size = Pt(9)
+    doc.add_paragraph()
+
+    # ---- Tableaux Min / Moyen / Max ----
+    libelles = {
+        "min": ("Tableaux 3-7 — Temps MINIMAL observé", "temps_min_mn"),
+        "moyen": ("Tableaux 8-11 — Temps MOYEN observé", "temps_moyen_mn"),
+        "max": ("Tableaux 12-15 — Temps MAXIMAL observé", "temps_max_mn"),
+    }
+    for agregat, (titre_tab, champ) in libelles.items():
+        ajouter_titre(titre_tab, niveau=2)
+        # Group par tronçon
+        par_tr: dict[str, dict[str, tuple[int | None, int]]] = {}
+        for s in stats:
+            nom = s.troncon_nom
+            par_tr.setdefault(nom, {})
+            par_tr[nom][s.type_jour] = (getattr(s, champ), s.nb_mesures)
+        # Filtre : que les tronçons avec des mesures
+        par_tr = {n: v for n, v in par_tr.items()
+                  if sum(nb for _, nb in v.values()) > 0}
+        if not par_tr:
+            ajouter_paragraphe("Aucune mesure réelle sur cette campagne.", italique=True)
+            doc.add_paragraph()
+            continue
+        tab = doc.add_table(rows=1, cols=4)
+        tab.style = "Light Grid Accent 1"
+        hdr = tab.rows[0].cells
+        for i, txt in enumerate(("TRONÇON", "JOURS OUVRABLES (Min)",
+                                  "WEEK-ENDS (Min)", "NB MESURES")):
+            hdr[i].text = txt
+            shade(hdr[i], "1A365D")
+            for p in hdr[i].paragraphs:
+                for run in p.runs:
+                    run.bold = True
+                    run.font.color.rgb = BLANC
+                    run.font.size = Pt(9)
+        for nom, vals in par_tr.items():
+            jo_v, jo_n = vals.get("jour_ouvrable", (None, 0))
+            we_v, we_n = vals.get("week_end", (None, 0))
+            row = tab.add_row().cells
+            row[0].text = nom
+            row[1].text = "—" if jo_v is None else str(jo_v)
+            row[2].text = "—" if we_v is None else str(we_v)
+            row[3].text = str(jo_n + we_n)
+            for c in row:
+                for p in c.paragraphs:
+                    for run in p.runs:
+                        run.font.size = Pt(9)
+        doc.add_paragraph()
+
+    # ---- Graphiques 1-12 — BarChart par tronçon (min puis max) ----
+    for agregat, titre_g in (("min", "Graphiques 1-6 — Temps MIN observé par jour"),
+                              ("max", "Graphiques 7-12 — Temps MAX observé par jour")):
+        ajouter_titre(titre_g, niveau=2)
+        couleur = "#2ECC71" if agregat == "min" else "#E74C3C"
+        for t in troncons:
+            serie = rapport_paa.serie_graphique(
+                db, t.id, debut_utc, fin_utc, agregat=agregat,
+            )
+            if not serie:
+                continue
+            # Génération PNG matplotlib
+            labels = [p.libelle_jour for p in serie]
+            valeurs = [p.temps_mn for p in serie]
+            fig, ax = plt.subplots(figsize=(8, 3), dpi=100)
+            ax.bar(range(len(valeurs)), valeurs, color=couleur, edgecolor="white")
+            ax.set_xticks(range(len(labels)))
+            ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7)
+            ax.set_ylabel("Temps (Min)", fontsize=8)
+            ax.set_title(f"{t.nom} — Temps {agregat} (Min)", fontsize=9, color="#1A365D")
+            ax.tick_params(axis="y", labelsize=7)
+            ax.grid(axis="y", linestyle="--", alpha=0.3)
+            fig.tight_layout()
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight")
+            plt.close(fig)
+            buf.seek(0)
+            doc.add_picture(buf, width=Cm(22))
+            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph()
+
+    # ---- Tableau 16 — Zones congestionnées ----
+    ajouter_titre("Tableau 16 — Tronçons congestionnés (règles DEESP)", niveau=1)
+    ajouter_paragraphe(
+        f"Critère par mesure : couleur Google Maps — ROUGE OU ORANGE ≥ 50 %. "
+        f"Seuils appliqués : ≥ {seuil_j} occurrence(s) / jour-indicatif OU "
+        f"≥ {seuil_s} occurrence(s) / semaine.",
+        italique=True,
+    )
+    if not cong:
+        ajouter_paragraphe("Aucun tronçon congestionné sur cette campagne.",
+                           italique=True)
+    else:
+        tab16 = doc.add_table(rows=1, cols=6)
+        tab16.style = "Light Grid Accent 1"
+        hdr = tab16.rows[0].cells
+        for i, txt in enumerate(("AXE", "SOUS-TRONÇON", "TRANCHE",
+                                  "NB/SEM.", "RÈGLE", "RÉPARTITION/JOUR")):
+            hdr[i].text = txt
+            shade(hdr[i], "1A365D")
+            for p in hdr[i].paragraphs:
+                for run in p.runs:
+                    run.bold = True
+                    run.font.color.rgb = BLANC
+                    run.font.size = Pt(9)
+        for c in cong:
+            sous = (
+                f"{c.sous_troncon_code} — {c.sous_troncon_nom or ''}"
+                if c.sous_troncon_code
+                else "axe entier"
+            )
+            regles = []
+            if c.regle_jour_indicatif:
+                regles.append(f"≥{seuil_j}/jour")
+            if c.regle_semaine:
+                regles.append(f"≥{seuil_s}/sem")
+            row = tab16.add_row().cells
+            row[0].text = c.troncon_nom or ""
+            row[1].text = sous
+            row[2].text = f"{c.heure:02d}h-{c.heure + 1:02d}h"
+            row[3].text = str(c.nb_total_semaine)
+            row[4].text = " | ".join(regles) or "—"
+            row[5].text = " ".join(
+                f"{j[:3]}:{n}" for j, n in c.nb_jours_congestionnes_par_type.items()
+            )
+            for cell in row:
+                for p in cell.paragraphs:
+                    for run in p.runs:
+                        run.font.size = Pt(8)
+
+    # Pied de page
+    doc.add_paragraph()
+    pied = doc.add_paragraph()
+    pr = pied.add_run(
+        "Document généré en temps réel par PAA-Traverse — "
+        "Port Autonome d'Abidjan"
+    )
+    pr.italic = True
+    pr.font.size = Pt(8)
+    pr.font.color.rgb = GRIS
+    pied.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # Sérialisation
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    nom = f"rapport_deesp_{campagne}.docx"
+    return Response(
+        content=buf.getvalue(),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{nom}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /rapport/graphique/{troncon_id}
 # ---------------------------------------------------------------------------
 
