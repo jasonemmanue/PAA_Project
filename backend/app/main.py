@@ -28,7 +28,6 @@ from fastapi.responses import JSONResponse
 
 from app.api.agregation import router as agregation_router
 from app.api.chatbot import router as chatbot_router
-from app.api.import_data import router as import_router
 from app.api.carte import router as carte_router
 from app.api.carte import router_ws as carte_ws_router
 from app.api.collecte import router as collecte_router
@@ -341,7 +340,6 @@ app.include_router(agregation_router)
 app.include_router(export_router)
 app.include_router(carte_router)
 app.include_router(carte_ws_router)
-app.include_router(import_router)
 app.include_router(evolution_router)
 app.include_router(terrain_router)
 app.include_router(segments_router)
