@@ -49,7 +49,12 @@ function slugifier(s: string): string {
     .slice(0, 40);
 }
 
-export function GestionTypes() {
+interface Props {
+  // Appelé après chaque ajout / suppression / toggle pour que le filtre se mette à jour
+  onTypeChange?: () => void;
+}
+
+export function GestionTypes({ onTypeChange }: Props) {
   const { peutEcrire } = useAuth();
   const [types, setTypes] = useState<TypeApi[]>([]);
   const [ouvert, setOuvert] = useState(false);
@@ -60,8 +65,11 @@ export function GestionTypes() {
   async function recharger() {
     try {
       const rep = await fetch(`${API_BASE}/incidents/types`);
-      if (rep.ok) setTypes(await rep.json());
-      else setTypes([]);
+      if (rep.ok) {
+        const data = await rep.json();
+        setTypes(data);
+        onTypeChange?.();   // notifie PageIncidents → filtre mis à jour instantanément
+      } else setTypes([]);
     } catch {
       setTypes([]);
     }

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/lib/i18n";
@@ -14,7 +13,7 @@ export interface FiltresEtat {
   troncon_id: number | null;
 }
 
-interface TypeApi {
+export interface TypeIncidentApi {
   id: number;
   slug: string;
   libelle: string;
@@ -26,6 +25,7 @@ interface Props {
   onChange: (f: FiltresEtat) => void;
   troncons: Troncon[];
   apiBaseUrl: string;
+  types: TypeIncidentApi[];  // chargés par PageIncidents, partagés avec GestionTypes
 }
 
 // Correspond les valeurs de période UI vers les valeurs de la query string backend
@@ -34,19 +34,11 @@ function _periodeVersBackend(p: FiltresPeriode): string {
   return p;
 }
 
-export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl }: Props) {
+export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl, types }: Props) {
   const { t } = useI18n();
   const { peutEcrire } = useAuth();
 
-  // Types d'incidents chargés depuis l'API (migration 0015)
-  const [typesApi, setTypesApi] = useState<TypeApi[]>([]);
-
-  useEffect(() => {
-    fetch(`${apiBaseUrl}/incidents/types`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: TypeApi[]) => setTypesApi(data.filter((t) => t.actif)))
-      .catch(() => setTypesApi([]));
-  }, [apiBaseUrl]);
+  const typesApi = types.filter((t) => t.actif);
 
   const periodes: { value: FiltresPeriode; label: string }[] = [
     { value: "aujourd'hui", label: t("incidents.periodAujourd") },

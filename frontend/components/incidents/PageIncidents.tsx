@@ -17,7 +17,7 @@ import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Incident, IncidentsPage, StatsIncidents, Troncon } from "@/lib/types";
 
-import { FiltresIncidents, type FiltresEtat } from "./FiltresIncidents";
+import { FiltresIncidents, type FiltresEtat, type TypeIncidentApi } from "./FiltresIncidents";
 import { GestionSources } from "./GestionSources";
 import { GestionTypes } from "./GestionTypes";
 import { ListeIncidents } from "./ListeIncidents";
@@ -50,6 +50,7 @@ export function PageIncidents() {
   const [troncons, setTroncons]   = useState<Troncon[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [stats, setStats]         = useState<StatsIncidents | null>(null);
+  const [typesIncidents, setTypesIncidents] = useState<TypeIncidentApi[]>([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur]         = useState<string | null>(null);
 
@@ -63,48 +64,36 @@ export function PageIncidents() {
   // Chargement initial + polling
   // -------------------------------------------------------------------------
 
-  async function charger() {
-    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
-    console.group("[PageIncidents] charger()");
-    console.log("API base URL :", base);
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
+
+  async function chargerTypes() {
     try {
-      console.log("→ GET /incidents?limit=200");
-      const page = await api.getIncidents({ limit: 200 }).catch((e) => {
-        console.error("❌ /incidents :", e?.statut, e?.message, e?.corps);
-        throw e;
-      });
-      console.log("✓ /incidents →", page.total, "incident(s)");
+      const rep = await fetch(`${base}/incidents/types`);
+      if (rep.ok) setTypesIncidents(await rep.json());
+    } catch { /* silencieux */ }
+  }
 
-      console.log("→ GET /incidents/stats");
-      const statsData = await api.getStatsIncidents().catch((e) => {
-        console.error("❌ /incidents/stats :", e?.statut, e?.message, e?.corps);
-        throw e;
-      });
-      console.log("✓ /incidents/stats →", statsData);
-
-      console.log("→ GET /troncons");
-      const trs = await api.troncons().catch((e) => {
-        console.error("❌ /troncons :", e?.statut, e?.message, e?.corps);
-        throw e;
-      });
-      console.log("✓ /troncons →", trs.length, "tronçon(s)");
-
+  async function charger() {
+    try {
+      const [page, statsData, trs] = await Promise.all([
+        api.getIncidents({ limit: 200 }),
+        api.getStatsIncidents(),
+        api.troncons(),
+      ]);
       setIncidents(page.items);
       setStats(statsData);
       setTroncons(trs);
       setErreur(null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("❌ Erreur globale charger() :", e);
-      setErreur(msg);
+      setErreur(e instanceof Error ? e.message : String(e));
     } finally {
       setChargement(false);
-      console.groupEnd();
     }
   }
 
   useEffect(() => {
     charger();
+    chargerTypes();
     const id = setInterval(charger, POLLING_MS);
     return () => clearInterval(id);
   }, []);
@@ -234,13 +223,14 @@ export function PageIncidents() {
           filtres={filtres}
           onChange={setFiltres}
           troncons={troncons}
-          apiBaseUrl={process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081"}
+          apiBaseUrl={base}
+          types={typesIncidents}
         />
       </div>
 
       {/* Gestion des sources et des types — visible en mode écriture uniquement */}
       <GestionSources />
-      <GestionTypes />
+      <GestionTypes onTypeChange={chargerTypes} />
 
       {/* Accidents par mois */}
       {accidentsParMois.length > 0 && (
