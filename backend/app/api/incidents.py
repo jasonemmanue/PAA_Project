@@ -313,7 +313,7 @@ def exporter_incidents_csv(
 
 
 @router.get(
-    "/{incident_id}",
+    "/{incident_id:int}",
     summary="Détail d'un incident",
     response_model=IncidentOut,
 )

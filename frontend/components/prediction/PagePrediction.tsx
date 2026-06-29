@@ -284,21 +284,7 @@ export function PagePrediction() {
                     inutile d'évoquer la calibration GPX qui est un détail technique. */}
               </section>
 
-              {/* Ce mois Google */}
-              <section className="paa-card p-fluid-4">
-                <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
-                  {t("prediction.ceMois")}
-                  <span className="ml-2 text-fluid-xs font-normal app-text-muted">
-                    {resume.mois.nb_mesures_total} {resume.mois.nb_mesures_total !== 1 ? t("prediction.mesures") : t("prediction.mesure")}
-                  </span>
-                </h2>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <BlocTypeJour titre={t("prediction.joursOuvrables")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.mois.jours_ouvrables} />
-                  <BlocTypeJour titre={t("prediction.weekEnds")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.mois.week_ends} />
-                </div>
-              </section>
-
-              {/* Cette semaine Google */}
+              {/* Cette semaine Google — ordre chronologique : semaine d'abord */}
               <section className="paa-card p-fluid-4">
                 <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
                   {t("prediction.cetteSemaine")}
@@ -309,6 +295,20 @@ export function PagePrediction() {
                 <div className="grid gap-3 md:grid-cols-2">
                   <BlocTypeJour titre={t("prediction.joursOuvrables")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.semaine.jours_ouvrables} />
                   <BlocTypeJour titre={t("prediction.weekEnds")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.semaine.week_ends} />
+                </div>
+              </section>
+
+              {/* Ce mois Google — englobe la semaine */}
+              <section className="paa-card p-fluid-4">
+                <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
+                  {t("prediction.ceMois")}
+                  <span className="ml-2 text-fluid-xs font-normal app-text-muted">
+                    {resume.mois.nb_mesures_total} {resume.mois.nb_mesures_total !== 1 ? t("prediction.mesures") : t("prediction.mesure")}
+                  </span>
+                </h2>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <BlocTypeJour titre={t("prediction.joursOuvrables")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.mois.jours_ouvrables} />
+                  <BlocTypeJour titre={t("prediction.weekEnds")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.mois.week_ends} />
                 </div>
               </section>
             </div>
@@ -351,16 +351,6 @@ export function PagePrediction() {
                   t={t}
                 />
                 <BlocGpx
-                  titre={t("prediction.ceMoisTitre")}
-                  sousTitre={sessionsMois.length > 0
-                    ? `${sessionsMois.length} ${sessionsMois.length > 1 ? t("prediction.sessions") : t("prediction.session")} ${t("prediction.depuisLe")} ${formaterDate(premierDuMois())}`
-                    : t("prediction.aucuneSessionMois")}
-                  stats={statsMois}
-                  vide={sessionsMois.length === 0}
-                  ecart={ecartMois}
-                  t={t}
-                />
-                <BlocGpx
                   titre={t("prediction.cetteSemaineTitre")}
                   sousTitre={sessionsSemaine.length > 0
                     ? `${sessionsSemaine.length} ${sessionsSemaine.length > 1 ? t("prediction.sessions") : t("prediction.session")} ${t("prediction.depuisLe")} ${formaterDate(lundiSemaine())}`
@@ -368,6 +358,16 @@ export function PagePrediction() {
                   stats={statsSemaine}
                   vide={sessionsSemaine.length === 0}
                   ecart={ecartSemaine}
+                  t={t}
+                />
+                <BlocGpx
+                  titre={t("prediction.ceMoisTitre")}
+                  sousTitre={sessionsMois.length > 0
+                    ? `${sessionsMois.length} ${sessionsMois.length > 1 ? t("prediction.sessions") : t("prediction.session")} ${t("prediction.depuisLe")} ${formaterDate(premierDuMois())}`
+                    : t("prediction.aucuneSessionMois")}
+                  stats={statsMois}
+                  vide={sessionsMois.length === 0}
+                  ecart={ecartMois}
                   t={t}
                 />
               </div>

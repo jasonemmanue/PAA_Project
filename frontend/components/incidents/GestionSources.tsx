@@ -39,19 +39,30 @@ export function GestionSources() {
   const [form, setForm] = useState(SOURCE_VIDE);
 
   async function recharger() {
+    // Lecture silencieuse — pas d'erreur affichée si le GET échoue ;
+    // l'utilisateur voit simplement "Aucune source configurée".
     try {
       const rep = await fetch(`${API_BASE}/incidents/sources`);
-      if (!rep.ok) throw new Error(`HTTP ${rep.status}`);
-      setSources(await rep.json());
-      setErreur(null);
-    } catch (e) {
-      setErreur(e instanceof Error ? e.message : String(e));
+      if (rep.ok) setSources(await rep.json());
+      else setSources([]);
+    } catch {
+      setSources([]);
     }
   }
 
   useEffect(() => {
-    if (ouvert) recharger();
+    if (ouvert) {
+      setErreur(null); // nettoyage à chaque ouverture du panneau
+      recharger();
+    }
   }, [ouvert]);
+
+  // Auto-effacement des messages d'erreur après 6 s
+  useEffect(() => {
+    if (!erreur) return;
+    const id = setTimeout(() => setErreur(null), 6000);
+    return () => clearTimeout(id);
+  }, [erreur]);
 
   // Génère automatiquement un identifiant interne à partir du libellé
   // (minuscules, sans accents, espaces → underscore)
