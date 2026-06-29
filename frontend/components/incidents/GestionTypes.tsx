@@ -197,7 +197,7 @@ export function GestionTypes({ onTypeChange }: Props) {
                     </td>
                   </tr>
                 )}
-                {types.map((type) => (
+                {types.filter((type) => type.slug !== "autre").map((type) => (
                   <tr key={type.id} className="border-t app-border">
                     <td className="px-3 py-2 font-medium">{type.libelle}</td>
                     <td className="px-3 py-2 text-xs text-gray-600 dark:text-gray-300 max-w-[260px]"
