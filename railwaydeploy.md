@@ -47,22 +47,27 @@
 
 ---
 
-## Règle critique — déploiement backend via `railway up` depuis `backend/`
+## Règle critique — déploiement via `railway up` (backend ET frontend)
 
-> **⚠️ IMPORTANT (découvert le 2026-06-29) :** le déploiement backend se fait
-> EXCLUSIVEMENT via `railway up` depuis le dossier `backend/`, PAS via `git push`.
->
-> **Pourquoi :** le service backend Railway est configuré en mode **upload direct**
-> (pas lié au webhook GitHub). `git push` redéploie uniquement le **frontend**
-> (lui lié au repo GitHub). Pousser sur GitHub pour le backend entraîne un
-> cache Docker Railway qui n'intègre pas les nouveaux fichiers (ex. fichiers
-> de migration Alembic manquants dans le container).
+> **⚠️ IMPORTANT (découvert le 2026-06-29) :** les deux services se déploient
+> via `railway up` depuis leur dossier respectif. `git push` seul n'est PAS
+> suffisant — le cache Docker Railway peut empêcher la prise en compte des
+> nouveaux fichiers.
 
-**Commande unique pour déployer le backend :**
+| Service | Commande | Depuis |
+|---------|----------|--------|
+| **Backend** | `railway up --service backend` | dossier `backend/` |
+| **Frontend** | `railway up --service frontend` | dossier `frontend/` |
+
 ```powershell
-# Depuis la racine du projet
+# Déployer le backend
 cd backend
 railway up --service backend
+cd ..
+
+# Déployer le frontend
+cd frontend
+railway up --service frontend
 cd ..
 ```
 
@@ -73,10 +78,7 @@ cd ..
 ```powershell
 git add -A          # ou git add <fichiers spécifiques>
 git status          # vérifier qu'il n'y a plus de ?? pour les fichiers à déployer
-cd backend && railway up --service backend && cd ..
 ```
-
-**`git push origin main` → déclenche uniquement le rebuild du frontend.**
 
 ---
 

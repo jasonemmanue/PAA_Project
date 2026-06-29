@@ -1690,16 +1690,19 @@ Endpoints critiques backend :
 - **`numReplicas = 1`** : APScheduler vit en mémoire — toute duplication entraînerait une double collecte.
 - **Premier déploiement** : seed via la Console Railway → `python -m app.seed_troncons`.
 
-**Règle critique backend (découverte le 2026-06-29) :**
+**Règle critique déploiement — backend ET frontend (découverte le 2026-06-29) :**
 
-- **Le backend se déploie UNIQUEMENT via `railway up` depuis `backend/`**, PAS via `git push`. Le webhook GitHub ne rebuilde que le frontend. Un déploiement backend via `git push` utilisait le cache Docker Railway et n'incluait pas les nouveaux fichiers de migration Alembic dans le container. Commande correcte depuis la racine du projet :
+- **Les deux services se déploient via `railway up` depuis leur dossier**, PAS via `git push` seul. `git push` peut utiliser le cache Docker et omettre de nouveaux fichiers (migration Alembic, composants) :
 ```powershell
-cd backend && railway up --service backend && cd ..
+# Backend
+cd backend  &&  railway up --service backend  &&  cd ..
+# Frontend
+cd frontend  &&  railway up --service frontend  &&  cd ..
 ```
 
-**Règles critiques frontend (ajoutées le 2026-06-28) :**
+**Règles critiques frontend :**
 
-- **Pour le frontend, `railway up` ne fonctionne PAS** (service lié au dépôt GitHub, retourne 404). Le déploiement frontend se déclenche automatiquement à chaque `git push origin main`.
+- **`railway up --service frontend` depuis `frontend/`** est la méthode fiable. `git push origin main` peut aussi déclencher le rebuild, mais sans garantie de cache invalidation.
 - **`NEXT_PUBLIC_*` = variables de build-time** — elles doivent être définies dans Railway **avant** le premier build. Ajouter une variable APRÈS le build déjà effectué n'a aucun effet : il faut redéclencher un déploiement complet.
 - **Vulnérabilités de sécurité bloquent le build** — Railway scan `package-lock.json`. Si un CVE est détecté, le build échoue avec `SECURITY VULNERABILITIES DETECTED`. Corriger dans `package-lock.json` (via `npm install <package>@<version>`) et pousser le lock file mis à jour.
 - **`builder = "RAILPACK"` dans `railway.toml`** — Railway a remplacé Nixpacks par Railpack. Utiliser `RAILPACK` (majuscules) pour que `railway.toml` soit lu entièrement (y compris `startCommand`).
