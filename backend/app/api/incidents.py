@@ -84,6 +84,18 @@ class StatsIncidents(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _enum_value(field: Any) -> str | None:
+    """Retourne la valeur d'un enum SQLAlchemy en tolérant les chaînes brutes.
+
+    Certaines lignes anciennes en base ont `type_incident` ou `severite`
+    stockés comme str (pas converti en Enum à la lecture). Sans ce garde
+    `.value` lève AttributeError et casse tout l'endpoint /incidents.
+    """
+    if field is None:
+        return None
+    return field.value if hasattr(field, "value") else str(field)
+
+
 def _incident_to_out(inc: Incident) -> IncidentOut:
     """Convertit un modèle SQLAlchemy `Incident` vers le schéma de sortie."""
     return IncidentOut(
@@ -98,8 +110,8 @@ def _incident_to_out(inc: Incident) -> IncidentOut:
         lon=inc.lon,
         lieu_extrait=inc.lieu_extrait,
         troncon_id=inc.troncon_id,
-        type_incident=inc.type_incident.value if inc.type_incident else None,
-        severite=inc.severite.value if inc.severite else None,
+        type_incident=_enum_value(inc.type_incident),
+        severite=_enum_value(inc.severite),
         actif=inc.actif,
         verifie=inc.verifie,
         fiabilite_source=inc.fiabilite_source,
@@ -148,7 +160,7 @@ def get_stats(db: Session = Depends(get_db)) -> StatsIncidents:
         if (maintenant - pub_utc).total_seconds() < 6 * 3600:
             nb_actifs += 1
 
-        cle_type = type_inc.value if type_inc else "inconnu"
+        cle_type = _enum_value(type_inc) or "inconnu"
         nb_par_type[cle_type] = nb_par_type.get(cle_type, 0) + 1
         nb_par_source[source] = nb_par_source.get(source, 0) + 1
 

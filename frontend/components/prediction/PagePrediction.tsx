@@ -221,21 +221,31 @@ export function PagePrediction() {
                 <div className="flex justify-center mb-3">
                   <BadgeSource source={resume.courante.source} libelleSource={LIBELLE_SOURCE} />
                 </div>
-                {/* Min/Max = bornes "7 j même type de jour" renvoyées par le backend.
-                    Stables quel que soit le niveau de cascade (le Moy seul change).
-                    Si bornes_7j absent (peu de mesures), affichage "—" plutôt que de
-                    retomber sur la valeur Google instantanée qui ferait Min=Moy=Max. */}
+                {/* Min/Max = bornes historiques stables — JAMAIS la mesure Google
+                    instantanée (qui donnerait Min=Moy=Max au niveau 1).
+                    Cascade :
+                      1) bornes_7j (7 j même type de jour, calculé par backend)
+                      2) sinon : stats semaine du type de jour courant
+                      3) sinon : stats mois du type de jour courant
+                      4) sinon : valeur prédiction (cas extrême : Google instant) */}
                 {(() => {
-                  const b = resume.courante.bornes_7j;
-                  const minMn = b?.min_mn ?? null;
-                  const maxMn = b?.max_mn ?? null;
+                  const tj = resume.courante.type_jour;
+                  const semStats = tj === "jour_ouvrable" ? resume.semaine.jours_ouvrables : resume.semaine.week_ends;
+                  const moisStats = tj === "jour_ouvrable" ? resume.mois.jours_ouvrables : resume.mois.week_ends;
+                  const fallback = (semStats?.nb_mesures ?? 0) >= 2 ? semStats : moisStats;
+                  const minMn = resume.courante.bornes_7j?.min_mn
+                    ?? fallback?.min_mn
+                    ?? resume.courante.prediction.min_mn;
+                  const maxMn = resume.courante.bornes_7j?.max_mn
+                    ?? fallback?.max_mn
+                    ?? resume.courante.prediction.max_mn;
                   const libelleSource = locale === "fr" ? "7 j même type" : "7 d same type";
                   return (
                     <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto text-center">
                       <div className="paa-card p-3">
                         <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMin")}</div>
                         <div className="mt-1 text-fluid-xl font-bold text-statut-fluide">
-                          {minMn ?? "—"} {minMn !== null && t("prediction.uniteMn")}
+                          {minMn ?? "—"} {t("prediction.uniteMn")}
                         </div>
                         <div className="mt-1 text-[10px] app-text-muted">{libelleSource}</div>
                       </div>
@@ -251,7 +261,7 @@ export function PagePrediction() {
                       <div className="paa-card p-3">
                         <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMax")}</div>
                         <div className="mt-1 text-fluid-xl font-bold text-statut-congestionne">
-                          {maxMn ?? "—"} {maxMn !== null && t("prediction.uniteMn")}
+                          {maxMn ?? "—"} {t("prediction.uniteMn")}
                         </div>
                         <div className="mt-1 text-[10px] app-text-muted">{libelleSource}</div>
                       </div>
