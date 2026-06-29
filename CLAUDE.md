@@ -1690,9 +1690,16 @@ Endpoints critiques backend :
 - **`numReplicas = 1`** : APScheduler vit en mémoire — toute duplication entraînerait une double collecte.
 - **Premier déploiement** : seed via la Console Railway → `python -m app.seed_troncons`.
 
+**Règle critique backend (découverte le 2026-06-29) :**
+
+- **Le backend se déploie UNIQUEMENT via `railway up` depuis `backend/`**, PAS via `git push`. Le webhook GitHub ne rebuilde que le frontend. Un déploiement backend via `git push` utilisait le cache Docker Railway et n'incluait pas les nouveaux fichiers de migration Alembic dans le container. Commande correcte depuis la racine du projet :
+```powershell
+cd backend && railway up --service backend && cd ..
+```
+
 **Règles critiques frontend (ajoutées le 2026-06-28) :**
 
-- **Ne pas utiliser `railway up` quand GitHub est la source** — le service est lié au dépôt GitHub ; `railway up` (upload direct) renvoie un 404. Le déploiement se déclenche automatiquement à chaque `git push origin main`.
+- **Pour le frontend, `railway up` ne fonctionne PAS** (service lié au dépôt GitHub, retourne 404). Le déploiement frontend se déclenche automatiquement à chaque `git push origin main`.
 - **`NEXT_PUBLIC_*` = variables de build-time** — elles doivent être définies dans Railway **avant** le premier build. Ajouter une variable APRÈS le build déjà effectué n'a aucun effet : il faut redéclencher un déploiement complet.
 - **Vulnérabilités de sécurité bloquent le build** — Railway scan `package-lock.json`. Si un CVE est détecté, le build échoue avec `SECURITY VULNERABILITIES DETECTED`. Corriger dans `package-lock.json` (via `npm install <package>@<version>`) et pousser le lock file mis à jour.
 - **`builder = "RAILPACK"` dans `railway.toml`** — Railway a remplacé Nixpacks par Railpack. Utiliser `RAILPACK` (majuscules) pour que `railway.toml` soit lu entièrement (y compris `startCommand`).

@@ -47,36 +47,54 @@
 
 ---
 
-## Règle critique — railway up et git
+## Règle critique — déploiement backend via `railway up` depuis `backend/`
 
-> **`railway up` n'envoie que les fichiers trackés par git.**
-> Il utilise `git ls-files` pour créer l'archive envoyée aux serveurs Railway.
-> Un fichier non ajouté à git (`??` dans `git status`) sera ABSENT du conteneur.
+> **⚠️ IMPORTANT (découvert le 2026-06-29) :** le déploiement backend se fait
+> EXCLUSIVEMENT via `railway up` depuis le dossier `backend/`, PAS via `git push`.
+>
+> **Pourquoi :** le service backend Railway est configuré en mode **upload direct**
+> (pas lié au webhook GitHub). `git push` redéploie uniquement le **frontend**
+> (lui lié au repo GitHub). Pousser sur GitHub pour le backend entraîne un
+> cache Docker Railway qui n'intègre pas les nouveaux fichiers (ex. fichiers
+> de migration Alembic manquants dans le container).
+
+**Commande unique pour déployer le backend :**
+```powershell
+# Depuis la racine du projet
+cd backend
+railway up --service backend
+cd ..
+```
+
+`railway up` utilise `git ls-files` pour créer l'archive — un fichier non commité
+(`??` dans `git status`) sera ABSENT du container.
 
 **Avant chaque `railway up` :**
 ```powershell
 git add -A          # ou git add <fichiers spécifiques>
 git status          # vérifier qu'il n'y a plus de ?? pour les fichiers à déployer
-railway up --service backend --detach
+cd backend && railway up --service backend && cd ..
 ```
+
+**`git push origin main` → déclenche uniquement le rebuild du frontend.**
 
 ---
 
 ## Procédure de déploiement standard
 
-### Déploiement normal (code existant modifié)
+### Déploiement backend (code modifié)
 
 ```powershell
-# 1. Stager tous les fichiers modifiés
+# 1. Stager et committer
 git add -A
-
-# 2. (Optionnel mais recommandé) Committer
 git commit -m "description du changement"
 
-# 3. Déployer
-railway up --service backend --detach
+# 2. Déployer le backend (DEPUIS le dossier backend/)
+cd backend
+railway up --service backend
+cd ..
 
-# 4. Suivre les logs
+# 3. Suivre les logs
 railway logs --service backend
 ```
 
@@ -90,6 +108,16 @@ INFO:     Uvicorn running on http://0.0.0.0:PORT
 INFO:     100.64.x.x - "GET /health HTTP/1.1" 200 OK
 ```
 
+### Déploiement frontend (code modifié)
+
+```powershell
+# Le frontend est lié au repo GitHub → git push suffit
+git add -A
+git commit -m "description du changement frontend"
+git push origin main
+# → Railway rebuild le frontend automatiquement
+```
+
 ---
 
 ### Déploiement avec nouvelle migration Alembic
@@ -98,25 +126,25 @@ INFO:     100.64.x.x - "GET /health HTTP/1.1" 200 OK
 > cela provoque un `pg_advisory_lock` persistant qui bloque le démarrage.
 
 ```powershell
-# 1. Créer la migration localement
-# (depuis backend/ avec l'env Docker actif)
-# alembic revision --autogenerate -m "description"
-# → modifier le fichier généré si besoin
+# 1. Créer et écrire la migration (backend/alembic/versions/00XX_nom.py)
 
-# 2. Stager + déployer (inclut le nouveau fichier de migration)
+# 2. Stager + committer
 git add -A
-git commit -m "migration XXXX: description"
-railway up --service backend --detach
+git commit -m "migration 00XX: description"
 
-# 3. Attendre que le déploiement soit vert (Online)
+# 3. Déployer le backend depuis backend/
+cd backend
+railway up --service backend
+cd ..
+
+# 4. Attendre que le déploiement soit vert (Online)
 # Puis ouvrir la Console Railway → onglet Console
 
-# 4. Appliquer la migration dans la Console Railway
+# 5. Appliquer la migration dans la Console Railway
 alembic current      # vérifier la révision actuelle
-alembic heads        # vérifier que la nouvelle migration est visible
-alembic upgrade head # appliquer
+alembic upgrade head # appliquer — doit afficher "Running upgrade XXXX -> 00XX"
 
-# 5. Vérifier
+# 6. Vérifier
 alembic current      # doit montrer la nouvelle révision (head)
 ```
 
