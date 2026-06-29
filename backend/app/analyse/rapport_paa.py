@@ -385,6 +385,90 @@ def troncons_congestionnes(
 
 
 # ---------------------------------------------------------------------------
+# Matrice congestion — par créneau horaire × date (brut, sans agrégation)
+# ---------------------------------------------------------------------------
+
+
+def matrice_congestion(
+    db: Session,
+    troncon_id: int,
+    debut_utc: datetime,
+    fin_utc: datetime,
+) -> dict:
+    """Retourne pour chaque (date locale, heure DEESP) l'état congestionné/fluide.
+
+    Résultat :
+      - dates   : liste triée de dates ISO (YYYY-MM-DD) présentes dans la plage
+      - tranches : [{heure, tranche '07h-08h', par_date}]
+        où par_date[date_str] = {est_congestionne, pct_rouge, pct_orange} | None
+    """
+    fuseau = ZoneInfo(get_settings().tz)
+
+    rows = list(
+        db.execute(
+            select(
+                Mesure.horodatage,
+                Mesure.est_congestionne,
+                Mesure.pourcentage_rouge,
+                Mesure.pourcentage_orange,
+            )
+            .where(
+                Mesure.troncon_id == troncon_id,
+                Mesure.source == SourceMesure.google,
+                Mesure.aberrante.is_(False),
+                Mesure.horodatage >= debut_utc,
+                Mesure.horodatage <= fin_utc,
+            )
+            .order_by(Mesure.horodatage)
+        ).all()
+    )
+
+    # Indexation : date_str → heure → cellule (dernière mesure de l'heure)
+    par_date_heure: dict[str, dict[int, dict]] = {}
+    dates_set: set[str] = set()
+
+    for horodatage, est_cong, pct_rouge, pct_orange in rows:
+        h_local = (
+            horodatage.astimezone(fuseau)
+            if horodatage.tzinfo
+            else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+        )
+        if not _dans_plage_deesp(h_local):
+            continue
+        date_str = h_local.date().isoformat()
+        heure = h_local.hour
+        dates_set.add(date_str)
+        par_date_heure.setdefault(date_str, {})[heure] = {
+            "est_congestionne": est_cong,
+            "pct_rouge": round(pct_rouge * 100) if pct_rouge is not None else None,
+            "pct_orange": round(pct_orange * 100) if pct_orange is not None else None,
+        }
+
+    dates_list = sorted(dates_set)
+
+    # Tranches DEESP (7h–19h) — uniquement celles qui ont au moins une mesure
+    tranches = []
+    for h in range(DEESP_HEURE_DEBUT, DEESP_HEURE_FIN):
+        par_date = {
+            date_str: par_date_heure.get(date_str, {}).get(h)
+            for date_str in dates_list
+        }
+        if any(v is not None for v in par_date.values()):
+            tranches.append({
+                "heure": h,
+                "tranche": f"{h:02d}h-{h + 1:02d}h",
+                "par_date": par_date,
+            })
+
+    return {
+        "troncon_id": troncon_id,
+        "nb_mesures": len(rows),
+        "dates": dates_list,
+        "tranches": tranches,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Graphiques 1-12 — séries pour BarChart (min/max par jour x type-jour)
 # ---------------------------------------------------------------------------
 

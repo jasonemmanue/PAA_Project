@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 import { Card } from "@/components/ui/Card";
 import type { RapportZonesCongestionnees } from "@/lib/types";
 
@@ -9,34 +7,31 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081"
 
 /**
  * Téléchargement direct du PDF généré côté backend (fpdf2).
- * Pas de popup, pas d'aperçu — l'utilisateur reçoit directement le fichier.
+ * Utilise une navigation directe (pas fetch) pour contourner les restrictions CORS
+ * sur les requêtes cross-origin. Le serveur envoie Content-Disposition: attachment,
+ * ce qui déclenche le téléchargement sans quitter la page.
  */
-async function telechargerPdf(campagne: string): Promise<void> {
-  const url = `${API_BASE}/rapport/zones-congestionnees/pdf?campagne=${encodeURIComponent(campagne)}`;
-  try {
-    const rep = await fetch(url);
-    if (!rep.ok) {
-      const txt = await rep.text().catch(() => "");
-      throw new Error(`HTTP ${rep.status} — ${txt || rep.statusText}`);
-    }
-    const blob = await rep.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = `tableau16_${campagne}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-  } catch (e) {
-    alert("Échec de téléchargement du PDF : " + (e instanceof Error ? e.message : String(e)));
-  }
+function telechargerPdf(campagne: string, debut?: string, fin?: string): void {
+  const params = new URLSearchParams({ campagne });
+  if (debut) params.set("debut", debut);
+  if (fin) params.set("fin", fin);
+  const url = `${API_BASE}/rapport/zones-congestionnees/pdf?${params.toString()}`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 export function TableauZonesCongestionnees({
   rapport,
+  debutRange,
+  finRange,
 }: {
   rapport: RapportZonesCongestionnees | null;
+  debutRange?: string;
+  finRange?: string;
 }) {
   return (
     <Card
@@ -58,7 +53,12 @@ export function TableauZonesCongestionnees({
       )}
 
       {/* Bouton export PDF — téléchargement direct via backend fpdf2 */}
-      <BoutonExportPdf campagne={rapport?.campagne ?? ""} actif={!!rapport} />
+      <BoutonExportPdf
+        campagne={rapport?.campagne ?? ""}
+        actif={!!rapport}
+        debut={debutRange}
+        fin={finRange}
+      />
 
 
       <div className="overflow-x-auto">
@@ -133,38 +133,34 @@ export function TableauZonesCongestionnees({
   );
 }
 
-function BoutonExportPdf({ campagne, actif }: { campagne: string; actif: boolean }) {
-  const [enCours, setEnCours] = useState(false);
+function BoutonExportPdf({
+  campagne,
+  actif,
+  debut,
+  fin,
+}: {
+  campagne: string;
+  actif: boolean;
+  debut?: string;
+  fin?: string;
+}) {
   return (
     <div className="mb-3 flex justify-end">
       <button
         type="button"
-        disabled={!actif || enCours}
-        onClick={async () => {
-          setEnCours(true);
-          try { await telechargerPdf(campagne); } finally { setEnCours(false); }
-        }}
+        disabled={!actif}
+        onClick={() => telechargerPdf(campagne, debut, fin)}
         className="inline-flex items-center gap-2 rounded-md bg-paa-navy-700 px-3 py-1.5
                    text-fluid-xs font-medium text-white shadow-sm transition-colors
                    hover:bg-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
                    disabled:cursor-not-allowed disabled:opacity-40"
       >
-        {enCours ? (
-          <>
-            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-              <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-            </svg>
-            Génération…
-          </>
-        ) : (
-          <>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
-              <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-            Exporter PDF
-          </>
-        )}
+        <>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+          Exporter PDF
+        </>
       </button>
     </div>
   );

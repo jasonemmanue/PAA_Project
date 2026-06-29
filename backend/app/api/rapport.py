@@ -243,10 +243,27 @@ async def get_zones_congestionnees_pdf(
     fin: DateType | None = Query(None),
     db: Session = Depends(get_db),
 ) -> Response:
-    from fpdf import FPDF  # import local : évite de charger fpdf au démarrage
+    logger.info(
+        "GET /rapport/zones-congestionnees/pdf — campagne=%r debut=%s fin=%s",
+        campagne, debut, fin,
+    )
+    try:
+        from fpdf import FPDF  # import local : évite de charger fpdf au démarrage
+        logger.info("fpdf2 importé avec succès")
+    except ImportError as exc:
+        logger.error("fpdf2 manquant : %s", exc)
+        raise HTTPException(status_code=500, detail=f"fpdf2 non disponible : {exc}")
 
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
-    cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
+    logger.info("Bornes calculées : debut_utc=%s fin_utc=%s", debut_utc, fin_utc)
+
+    try:
+        cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
+        logger.info("Données récupérées : %d zone(s) congestionnée(s)", len(cong))
+    except Exception as exc:
+        logger.error("Erreur récupération données congestion : %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erreur données : {exc}")
+
     seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
     nb_jours = max(1, (fin_utc - debut_utc).days + 1)
 
@@ -333,13 +350,54 @@ async def get_zones_congestionnees_pdf(
              f"Methodologie DEESP rapport octobre 2025", ln=True)
 
     # Réponse — bytearray → bytes pour httpx/starlette
-    contenu = bytes(pdf.output())
+    try:
+        contenu = bytes(pdf.output())
+        logger.info("PDF généré avec succès : %d octets", len(contenu))
+    except Exception as exc:
+        logger.error("Erreur génération PDF fpdf2 : %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erreur génération PDF : {exc}")
+
     nom = f"tableau16_{campagne}.pdf"
     return Response(
         content=contenu,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nom}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /rapport/matrice-congestion — matrice brute heure × date par tronçon
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/matrice-congestion",
+    summary="Matrice de congestion par créneau horaire × date",
+    description=(
+        "Pour le tronçon sélectionné et la plage de dates, renvoie pour chaque "
+        "créneau horaire DEESP (07h-19h) et chaque date la mesure Google la plus "
+        "récente : congestionné / fluide / indéterminé / pas de mesure. "
+        "Permet de visualiser les patterns de congestion sans agrégation."
+    ),
+)
+async def get_matrice_congestion(
+    campagne: str = Query(..., description="Format 'AAAA-MM'."),
+    troncon_id: int = Query(..., description="ID du tronçon à analyser."),
+    debut: DateType | None = Query(None),
+    fin: DateType | None = Query(None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.models.models import Troncon
+    logger.info(
+        "GET /rapport/matrice-congestion — troncon_id=%d campagne=%r debut=%s fin=%s",
+        troncon_id, campagne, debut, fin,
+    )
+    troncon = db.get(Troncon, troncon_id)
+    if troncon is None:
+        raise HTTPException(status_code=404, detail=f"Tronçon {troncon_id} introuvable.")
+    debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
+    result = rapport_paa.matrice_congestion(db, troncon_id, debut_utc, fin_utc)
+    return {"troncon_nom": troncon.nom, **result}
 
 
 # ---------------------------------------------------------------------------

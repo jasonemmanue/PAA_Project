@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/ui/PageHeader";
+import { MatriceCongestion } from "@/components/rapport/MatriceCongestion";
 import { TableauTempsTheoriques } from "@/components/rapport/TableauTempsTheoriques";
 import { TableauTempsTraversee } from "@/components/rapport/TableauTempsTraversee";
 import { TableauZonesCongestionnees } from "@/components/rapport/TableauZonesCongestionnees";
@@ -55,6 +56,7 @@ export function PageRapport() {
   const [traversee, setTraversee] = useState<RapportTempsTraversee | null>(null);
   const [zones, setZones] = useState<RapportZonesCongestionnees | null>(null);
   const [troncons, setTroncons] = useState<Troncon[]>([]);
+  const [tronconId, setTronconId] = useState<number | null>(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -68,7 +70,10 @@ export function PageRapport() {
         api.rapportTempsTraversee(campagne, debutRange, finRange),
         api.rapportZonesCongestionnees(campagne, debutRange, finRange),
       ]);
-      setTroncons(Array.isArray(t) ? t : []);
+      const liste = Array.isArray(t) ? t : [];
+      setTroncons(liste);
+      // Initialise le tronçon sélectionné la première fois uniquement
+      setTronconId((prev) => (prev === null && liste.length > 0 ? liste[0].id : prev));
       setTheoriques(tt);
       setTraversee(ttv);
       setZones(zc);
@@ -197,10 +202,27 @@ export function PageRapport() {
         </div>
       )}
 
+      {/* Matrice détaillée congestion — créneaux × dates (par tronçon) */}
+      <MatriceCongestion
+        campagne={campagne}
+        debutRange={debutRange}
+        finRange={finRange}
+        tronconId={tronconId}
+        troncons={troncons}
+        onTronconChange={setTronconId}
+      />
+
+      {/* Tableau 16 — Synthèse zones congestionnées (tous tronçons, règles DEESP) */}
+      <TableauZonesCongestionnees
+        rapport={zones}
+        debutRange={debutRange}
+        finRange={finRange}
+      />
+
       {/* Tableau 1 */}
       <TableauTempsTheoriques rapport={theoriques} />
 
-      {/* Tableaux 3-7 / 8-11 / 12-15 + récap 17 */}
+      {/* Tableaux 3-7 / 8-11 / 12-15 */}
       <TableauTempsTraversee
         rapport={traversee}
         agregat="min"
@@ -233,9 +255,6 @@ export function PageRapport() {
         agregat="max"
         titre="Graphiques 7-12 — Temps MAX observé par jour (BarChart)"
       />
-
-      {/* Tableau 16 */}
-      <TableauZonesCongestionnees rapport={zones} />
 
       {chargement && (
         <p className="text-fluid-xs app-text-muted">Chargement…</p>
