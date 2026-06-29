@@ -276,6 +276,8 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P10.8** | ✅ Terminée (2026-06-28) | **Sources scraping incidents configurables** — migration **0014** crée la table `sources_incidents`. CRUD via `/incidents/sources` (GET, POST, PATCH, DELETE). `scraper_toutes_sources()` lit la table en priorité (repli statique). Panneau "⚙ Gérer les sources" sur la page Incidents (mode écriture). Cf. § 12.8. |
 | **P10.9** | ✅ Terminée (2026-06-28) | **Navigation réordonnée + filtres incidents simplifiés + accidents/mois** — ordre menu : Accueil → Rapport → Indicateurs → Temps de traversée → Heure opt → Incidents → Fiabilité → Admin. Filtres incidents réduits à Accident / Route barrée / Travaux. BarChart "Accidents par mois" ajouté. "Mn" → "Min" dans rapport. Tri chronologique Oct 2025 avant Fév 2026. |
 | **P10.10** | ✅ Terminée (2026-06-29) | **Types d'incidents dynamiques + filtre zone portuaire strict** — migration **0015** convertit `type_incident` de ENUM vers VARCHAR(50) + crée la table `types_incidents` (slug, libelle, regex, actif). CRUD `/incidents/types` (GET/POST/PATCH/DELETE). Scraper : double filtre TYPE + ZONE obligatoires (un article sur « travaux à Yakassé-Feyassé » est écarté). NLP : `classifier_type()` lit les types depuis la DB. Frontend : `FiltresIncidents` charge les types depuis l'API + nouveau panneau `GestionTypes.tsx`. Cf. § 12.10. |
+| **P10.11** | ✅ Terminée (2026-06-29) | **UX GestionTypes — mots-clés simples + mise à jour instantanée** — Le formulaire d'ajout de type remplace le champ regex brut par un champ **mots-clés** (virgule comme séparateur) ; la regex est générée automatiquement avec aperçu temps réel. L'état `typesIncidents` est remonté dans `PageIncidents` et partagé entre `FiltresIncidents` (prop `types`) et `GestionTypes` (callback `onTypeChange`) — ajout/suppression/toggle se reflète **instantanément** dans le dropdown du filtre sans rechargement. Type « Autre » (fallback NLP) masqué dans le tableau et dans le filtre — reste en base. Chatbot mis à jour : sait proposer des mots-clés adaptés sur demande. |
+| **🏁 v1.0.0** | ✅ **Hackathon terminé (2026-06-29)** | Toutes les phases P1 → P10.11 livrées et déployées en production. Backend Railway + Frontend Railway opérationnels 24h/24. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -3203,21 +3205,38 @@ La colonne `Incident.type_incident` passe de `postgresql.ENUM(…)` à `String(5
 L'enum Python `TypeIncident` est conservée pour la compatibilité ascendante des
 importations existantes (elle n'est plus mappée à la DB).
 
-#### Frontend
+#### Frontend (état final — P10.11)
 
-**`FiltresIncidents.tsx`** : charge les types actifs depuis `GET /incidents/types`
-au montage (hook `useEffect`). Le sélecteur est maintenant dynamique — il reflète
-toujours les types en base sans recompiler le frontend.
+**Architecture état partagé** : `PageIncidents` est le seul propriétaire de
+`typesIncidents: TypeIncidentApi[]`. Il charge les types via `chargerTypes()`
+au montage et passe :
+- `types={typesIncidents}` à `FiltresIncidents` → dropdown toujours synchronisé
+- `onTypeChange={chargerTypes}` à `GestionTypes` → callback appelé après chaque
+  mutation (ajout / toggle / suppression) → filtre mis à jour **instantanément**
+  sans rechargement de page.
 
-**`GestionTypes.tsx`** (nouveau) : panneau dépliable « 🏷 Gérer les types
-d'incidents (N) » visible en mode écriture. Fonctionnalités :
-- Tableau des types avec regex visible, toggle ON/OFF, bouton Supprimer
-- Le type `autre` a la mention « défaut » à la place du bouton Supprimer
-- Formulaire d'ajout : libellé + regex (slug auto-généré depuis le libellé)
-- Validation côté formulaire (libellé ≥ 2 chars, regex non vide)
+**`FiltresIncidents.tsx`** : reçoit `types` en prop (plus de `useEffect` interne).
+Filtre appliqué : `actif && slug !== 'autre'` — le type « Autre » est invisible
+dans le dropdown.
+
+**`GestionTypes.tsx`** : panneau dépliable « 🏷 Gérer les types d'incidents (N) »
+visible en mode écriture. Fonctionnalités :
+- Tableau des types (hors `autre`) : badges mots-clés, toggle ON/OFF, Supprimer
+- Formulaire d'ajout **simplifié** : libellé + **mots-clés** séparés par virgule
+  (la regex est générée automatiquement via `motsVersRegex()`, aperçu en temps réel)
+- Suggestion d'interroger le chatbot PAA pour trouver des mots-clés adaptés
+- Validation : libellé ≥ 2 chars, au moins 1 mot-clé non vide
 - Erreurs affichées avec auto-effacement après 6 s
 
-**`PageIncidents.tsx`** : importe et affiche `<GestionTypes />` sous `<GestionSources />`.
+**Type « Autre »** : masqué dans le tableau de gestion et dans le filtre dropdown.
+Il reste en base comme fallback silencieux du classificateur NLP.
+
+**Chatbot** : `SYSTEM_PROMPT` enrichi d'une section « AIDE À LA CRÉATION DE TYPES
+D'INCIDENTS » — le LLM répond directement avec une liste de mots-clés prêts à
+copier-coller si on lui demande quels mots utiliser pour un type donné.
+
+**`PageIncidents.tsx`** : importe et affiche `<GestionTypes onTypeChange={chargerTypes} />`
+sous `<GestionSources />`.
 
 #### Commandes Railway Console — nettoyage des incidents hors zone
 
