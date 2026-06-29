@@ -260,7 +260,7 @@ export function PagePrediction() {
                     <CascadeNiveau
                       niveau={1}
                       actif={resume.courante.source === "google_routes"}
-                      libelle={locale === "fr" ? "Mesure Google ±15 min" : "Google measurement ±15 min"}
+                      libelle={locale === "fr" ? "Mesure Google des 15 dernières minutes" : "Google measurement (last 15 min)"}
                       confiance="100%"
                       couleur="#2ECC71"
                     />

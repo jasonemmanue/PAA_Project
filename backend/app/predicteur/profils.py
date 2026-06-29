@@ -210,10 +210,15 @@ def _prediction_google(
     instant_utc: datetime,
     fenetre_minutes: int = 15,
 ) -> Prediction | None:
-    """Si une mesure Google existe à ±fenetre_minutes de l'instant cible,
-    on la renvoie comme prédiction (source la plus fraîche)."""
+    """Si une mesure Google existe dans les `fenetre_minutes` dernières minutes
+    de l'instant cible, on la renvoie comme prédiction (source la plus fraîche).
+
+    La fenêtre est `[instant - fenetre, instant]` — pas symétrique, car le
+    futur n'existe pas en base (le scheduler n'a pas encore tourné après
+    `instant_utc`).
+    """
     debut = instant_utc - timedelta(minutes=fenetre_minutes)
-    fin = instant_utc + timedelta(minutes=fenetre_minutes)
+    fin = instant_utc
     mesure = db.execute(
         select(Mesure)
         .where(
