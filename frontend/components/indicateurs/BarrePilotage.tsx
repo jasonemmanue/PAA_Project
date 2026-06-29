@@ -20,6 +20,14 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/lib/i18n";
 import type { CollecteStatus, Troncon } from "@/lib/types";
+import type { Periode } from "@/components/indicateurs/Selecteurs";
+
+const FENETRES_JOURS: Record<Periode, number> = {
+  "24h": 1,
+  "7j": 7,
+  "30j": 30,
+  "90j": 90,
+};
 
 // ---------------------------------------------------------------------------
 // Helpers de fuseau — Africa/Abidjan (UTC+0, pas de DST)
@@ -108,9 +116,11 @@ function formaterProchainCycle(
 export function BarrePilotage({
   tronconId,
   troncons = [],
+  periode = "24h",
 }: {
   tronconId: number | null;
   troncons?: Troncon[];
+  periode?: Periode;
 }) {
   const { t, locale } = useI18n();
   const { peutEcrire } = useAuth();
@@ -189,16 +199,24 @@ export function BarrePilotage({
     },
   );
 
-  // Date du jour au format ISO pour les exports
-  const aujourdHui = new Date().toISOString().slice(0, 10);
+  // Calcul de la plage de dates selon la période sélectionnée
+  const finDate = new Date();
+  const debutDate = new Date();
+  debutDate.setDate(finDate.getDate() - FENETRES_JOURS[periode]);
+  const debutExport = debutDate.toISOString().slice(0, 10);
+  const finExport = finDate.toISOString().slice(0, 10);
+  const suffixeFichier = `${debutExport}_${finExport}`;
+
   const urlCsv = api.urlExportMesures({
     troncon_id: tronconId ?? undefined,
-    debut: aujourdHui,
+    debut: debutExport,
+    fin: finExport,
     format: "csv",
   });
   const urlXlsx = api.urlExportMesures({
     troncon_id: tronconId ?? undefined,
-    debut: aujourdHui,
+    debut: debutExport,
+    fin: finExport,
     format: "xlsx",
   });
 
@@ -271,20 +289,20 @@ export function BarrePilotage({
         )}
         {peutEcrire && troncons.length > 1 && (
           <>
-            {/* Fichier unique : tous les tronçons fusionnés (pas de troncon_id → backend renvoie tout) */}
+            {/* Fichier unique : tous les tronçons sur la période sélectionnée */}
             <a
-              href={api.urlExportMesures({ debut: aujourdHui, format: "csv" })}
-              download={`mesures_tous_troncons_${aujourdHui}.csv`}
+              href={api.urlExportMesures({ debut: debutExport, fin: finExport, format: "csv" })}
+              download={`mesures_tous_troncons_${suffixeFichier}.csv`}
               className="btn-secondary"
-              title="Télécharger un CSV unique avec tous les tronçons"
+              title={`Télécharger un CSV unique avec tous les tronçons (${periode})`}
             >
               {t("indicateurs.btnExportTousCsv")}
             </a>
             <a
-              href={api.urlExportMesures({ debut: aujourdHui, format: "xlsx" })}
-              download={`mesures_tous_troncons_${aujourdHui}.xlsx`}
+              href={api.urlExportMesures({ debut: debutExport, fin: finExport, format: "xlsx" })}
+              download={`mesures_tous_troncons_${suffixeFichier}.xlsx`}
               className="btn-secondary"
-              title="Télécharger un Excel unique avec tous les tronçons"
+              title={`Télécharger un Excel unique avec tous les tronçons (${periode})`}
             >
               {t("indicateurs.btnExportTousXlsx")}
             </a>

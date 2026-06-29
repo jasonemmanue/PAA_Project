@@ -139,7 +139,7 @@ export function PageIndicateurs() {
       )}
 
       {/* Barre de pilotage : collecte + exports */}
-      <BarrePilotage tronconId={tronconId} troncons={troncons} />
+      <BarrePilotage tronconId={tronconId} troncons={troncons} periode={periode} />
 
       {/* KPIs (temps min/moyen/max + verdict couleur DEESP) */}
       <KpiCards snapshot={indicateurs?.snapshot ?? null} />
