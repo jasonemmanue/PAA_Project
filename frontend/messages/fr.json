@@ -60,7 +60,7 @@
     "kpiMax": "Temps max.",
     "kpiNbMesures": "Nb mesures",
     "courbeTitle": "Évolution du temps de traversée",
-    "courbeSubtitle": "Temps moyen et maximal observés (avec trafic), ligne de référence 50 km/h.",
+    "courbeSubtitle": "Temps minimum, moyen et maximal observés (avec trafic), ligne de référence 50 km/h.",
     "courbeTrafic": "Temps moyen avec trafic",
     "courbeReference": "Référence 50 km/h",
     "heatmapTitle": "Heatmap horaire — jour × heure",

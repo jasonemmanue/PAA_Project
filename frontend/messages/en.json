@@ -60,7 +60,7 @@
     "kpiMax": "Max time",
     "kpiNbMesures": "Measurements",
     "courbeTitle": "Travel time evolution",
-    "courbeSubtitle": "Average and maximum observed travel times, with 50 km/h reference line.",
+    "courbeSubtitle": "Minimum, average and maximum observed travel times, with 50 km/h reference line.",
     "courbeTrafic": "Average travel time",
     "courbeReference": "50 km/h reference",
     "heatmapTitle": "Hourly heatmap — day × hour",

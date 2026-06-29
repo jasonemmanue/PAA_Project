@@ -268,6 +268,27 @@ export function PagePrediction() {
                     </div>
                   );
                 })()}
+                {/* Créneau horaire courant — affiché dynamiquement */}
+                <div className="mt-3 flex justify-center">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 dark:bg-green-900/30
+                                   px-4 py-1.5 text-fluid-xs font-semibold text-green-700 dark:text-green-300">
+                    <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                    {(() => {
+                      const h = parseInt(
+                        new Intl.DateTimeFormat("fr-FR", {
+                          hour: "2-digit",
+                          hour12: false,
+                          timeZone: "Africa/Abidjan",
+                        }).format(new Date()),
+                        10,
+                      );
+                      return locale === "fr"
+                        ? `Créneau horaire courant : ${h}h – ${h + 1}h`
+                        : `Current time slot: ${h}h – ${h + 1}h`;
+                    })()}
+                  </span>
+                </div>
+
                 {/* Cascade des 3 niveaux */}
                 <div className="mt-4 max-w-lg mx-auto">
                   <p className="text-fluid-xs font-semibold app-text-muted mb-2 text-center uppercase tracking-wide">
