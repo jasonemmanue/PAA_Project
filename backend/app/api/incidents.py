@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.analyse.incidents_nlp import enrichir_incidents
 from app.core.config import get_settings
 from app.db.session import get_db, SessionLocal
-from app.models.models import Incident, SourceIncident, Troncon, TypeIncident, SeveriteIncident
+from app.models.models import Incident, SourceIncident, Troncon, TypeIncident, SeveriteIncident, TypesIncident
 from app.sources.parsers.rss_parser import scraper_toutes_sources
 
 
@@ -228,15 +228,8 @@ def lister_incidents(
         q = q.where(Incident.troncon_id == troncon_id)
 
     if type_incident:
-        try:
-            t = TypeIncident(type_incident)
-            q = q.where(Incident.type_incident == t)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Type inconnu : {type_incident!r}. "
-                       "Valeurs acceptées : accident, embouteillage, route_barree, travaux, autre",
-            )
+        # type_incident est maintenant une VARCHAR libre — filtre direct sur la chaîne
+        q = q.where(Incident.type_incident == type_incident)
 
     try:
         tous: list[Incident] = list(db.execute(q).scalars())
@@ -317,13 +310,7 @@ def exporter_incidents_csv(
     if troncon_id is not None:
         q = q.where(Incident.troncon_id == troncon_id)
     if type_incident:
-        try:
-            q = q.where(Incident.type_incident == TypeIncident(type_incident))
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Type inconnu : {type_incident!r}",
-            )
+        q = q.where(Incident.type_incident == type_incident)
 
     incidents: list[Incident] = list(db.execute(q).scalars())
 
@@ -569,8 +556,140 @@ def supprimer_source(source_id: int, db: Session = Depends(get_db)) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# GET /incidents/{id}  — déclaré APRÈS /sources pour éviter que FastAPI
-# matche /incidents/sources sur cette route et renvoie un 422 int_parsing.
+# GESTION DES TYPES D'INCIDENTS — migration 0015
+# ---------------------------------------------------------------------------
+
+
+class TypeIncidentIn(BaseModel):
+    """Payload de création d'un type d'incident."""
+    slug: str = Field(..., min_length=2, max_length=50,
+                      description="Identifiant interne unique. Ex : 'incendie'.")
+    libelle: str = Field(..., min_length=2, max_length=200,
+                         description="Libellé affiché. Ex : 'Incendie / explosion'.")
+    regex: str = Field(..., min_length=1,
+                       description="Expression régulière Python de détection (insensible à la casse).")
+    actif: bool = True
+
+
+class TypeIncidentOut(TypeIncidentIn):
+    id: int
+    cree_le: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TypeIncidentPatch(BaseModel):
+    """Payload partiel pour PATCH."""
+    libelle: str | None = None
+    regex: str | None = None
+    actif: bool | None = None
+
+
+@router.get(
+    "/types",
+    summary="Liste les types d'incidents configurés",
+    description=(
+        "Retourne tous les types d'incidents actifs (et inactifs) "
+        "configurés dans la table types_incidents. "
+        "La liste est utilisée par le classificateur NLP et les filtres UI."
+    ),
+    response_model=list[TypeIncidentOut],
+)
+def lister_types(db: Session = Depends(get_db)) -> list[TypeIncidentOut]:
+    types = db.execute(
+        select(TypesIncident).order_by(TypesIncident.id)
+    ).scalars().all()
+    return [TypeIncidentOut.model_validate(t) for t in types]
+
+
+@router.post(
+    "/types",
+    summary="Ajouter un nouveau type d'incident",
+    description=(
+        "Crée un nouveau type d'incident avec sa regex de détection. "
+        "Le classificateur NLP l'utilisera au prochain cycle d'enrichissement."
+    ),
+    response_model=TypeIncidentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def creer_type(payload: TypeIncidentIn, db: Session = Depends(get_db)) -> TypeIncidentOut:
+    existant = db.execute(
+        select(TypesIncident).where(TypesIncident.slug == payload.slug)
+    ).scalar_one_or_none()
+    if existant is not None:
+        raise HTTPException(409, f"Un type nommé {payload.slug!r} existe déjà.")
+    # Valider la regex avant insertion
+    try:
+        import re as _re
+        _re.compile(payload.regex)
+    except _re.error as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Regex invalide : {exc}",
+        )
+    t = TypesIncident(
+        slug=payload.slug, libelle=payload.libelle,
+        regex=payload.regex, actif=payload.actif,
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return TypeIncidentOut.model_validate(t)
+
+
+@router.patch(
+    "/types/{type_id}",
+    summary="Modifier un type d'incident (libellé, regex, actif)",
+    response_model=TypeIncidentOut,
+)
+def modifier_type(type_id: int, payload: TypeIncidentPatch,
+                  db: Session = Depends(get_db)) -> TypeIncidentOut:
+    t = db.get(TypesIncident, type_id)
+    if t is None:
+        raise HTTPException(404, f"Type id={type_id} introuvable.")
+    if payload.regex is not None:
+        try:
+            import re as _re
+            _re.compile(payload.regex)
+        except _re.error as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Regex invalide : {exc}",
+            )
+    for champ, valeur in payload.model_dump(exclude_unset=True).items():
+        setattr(t, champ, valeur)
+    db.commit()
+    db.refresh(t)
+    return TypeIncidentOut.model_validate(t)
+
+
+@router.delete(
+    "/types/{type_id}",
+    summary="Supprimer un type d'incident",
+    description=(
+        "Supprime le type définitivement. Les incidents déjà classifiés "
+        "avec ce slug conservent leur valeur — seul le futur enrichissement "
+        "est affecté. Le type 'autre' ne peut pas être supprimé."
+    ),
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def supprimer_type(type_id: int, db: Session = Depends(get_db)) -> Response:
+    t = db.get(TypesIncident, type_id)
+    if t is None:
+        raise HTTPException(404, f"Type id={type_id} introuvable.")
+    if t.slug == "autre":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Le type 'autre' est le fallback par défaut — il ne peut pas être supprimé.",
+        )
+    db.delete(t)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# GET /incidents/{id}  — déclaré APRÈS /sources et /types pour éviter que
+# FastAPI matche ces routes statiques sur /{incident_id:int} (422 int_parsing).
 # ---------------------------------------------------------------------------
 
 

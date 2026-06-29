@@ -19,6 +19,7 @@ import type { Incident, IncidentsPage, StatsIncidents, Troncon } from "@/lib/typ
 
 import { FiltresIncidents, type FiltresEtat } from "./FiltresIncidents";
 import { GestionSources } from "./GestionSources";
+import { GestionTypes } from "./GestionTypes";
 import { ListeIncidents } from "./ListeIncidents";
 
 // Leaflet est client-only — chargement dynamique sans SSR
@@ -237,8 +238,9 @@ export function PageIncidents() {
         />
       </div>
 
-      {/* Gestion des sources — visible en mode écriture uniquement */}
+      {/* Gestion des sources et des types — visible en mode écriture uniquement */}
       <GestionSources />
+      <GestionTypes />
 
       {/* Accidents par mois */}
       {accidentsParMois.length > 0 && (

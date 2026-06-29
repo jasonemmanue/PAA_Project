@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.models import Incident, SeveriteIncident, Troncon, TypeIncident
+from app.models.models import Incident, SeveriteIncident, Troncon, TypeIncident, TypesIncident
 from app.sources.nominatim import geocoder
 
 
@@ -90,22 +90,24 @@ LIEUX_ABIDJAN: dict[str, str] = {
 # Patterns regex NLP
 # ---------------------------------------------------------------------------
 
-_RE_TYPE: dict[TypeIncident, re.Pattern] = {
-    TypeIncident.accident: re.compile(
+# Patterns par défaut (clés = slugs string) — utilisés si la table
+# types_incidents est vide ou inaccessible
+_RE_TYPE_DEFAUT: dict[str, re.Pattern] = {
+    "accident": re.compile(
         r"accident|collision|accrochage|carambolage|renvers[eé]|percuté?|"
         r"choc frontal|d[ée]rapage",
         re.IGNORECASE,
     ),
-    TypeIncident.travaux: re.compile(
-        r"travaux|chantier|r[eé]fection|caniveau|bitumage|goudronnage",
-        re.IGNORECASE,
-    ),
-    TypeIncident.route_barree: re.compile(
+    "route_barree": re.compile(
         r"route barr[eé]e?|voie coup[eé]e?|bloqu[eé]e?|ferm[eé]e?|"
         r"manifestation|barricade|mouvement d'humeur",
         re.IGNORECASE,
     ),
-    TypeIncident.embouteillage: re.compile(
+    "travaux": re.compile(
+        r"travaux|chantier|r[eé]fection|caniveau|bitumage|goudronnage",
+        re.IGNORECASE,
+    ),
+    "embouteillage": re.compile(
         r"embouteillage|bouchon|ralentissement|congestion|trafic dense|"
         r"files? de voiture|circulation difficile",
         re.IGNORECASE,
@@ -147,12 +149,32 @@ def extraire_lieu(texte: str) -> str | None:
     return None
 
 
-def classifier_type(texte: str) -> TypeIncident:
-    """Classifie le type d'incident par ordre de priorité des patterns."""
-    for type_inc, pattern in _RE_TYPE.items():
+def classifier_type(
+    texte: str,
+    types_config: list[tuple[str, str]] | None = None,
+) -> str:
+    """Classifie le type d'incident et retourne le slug correspondant.
+
+    types_config : liste de (slug, regex_str) chargée depuis types_incidents.
+    Si None ou vide, utilise les patterns par défaut _RE_TYPE_DEFAUT.
+    Le slug 'autre' ne peut pas être matché — il est retourné en fallback.
+    """
+    if types_config:
+        for slug, regex_str in types_config:
+            if slug == "autre":
+                continue
+            try:
+                if re.search(regex_str, texte, re.IGNORECASE):
+                    return slug
+            except re.error:
+                logger.warning("Regex invalide pour le type %r : %r", slug, regex_str)
+        return "autre"
+
+    # Fallback : patterns par défaut
+    for slug, pattern in _RE_TYPE_DEFAUT.items():
         if pattern.search(texte):
-            return type_inc
-    return TypeIncident.autre
+            return slug
+    return "autre"
 
 
 def classifier_severite(texte: str) -> SeveriteIncident:
@@ -294,6 +316,21 @@ async def enrichir_incidents(db: Session) -> int:
         ).scalars()
     )
 
+    # Charge les types depuis la table types_incidents (fallback si vide)
+    types_config: list[tuple[str, str]] = []
+    try:
+        types_config = [
+            (t.slug, t.regex)
+            for t in db.execute(
+                select(TypesIncident)
+                .where(TypesIncident.actif.is_(True))
+                .order_by(TypesIncident.id)
+            ).scalars()
+        ]
+        logger.debug("Enrichissement : %d types chargés depuis la DB.", len(types_config))
+    except Exception:
+        logger.warning("Impossible de charger les types depuis la DB — utilisation des patterns par défaut.")
+
     nb_enrichis = 0
 
     for i, incident in enumerate(incidents):
@@ -301,7 +338,7 @@ async def enrichir_incidents(db: Session) -> int:
 
         # 1. Extraction NLP
         lieu = extraire_lieu(texte_complet)
-        type_inc = classifier_type(texte_complet)
+        type_inc = classifier_type(texte_complet, types_config or None)
         severite = classifier_severite(texte_complet)
 
         incident.lieu_extrait = lieu
@@ -409,7 +446,7 @@ def _dedupliquer_incidents(db: Session) -> int:
 
         if est_doublon:
             inc.titre = f"[DOUBLON] {inc.titre}"
-            inc.type_incident = TypeIncident.autre
+            inc.type_incident = "autre"
             nb_doublons += 1
         else:
             candidats.append(inc)

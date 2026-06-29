@@ -33,21 +33,41 @@ from app.models.models import Incident
 logger = logging.getLogger("paa.incidents.rss")
 
 # ---------------------------------------------------------------------------
-# Mots-clés de détection (titre + résumé)
+# Mots-clés de détection — double filtre (titre + résumé)
+#
+# Un article n'est retenu que s'il contient AU MOINS UN mot-clé de CHAQUE
+# liste : un mot-clé TYPE (nature de l'incident) ET un mot-clé ZONE
+# (localisation dans la zone portuaire d'Abidjan).
+#
+# Exemple d'article rejeté : « travaux à Yakassé-Feyassé » — le mot-clé
+# TYPE «travaux» est présent mais aucun mot-clé ZONE ne correspond.
 # ---------------------------------------------------------------------------
 
-MOTS_CLES_INCIDENTS: list[str] = [
+# Mots-clés décrivant la NATURE de l'incident
+MOTS_CLES_TYPE: list[str] = [
     "accident", "collision", "accrochage", "carambolage",
     "embouteillage", "bouchon", "route barrée", "voie coupée",
     "camion renversé", "poids lourd", "convoi exceptionnel",
-    "travaux", "Treichville", "Plateau", "Zone 4",
-    "Port d'Abidjan", "CARENA", "Palm Beach", "pont HB",
-    "Houphouët", "pont Félix", "Seamen",
+    "ralentissement", "circulation perturbée", "trafic dense",
+    "travaux", "chantier", "réfection",
 ]
 
-# Regex compilée (insensible à la casse) pour perf
-_RE_MOTS_CLES = re.compile(
-    "|".join(re.escape(m) for m in MOTS_CLES_INCIDENTS),
+# Mots-clés de LOCALISATION dans la zone portuaire d'Abidjan
+MOTS_CLES_ZONE: list[str] = [
+    "Treichville", "Plateau", "Zone 4",
+    "Port d'Abidjan", "port autonome", "CARENA",
+    "Palm Beach", "pont HB", "Houphouët",
+    "pont Félix", "Seamen", "Boulevard de Marseille",
+    "Avenue Christiani", "Grand Moulin", "Toyota CFAO",
+    "SODECI", "Marcory", "Koumassi",
+]
+
+_RE_TYPE = re.compile(
+    "|".join(re.escape(m) for m in MOTS_CLES_TYPE),
+    re.IGNORECASE,
+)
+_RE_ZONE = re.compile(
+    "|".join(re.escape(m) for m in MOTS_CLES_ZONE),
     re.IGNORECASE,
 )
 
@@ -121,8 +141,15 @@ def _extraire_date(entry: Any) -> datetime:
 
 
 def _contient_mot_cle(titre: str, resume: str) -> bool:
-    """Retourne True si au moins un mot-clé de trafic est présent."""
-    return bool(_RE_MOTS_CLES.search(titre + " " + resume))
+    """Retourne True si l'article appartient à la zone portuaire ET décrit un incident.
+
+    Double filtre :
+    - Au moins un mot-clé TYPE (accident, travaux, embouteillage…)
+    - Au moins un mot-clé ZONE (Treichville, CARENA, pont HB…)
+    Un article ne mentionnant que «travaux» sans localisation portuaire est rejeté.
+    """
+    texte = titre + " " + resume
+    return bool(_RE_TYPE.search(texte)) and bool(_RE_ZONE.search(texte))
 
 
 # ---------------------------------------------------------------------------

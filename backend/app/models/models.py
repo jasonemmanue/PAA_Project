@@ -672,14 +672,9 @@ class Incident(Base):
         Integer, ForeignKey("troncons.id", ondelete="SET NULL"), nullable=True
     )
 
-    # Classification NLP — NULL si l'enrichissement n'a pas encore été lancé
-    type_incident: Mapped[TypeIncident | None] = mapped_column(
-        postgresql.ENUM(
-            "accident", "embouteillage", "route_barree", "travaux", "autre",
-            name="typeincident", create_type=False,
-        ),
-        nullable=True,
-    )
+    # Classification NLP — VARCHAR(50) depuis migration 0015 (était ENUM PG)
+    # Les valeurs sont les slugs de la table `types_incidents`.
+    type_incident: Mapped[str | None] = mapped_column(String(50), nullable=True)
     severite: Mapped[SeveriteIncident | None] = mapped_column(
         postgresql.ENUM(
             "mineur", "moyen", "grave", "inconnu",
@@ -738,3 +733,30 @@ class SourceIncident(Base):
 
     def __repr__(self) -> str:
         return f"<SourceIncident {self.nom!r} actif={self.actif}>"
+
+
+# =============================================================================
+# Types d'incidents configurables (migration 0015)
+# =============================================================================
+
+
+class TypesIncident(Base):
+    """Catégorie d'incident configurable depuis l'interface admin (migration 0015).
+
+    Remplace le type ENUM PostgreSQL figé par une table flexible :
+    chaque ligne définit un slug, un libellé affiché et une regex de détection.
+    La table est initialisée avec les 4 types de base + 'autre' au déploiement.
+    """
+    __tablename__ = "types_incidents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slug: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    libelle: Mapped[str] = mapped_column(String(200), nullable=False)
+    regex: Mapped[str] = mapped_column(Text, nullable=False)
+    actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    cree_le: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<TypesIncident {self.slug!r} actif={self.actif}>"
