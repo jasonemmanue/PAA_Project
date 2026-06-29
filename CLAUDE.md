@@ -275,6 +275,7 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P10.7** | ✅ Terminée (2026-06-28) | **Import CSV/Excel évolution pluriannuelle** — endpoint `POST /import/evolution-csv` accepte CSV ou Excel à 7 colonnes (`axe, sens, periode, type_jour, temps_min_s, temps_moyen_s, temps_max_s`). Idempotent (UPSERT par clé). Bouton dans `EvolutionPluriannuelle` (mode écriture). Cf. § 12.7. |
 | **P10.8** | ✅ Terminée (2026-06-28) | **Sources scraping incidents configurables** — migration **0014** crée la table `sources_incidents`. CRUD via `/incidents/sources` (GET, POST, PATCH, DELETE). `scraper_toutes_sources()` lit la table en priorité (repli statique). Panneau "⚙ Gérer les sources" sur la page Incidents (mode écriture). Cf. § 12.8. |
 | **P10.9** | ✅ Terminée (2026-06-28) | **Navigation réordonnée + filtres incidents simplifiés + accidents/mois** — ordre menu : Accueil → Rapport → Indicateurs → Temps de traversée → Heure opt → Incidents → Fiabilité → Admin. Filtres incidents réduits à Accident / Route barrée / Travaux. BarChart "Accidents par mois" ajouté. "Mn" → "Min" dans rapport. Tri chronologique Oct 2025 avant Fév 2026. |
+| **P10.10** | ✅ Terminée (2026-06-29) | **Types d'incidents dynamiques + filtre zone portuaire strict** — migration **0015** convertit `type_incident` de ENUM vers VARCHAR(50) + crée la table `types_incidents` (slug, libelle, regex, actif). CRUD `/incidents/types` (GET/POST/PATCH/DELETE). Scraper : double filtre TYPE + ZONE obligatoires (un article sur « travaux à Yakassé-Feyassé » est écarté). NLP : `classifier_type()` lit les types depuis la DB. Frontend : `FiltresIncidents` charge les types depuis l'API + nouveau panneau `GestionTypes.tsx`. Cf. § 12.10. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -3111,12 +3112,136 @@ prochain cycle de scraping (toutes les 30 min) ».
 | Admin : onglet « Sous-tronçons codifiés » renommé « Tronçons codifiés » | `PageAdministration.tsx` |
 | Titre Admin : « axes & tronçons » au lieu de « tronçons & sous-tronçons » | `PageAdministration.tsx` |
 
-### 12.10 Récapitulatif des migrations Alembic
+### 12.10 Types d'incidents dynamiques + filtre zone portuaire strict (P10.10 — 2026-06-29)
+
+#### Problème résolu
+
+Le scraper insérait des articles sans rapport avec la zone portuaire d'Abidjan quand
+un mot-clé générique comme « travaux » apparaissait dans le titre (ex. : un article
+sur la sous-préfecture de Yakassé-Feyassé). De plus, les types d'incidents étaient
+figés dans un ENUM PostgreSQL — impossible d'en ajouter sans migration Alembic.
+
+#### Double filtre scraper (rss_parser.py)
+
+Avant : `MOTS_CLES_INCIDENTS` = une seule liste OR — un seul mot suffit.
+
+Après : deux listes séparées, les deux sont obligatoires :
+
+```python
+MOTS_CLES_TYPE = ["accident", "collision", "travaux", "embouteillage", …]
+MOTS_CLES_ZONE = ["Treichville", "CARENA", "Palm Beach", "pont HB", "Houphouët", …]
+
+def _contient_mot_cle(titre, resume):
+    texte = titre + " " + resume
+    return bool(_RE_TYPE.search(texte)) and bool(_RE_ZONE.search(texte))
+```
+
+Un article « travaux à Yakassé-Feyassé » → RE_TYPE matche « travaux » MAIS RE_ZONE
+ne matche aucun lieu portuaire → **rejeté**.
+
+#### Migration 0015 — VARCHAR + table types_incidents
+
+```sql
+-- 1. Convertit la colonne ENUM en VARCHAR libre
+ALTER TABLE incidents ALTER COLUMN type_incident TYPE VARCHAR(50) USING type_incident::text;
+DROP TYPE IF EXISTS typeincident;
+
+-- 2. Nouvelle table configurable
+CREATE TABLE types_incidents (
+    id       SERIAL PRIMARY KEY,
+    slug     VARCHAR(50) UNIQUE NOT NULL,
+    libelle  VARCHAR(200) NOT NULL,
+    regex    TEXT NOT NULL,
+    actif    BOOLEAN NOT NULL DEFAULT true,
+    cree_le  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 3. Seed (4 types de base + 'autre')
+INSERT INTO types_incidents (slug, libelle, regex, actif) VALUES
+  ('accident',      'Accident',      'accident|collision|accrochage|…', true),
+  ('route_barree',  'Route barrée',  'route barr|voie coup|…',          true),
+  ('travaux',       'Travaux',       'travaux|chantier|réfection|…',    true),
+  ('embouteillage', 'Embouteillage', 'embouteillage|bouchon|…',         true),
+  ('autre',         'Autre',         '(?!)',                             true)
+ON CONFLICT (slug) DO NOTHING;
+```
+
+#### Classificateur NLP dynamique (incidents_nlp.py)
+
+`classifier_type()` accepte désormais un paramètre optionnel `types_config :
+list[tuple[str, str]]` (liste de `(slug, regex_str)` chargée depuis la DB).
+
+`enrichir_incidents()` charge les types actifs en début de fonction et les passe
+au classificateur. Si la table est vide ou inaccessible → repli sur `_RE_TYPE_DEFAUT`
+hardcodé (même comportement qu'avant).
+
+#### Endpoints CRUD /incidents/types
+
+```
+GET    /incidents/types          → liste tous les types (actifs et inactifs)
+POST   /incidents/types          → crée un type (valide la regex avant insertion)
+PATCH  /incidents/types/{id}     → modifie libellé / regex / actif
+DELETE /incidents/types/{id}     → supprime (interdit pour slug='autre')
+```
+
+Validation de la regex Python avant insertion (HTTP 422 si invalide).
+
+#### Modèle SQLAlchemy TypesIncident
+
+Nouvelle classe `TypesIncident` dans `app/models/models.py`.
+La colonne `Incident.type_incident` passe de `postgresql.ENUM(…)` à `String(50)`.
+L'enum Python `TypeIncident` est conservée pour la compatibilité ascendante des
+importations existantes (elle n'est plus mappée à la DB).
+
+#### Frontend
+
+**`FiltresIncidents.tsx`** : charge les types actifs depuis `GET /incidents/types`
+au montage (hook `useEffect`). Le sélecteur est maintenant dynamique — il reflète
+toujours les types en base sans recompiler le frontend.
+
+**`GestionTypes.tsx`** (nouveau) : panneau dépliable « 🏷 Gérer les types
+d'incidents (N) » visible en mode écriture. Fonctionnalités :
+- Tableau des types avec regex visible, toggle ON/OFF, bouton Supprimer
+- Le type `autre` a la mention « défaut » à la place du bouton Supprimer
+- Formulaire d'ajout : libellé + regex (slug auto-généré depuis le libellé)
+- Validation côté formulaire (libellé ≥ 2 chars, regex non vide)
+- Erreurs affichées avec auto-effacement après 6 s
+
+**`PageIncidents.tsx`** : importe et affiche `<GestionTypes />` sous `<GestionSources />`.
+
+#### Commandes Railway Console — nettoyage des incidents hors zone
+
+```bash
+# 1. Supprimer les incidents avec un titre contenant un lieu hors zone (ex. Yakassé)
+python -c "
+from app.db.session import SessionLocal
+from app.models.models import Incident
+db = SessionLocal()
+n = db.query(Incident).filter(Incident.titre.ilike('%Yakass%')).delete(synchronize_session=False)
+db.commit()
+print(f'{n} incident(s) supprimé(s)')
+db.close()
+"
+
+# 2. Supprimer TOUS les incidents sans coordonnées GPS (non géolocalisés = hors zone)
+python -c "
+from app.db.session import SessionLocal
+from app.models.models import Incident
+db = SessionLocal()
+n = db.query(Incident).filter(Incident.lat.is_(None)).delete(synchronize_session=False)
+db.commit()
+print(f'{n} incident(s) hors zone (lat=NULL) supprimé(s)')
+db.close()
+"
+```
+
+### 12.11 Récapitulatif des migrations Alembic
 
 | Migration | Objet |
 |-----------|-------|
 | `0013_troncon_est_axe.py` | Ajoute `troncons.est_axe` |
 | `0014_sources_incidents.py` | Crée la table `sources_incidents` + seed 3 sources |
+| `0015_types_incidents.py` | VARCHAR `type_incident` + table `types_incidents` + seed 5 types |
 
 À appliquer après tout déploiement contenant ces migrations :
 
@@ -3125,13 +3250,13 @@ prochain cycle de scraping (toutes les 30 min) ».
 alembic upgrade head
 ```
 
-### 12.11 Vérification post-déploiement
+### 12.12 Vérification post-déploiement
 
 ```bash
 # 1. Migrations à jour
 alembic current && alembic heads
 
-# 2. Colonne est_axe + table sources_incidents
+# 2. Colonne est_axe + tables sources/types incidents
 python -c "
 from sqlalchemy import text
 from app.db.session import SessionLocal
@@ -3140,6 +3265,8 @@ for r in db.execute(text('SELECT id, nom, est_axe FROM troncons ORDER BY id')).a
     print(r.id, r.est_axe, r.nom)
 for r in db.execute(text('SELECT nom, libelle, actif FROM sources_incidents')).all():
     print(r.nom, r.libelle, r.actif)
+for r in db.execute(text('SELECT slug, libelle, actif FROM types_incidents ORDER BY id')).all():
+    print(r.slug, r.libelle, r.actif)
 db.close()
 "
 
@@ -3154,9 +3281,10 @@ print(r.status_code, r.headers.get('content-type'), len(r.content))
 assert r.content[:4] == b'%PDF'
 "
 
-# 5. Endpoint /incidents/sources
+# 5. Endpoints incidents sources + types
 python -c "
 import httpx
-print(httpx.get('http://localhost:8000/incidents/sources', timeout=10).status_code)
+print('/incidents/sources :', httpx.get('http://localhost:8000/incidents/sources', timeout=10).status_code)
+print('/incidents/types   :', httpx.get('http://localhost:8000/incidents/types', timeout=10).status_code)
 "
 ```
