@@ -150,8 +150,8 @@ export function PageIndicateurs() {
         <HeatmapHoraire tronconId={tronconId} />
       </div>
 
-      {/* Évolution pluriannuelle — pleine largeur */}
-      <EvolutionPluriannuelle />
+      {/* Évolution pluriannuelle — pleine largeur, filtrée par tronçon sélectionné */}
+      <EvolutionPluriannuelle tronconId={tronconId} />
 
       {/* Indicateur de chargement global discret */}
       {chargement && (

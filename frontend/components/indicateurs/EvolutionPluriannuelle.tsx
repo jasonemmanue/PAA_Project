@@ -1,23 +1,17 @@
 "use client";
 
 /**
- * Évolution pluriannuelle de l'indicateur « temps de traversée » — réponse
- * directe au résultat n°4 de l'article 4 du cahier des charges.
+ * Évolution pluriannuelle — version dynamique par tronçon.
  *
- * Source : table `evolution_indicateur` (alimentée par l'import P6.1).
- * Affiche pour chaque période (oct_2025, fev_2026, …) les temps min / moyen / max
- * agrégés sur tous les axes présents dans la table, séparés en jours
- * ouvrables / week-ends.
+ * Affiche jusqu'à 3 campagnes côte à côte :
+ *  - Les 2 campagnes complètes les plus récentes (depuis evolution_indicateur)
+ *  - Le mois calendaire courant, mis à jour en temps réel depuis mesures
  *
- * Note importante (CLAUDE.md § 4.6) : les tronçons créés via
- * /administration/troncons ne disposent pas de données pluriannuelles tant
- * qu'aucune campagne historique ne les couvre — ils restent donc absents de
- * ce graphique, qui repose exclusivement sur les imports P6.1. Le reste du
- * pipeline (collecte, indicateurs, prédicteur, rapport DEESP) les inclut
- * normalement.
+ * Source backend : GET /evolution/troncon/{id}
+ * Auto-refresh du mois courant toutes les 5 minutes.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -31,38 +25,86 @@ import {
 
 import { useAuth } from "@/contexts/AuthContext";
 import { Card } from "@/components/ui/Card";
-import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import type { LigneEvolution } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
-type TypeJour = "Jours ouvrables" | "Week-ends";
+// Intervalle de polling pour le mois courant (5 min)
+const POLLING_MS = 5 * 60 * 1000;
 
-export function EvolutionPluriannuelle() {
+type TypeJour = "jours_ouvrables" | "week_ends";
+
+interface BlocStats {
+  min_mn: number;
+  moyen_mn: number;
+  max_mn: number;
+  nb_mesures?: number;
+}
+
+interface Campagne {
+  periode: string;
+  periode_label: string;
+  source: "historique" | "live";
+  debut?: string;
+  fin?: string;
+  nb_mesures_total?: number;
+  jours_ouvrables: BlocStats | null;
+  week_ends: BlocStats | null;
+}
+
+interface EvolutionTronconResponse {
+  troncon_id: number;
+  troncon_nom: string;
+  a_donnees_historiques: boolean;
+  campagnes: Campagne[];
+}
+
+interface Props {
+  tronconId: number | null;
+}
+
+export function EvolutionPluriannuelle({ tronconId }: Props) {
   const { t } = useI18n();
   const { peutEcrire } = useAuth();
-  const [lignes, setLignes] = useState<LigneEvolution[]>([]);
-  const [chargement, setChargement] = useState(true);
+
+  const [data, setData] = useState<EvolutionTronconResponse | null>(null);
+  const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [typeJour, setTypeJour] = useState<TypeJour>("Jours ouvrables");
+  const [typeJour, setTypeJour] = useState<TypeJour>("jours_ouvrables");
   const [importEnCours, setImportEnCours] = useState(false);
   const [messageImport, setMessageImport] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function recharger() {
+  const charger = useCallback(async (id: number) => {
     try {
-      const res = await api.evolution();
-      setLignes(Array.isArray(res?.lignes) ? res.lignes : []);
+      const rep = await fetch(`${API_BASE}/evolution/troncon/${id}`);
+      if (!rep.ok) throw new Error(`HTTP ${rep.status}`);
+      const json: EvolutionTronconResponse = await rep.json();
+      setData(json);
       setErreur(null);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
       setChargement(false);
     }
-  }
+  }, []);
 
-  useEffect(() => { recharger(); }, []);
+  useEffect(() => {
+    if (tronconId === null) {
+      setData(null);
+      return;
+    }
+    setChargement(true);
+    charger(tronconId);
+
+    // Polling pour garder le mois courant à jour
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    pollingRef.current = setInterval(() => charger(tronconId), POLLING_MS);
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [tronconId, charger]);
 
   async function importerFichier(f: File) {
     setImportEnCours(true);
@@ -71,26 +113,17 @@ export function EvolutionPluriannuelle() {
     try {
       const form = new FormData();
       form.append("fichier", f);
-      // Détection format : .xlsx/.xls → endpoint SYNTHESE COMPAREE existant
-      //                    .csv ou autre Excel → endpoint générique 7 colonnes
-      const nom = f.name.toLowerCase();
-      let endpoint: string;
-      if (nom.endsWith(".csv")) {
-        endpoint = "/import/evolution-csv";
-      } else {
-        // On tente le format générique en priorité (plus tolérant).
-        // En cas d'échec, basculer manuellement vers /import/evolution si le
-        // fichier est exactement le format FEVRIER_2026.xlsx (SYNTHESE COMPAREE).
-        endpoint = "/import/evolution-csv";
-      }
-      const rep = await fetch(`${API_BASE}${endpoint}`, { method: "POST", body: form });
+      const rep = await fetch(`${API_BASE}/import/evolution-csv`, {
+        method: "POST",
+        body: form,
+      });
       if (!rep.ok) {
         const txt = await rep.text().catch(() => "");
         throw new Error(`HTTP ${rep.status} — ${txt || rep.statusText}`);
       }
-      const data = await rep.json();
-      setMessageImport(data.message ?? "Import réussi.");
-      await recharger();
+      const json = await rep.json();
+      setMessageImport(json.message ?? "Import réussi.");
+      if (tronconId !== null) await charger(tronconId);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
@@ -99,46 +132,34 @@ export function EvolutionPluriannuelle() {
     }
   }
 
-  const lignesFiltrees = lignes.filter((l) => l.type_jour === typeJour);
+  // Les 2 campagnes historiques les plus récentes + le mois courant
+  const campagnes: Campagne[] = (() => {
+    if (!data) return [];
+    const historiques = data.campagnes
+      .filter((c) => c.source === "historique")
+      .slice(-2); // les 2 plus récentes (déjà triées chronologiquement)
+    const live = data.campagnes.filter((c) => c.source === "live");
+    return [...historiques, ...live];
+  })();
 
-  // Agrégation : moyenne sur tous les axes × sens présents dans la table par période
-  const parPeriode = new Map<
-    string,
-    { sommeMin: number; sommeMoyen: number; sommeMax: number; n: number }
-  >();
-  for (const l of lignesFiltrees) {
-    const cle = l.periode;
-    const entry = parPeriode.get(cle) ?? {
-      sommeMin: 0,
-      sommeMoyen: 0,
-      sommeMax: 0,
-      n: 0,
+  // Données Recharts : 1 objet par campagne avec min/moyen/max du type_jour sélectionné
+  const chartData = campagnes.map((c) => {
+    const bloc = typeJour === "jours_ouvrables" ? c.jours_ouvrables : c.week_ends;
+    return {
+      periode: c.periode_label,
+      isLive: c.source === "live",
+      min: bloc?.min_mn ?? null,
+      moyen: bloc?.moyen_mn ?? null,
+      max: bloc?.max_mn ?? null,
+      nb: bloc?.nb_mesures ?? c.nb_mesures_total ?? 0,
     };
-    if (l.temps_min_s !== null) entry.sommeMin += l.temps_min_s;
-    if (l.temps_moyen_s !== null) entry.sommeMoyen += l.temps_moyen_s;
-    if (l.temps_max_s !== null) entry.sommeMax += l.temps_max_s;
-    entry.n += 1;
-    parPeriode.set(cle, entry);
-  }
-  // Tri chronologique : "oct_2025" → 202510, "fev_2026" → 202602, etc.
-  const MOIS_NUM: Record<string, number> = {
-    jan: 1, fev: 2, mar: 3, avr: 4, mai: 5, jun: 6,
-    jul: 7, aou: 8, sep: 9, oct: 10, nov: 11, dec: 12,
-  };
-  function periodeVersDate(p: string): number {
-    const m = p.match(/^([a-z]+)_(\d{4})$/);
-    if (!m) return 0;
-    return parseInt(m[2]) * 100 + (MOIS_NUM[m[1]] ?? 0);
-  }
+  });
 
-  const data = Array.from(parPeriode.entries())
-    .sort(([a], [b]) => periodeVersDate(a) - periodeVersDate(b))
-    .map(([periode, v]) => ({
-      periode: formaterPeriode(periode),
-      min: v.n > 0 ? Math.round(v.sommeMin / v.n / 60) : 0,
-      moyen: v.n > 0 ? Math.round(v.sommeMoyen / v.n / 60) : 0,
-      max: v.n > 0 ? Math.round(v.sommeMax / v.n / 60) : 0,
-    }));
+  const aucuneDonnee =
+    !chargement && !erreur && campagnes.every((c) => {
+      const b = typeJour === "jours_ouvrables" ? c.jours_ouvrables : c.week_ends;
+      return b === null;
+    });
 
   return (
     <Card
@@ -169,10 +190,13 @@ export function EvolutionPluriannuelle() {
               }}
               className="text-fluid-xs"
             />
-            {importEnCours && <span className="text-fluid-xs app-text-muted">Import en cours…</span>}
+            {importEnCours && (
+              <span className="text-fluid-xs app-text-muted">Import en cours…</span>
+            )}
           </div>
         </div>
       )}
+
       {messageImport && (
         <div className="mb-3 rounded-md border border-statut-fluide/40 bg-statut-fluide/10 px-3 py-2 text-fluid-xs text-statut-fluide">
           ✅ {messageImport}
@@ -184,11 +208,12 @@ export function EvolutionPluriannuelle() {
         role="group"
         className="mb-3 inline-flex flex-wrap gap-1 rounded-md border app-border p-1 app-surface"
       >
-        {(["Jours ouvrables", "Week-ends"] as const).map((tj) => {
+        {(["jours_ouvrables", "week_ends"] as const).map((tj) => {
           const actif = typeJour === tj;
-          const label = tj === "Jours ouvrables"
-            ? t("indicateurs.joursOuvrables")
-            : t("indicateurs.weekEnds");
+          const label =
+            tj === "jours_ouvrables"
+              ? t("indicateurs.joursOuvrables")
+              : t("indicateurs.weekEnds");
           return (
             <button
               key={tj}
@@ -207,9 +232,10 @@ export function EvolutionPluriannuelle() {
         })}
       </div>
 
-      {chargement && (
+      {/* États de chargement / erreur */}
+      {(chargement || tronconId === null) && (
         <div className="flex h-[220px] items-center justify-center text-fluid-sm app-text-muted">
-          {t("common.loading")}
+          {tronconId === null ? t("common.noData") : t("common.loading")}
         </div>
       )}
       {erreur && (
@@ -217,83 +243,112 @@ export function EvolutionPluriannuelle() {
           {t("common.error")} : {erreur}
         </div>
       )}
-      {!chargement && !erreur && data.length === 0 && (
+      {!chargement && !erreur && aucuneDonnee && tronconId !== null && (
         <div className="flex h-[220px] items-center justify-center text-fluid-sm app-text-muted">
           {t("common.noData")}
         </div>
       )}
-      {!chargement && !erreur && data.length > 0 && (
-        <div className="h-[260px] w-full md:h-[320px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(125,125,125,0.18)" />
-              <XAxis dataKey="periode" tick={{ fontSize: 12 }} />
-              <YAxis
-                tick={{ fontSize: 11 }}
-                label={{
-                  value: "min",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: 14,
-                  style: { fontSize: 11, fill: "currentColor" },
-                }}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: "rgba(11, 37, 69, 0.96)",
-                  border: "none",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  color: "white",
-                }}
-                formatter={(value: unknown, key: string) => {
-                  const labels: Record<string, string> = {
-                    min: t("indicateurs.evolutionMin"),
-                    moyen: t("indicateurs.evolutionMoyen"),
-                    max: t("indicateurs.evolutionMax"),
-                  };
-                  return [`${value} min`, labels[key] ?? key];
-                }}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: 12 }}
-                formatter={(v: string) => {
-                  const labels: Record<string, string> = {
-                    min: t("indicateurs.evolutionMin"),
-                    moyen: t("indicateurs.evolutionMoyen"),
-                    max: t("indicateurs.evolutionMax"),
-                  };
-                  return labels[v] ?? v;
-                }}
-              />
-              <Bar dataKey="min" fill="#2ECC71" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="moyen" fill="#F39C12" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="max" fill="#E74C3C" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+
+      {/* Graphique */}
+      {!chargement && !erreur && !aucuneDonnee && chartData.length > 0 && (
+        <>
+          <div className="h-[260px] w-full md:h-[320px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={chartData}
+                margin={{ top: 5, right: 8, left: -10, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(125,125,125,0.18)" />
+                <XAxis
+                  dataKey="periode"
+                  tick={({ x, y, payload }) => (
+                    <g transform={`translate(${x},${y})`}>
+                      <text
+                        x={0}
+                        y={0}
+                        dy={14}
+                        textAnchor="middle"
+                        fontSize={11}
+                        fill="currentColor"
+                      >
+                        {payload.value}
+                      </text>
+                      {/* Badge "en cours" sous le label de la campagne live */}
+                      {chartData.find((d) => d.periode === payload.value)?.isLive && (
+                        <text x={0} y={0} dy={28} textAnchor="middle" fontSize={9} fill="#F39C12">
+                          ● en cours
+                        </text>
+                      )}
+                    </g>
+                  )}
+                  height={45}
+                />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  label={{
+                    value: "min",
+                    angle: -90,
+                    position: "insideLeft",
+                    offset: 14,
+                    style: { fontSize: 11, fill: "currentColor" },
+                  }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "rgba(11, 37, 69, 0.96)",
+                    border: "none",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "white",
+                  }}
+                  formatter={(value: unknown, key: string) => {
+                    const labels: Record<string, string> = {
+                      min: t("indicateurs.evolutionMin"),
+                      moyen: t("indicateurs.evolutionMoyen"),
+                      max: t("indicateurs.evolutionMax"),
+                    };
+                    return [`${value} min`, labels[key] ?? key];
+                  }}
+                  labelFormatter={(label: string) => {
+                    const entry = chartData.find((d) => d.periode === label);
+                    const suffix = entry?.nb ? ` — ${entry.nb} mesures` : "";
+                    return `${label}${suffix}`;
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: 12 }}
+                  formatter={(v: string) => {
+                    const labels: Record<string, string> = {
+                      min: t("indicateurs.evolutionMin"),
+                      moyen: t("indicateurs.evolutionMoyen"),
+                      max: t("indicateurs.evolutionMax"),
+                    };
+                    return labels[v] ?? v;
+                  }}
+                />
+                <Bar dataKey="min" fill="#2ECC71" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="moyen" fill="#F39C12" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="max" fill="#E74C3C" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Légende mois courant */}
+          {campagnes.some((c) => c.source === "live") && (
+            <p className="mt-1 text-fluid-xs app-text-muted text-right">
+              ● Mois en cours — données Google actualisées automatiquement
+            </p>
+          )}
+
+          {/* Message si pas de données historiques pour ce tronçon */}
+          {data && !data.a_donnees_historiques && (
+            <p className="mt-2 rounded-md border app-border bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2 text-fluid-xs text-amber-700 dark:text-amber-400">
+              ℹ️ Pas de campagne historique pour ce tronçon. Seul le mois courant est affiché.
+              Les données pluriannuelles sont disponibles uniquement pour les 6 axes officiels DEESP.
+            </p>
+          )}
+        </>
       )}
     </Card>
   );
-}
-
-function formaterPeriode(p: string): string {
-  // "oct_2025" → "Oct 2025", "fev_2026" → "Fév 2026"
-  const mois: Record<string, string> = {
-    jan: "Jan",
-    fev: "Fév",
-    mar: "Mar",
-    avr: "Avr",
-    mai: "Mai",
-    jun: "Juin",
-    jul: "Juil",
-    aou: "Août",
-    sep: "Sep",
-    oct: "Oct",
-    nov: "Nov",
-    dec: "Déc",
-  };
-  const m = p.match(/^(\w+)_(\d{4})$/);
-  if (m) return `${mois[m[1]] ?? m[1]} ${m[2]}`;
-  return p;
 }
