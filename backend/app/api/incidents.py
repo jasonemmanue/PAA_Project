@@ -308,30 +308,6 @@ def exporter_incidents_csv(
 
 
 # ---------------------------------------------------------------------------
-# GET /incidents/{id}
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/{incident_id:int}",
-    summary="Détail d'un incident",
-    response_model=IncidentOut,
-)
-def get_incident(
-    incident_id: int,
-    db: Session = Depends(get_db),
-) -> IncidentOut:
-    """Retourne l'incident correspondant à l'id fourni."""
-    inc = db.get(Incident, incident_id)
-    if inc is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Incident {incident_id} introuvable.",
-        )
-    return _incident_to_out(inc)
-
-
-# ---------------------------------------------------------------------------
 # POST /incidents/scraper-now  — déclenchement manuel du scraping RSS
 # ---------------------------------------------------------------------------
 
@@ -525,3 +501,28 @@ def supprimer_source(source_id: int, db: Session = Depends(get_db)) -> Response:
     db.delete(s)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# GET /incidents/{id}  — déclaré APRÈS /sources pour éviter que FastAPI
+# matche /incidents/sources sur cette route et renvoie un 422 int_parsing.
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{incident_id:int}",
+    summary="Détail d'un incident",
+    response_model=IncidentOut,
+)
+def get_incident(
+    incident_id: int,
+    db: Session = Depends(get_db),
+) -> IncidentOut:
+    """Retourne l'incident correspondant à l'id fourni."""
+    inc = db.get(Incident, incident_id)
+    if inc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Incident {incident_id} introuvable.",
+        )
+    return _incident_to_out(inc)

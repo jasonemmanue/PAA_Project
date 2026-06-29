@@ -221,36 +221,43 @@ export function PagePrediction() {
                 <div className="flex justify-center mb-3">
                   <BadgeSource source={resume.courante.source} libelleSource={LIBELLE_SOURCE} />
                 </div>
-                {/* Option B — Moy. = mesure Google instantanée, Min/Max = bornes 7j même type de jour */}
-                <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto text-center">
-                  <div className="paa-card p-3">
-                    <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMin")}</div>
-                    <div className="mt-1 text-fluid-xl font-bold text-statut-fluide">
-                      {resume.courante.bornes_7j?.min_mn ?? resume.courante.prediction.min_mn ?? "—"} {t("prediction.uniteMn")}
+                {/* Min/Max = bornes "7 j même type de jour" renvoyées par le backend.
+                    Stables quel que soit le niveau de cascade (le Moy seul change).
+                    Si bornes_7j absent (peu de mesures), affichage "—" plutôt que de
+                    retomber sur la valeur Google instantanée qui ferait Min=Moy=Max. */}
+                {(() => {
+                  const b = resume.courante.bornes_7j;
+                  const minMn = b?.min_mn ?? null;
+                  const maxMn = b?.max_mn ?? null;
+                  const libelleSource = locale === "fr" ? "7 j même type" : "7 d same type";
+                  return (
+                    <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto text-center">
+                      <div className="paa-card p-3">
+                        <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMin")}</div>
+                        <div className="mt-1 text-fluid-xl font-bold text-statut-fluide">
+                          {minMn ?? "—"} {minMn !== null && t("prediction.uniteMn")}
+                        </div>
+                        <div className="mt-1 text-[10px] app-text-muted">{libelleSource}</div>
+                      </div>
+                      <div className="paa-card p-3" style={{ borderTop: "3px solid #3498DB" }}>
+                        <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMoy")}</div>
+                        <div className="mt-1 text-fluid-2xl font-bold text-paa-blue-500">
+                          {resume.courante.prediction.moyen_mn ?? "—"} {t("prediction.uniteMn")}
+                        </div>
+                        <div className="mt-1 text-[10px] app-text-muted">
+                          {locale === "fr" ? "actuel (Google)" : "current (Google)"}
+                        </div>
+                      </div>
+                      <div className="paa-card p-3">
+                        <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMax")}</div>
+                        <div className="mt-1 text-fluid-xl font-bold text-statut-congestionne">
+                          {maxMn ?? "—"} {maxMn !== null && t("prediction.uniteMn")}
+                        </div>
+                        <div className="mt-1 text-[10px] app-text-muted">{libelleSource}</div>
+                      </div>
                     </div>
-                    <div className="mt-1 text-[10px] app-text-muted">
-                      {locale === "fr" ? "7 j même type" : "7 d same type"}
-                    </div>
-                  </div>
-                  <div className="paa-card p-3" style={{ borderTop: "3px solid #3498DB" }}>
-                    <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMoy")}</div>
-                    <div className="mt-1 text-fluid-2xl font-bold text-paa-blue-500">
-                      {resume.courante.prediction.moyen_mn ?? "—"} {t("prediction.uniteMn")}
-                    </div>
-                    <div className="mt-1 text-[10px] app-text-muted">
-                      {locale === "fr" ? "actuel (Google)" : "current (Google)"}
-                    </div>
-                  </div>
-                  <div className="paa-card p-3">
-                    <div className="text-fluid-xs font-medium app-text-muted">{t("prediction.labelMax")}</div>
-                    <div className="mt-1 text-fluid-xl font-bold text-statut-congestionne">
-                      {resume.courante.bornes_7j?.max_mn ?? resume.courante.prediction.max_mn ?? "—"} {t("prediction.uniteMn")}
-                    </div>
-                    <div className="mt-1 text-[10px] app-text-muted">
-                      {locale === "fr" ? "7 j même type" : "7 d same type"}
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
                 {/* Cascade des 3 niveaux */}
                 <div className="mt-4 max-w-lg mx-auto">
                   <p className="text-fluid-xs font-semibold app-text-muted mb-2 text-center uppercase tracking-wide">
