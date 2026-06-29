@@ -18,10 +18,13 @@ Endpoints utilitaires conservés :
 """
 
 import logging
+import traceback
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.agregation import router as agregation_router
 from app.api.chatbot import router as chatbot_router
@@ -269,6 +272,45 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Gestionnaire global d'exceptions — assure que :
+#   1. Le traceback complet est loggé avec un identifiant de requête unique
+#   2. La réponse JSON contient bien les headers CORS (sinon le navigateur
+#      affiche "blocked by CORS policy" au lieu du vrai 500)
+#   3. Le client reçoit l'identifiant à reporter dans les logs Railway
+# ---------------------------------------------------------------------------
+
+
+_global_logger = logging.getLogger("paa.global")
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    request_id = str(uuid.uuid4())[:8]
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    _global_logger.error(
+        "[%s] %s %s — %s\n%s",
+        request_id,
+        request.method,
+        request.url.path,
+        f"{type(exc).__name__}: {exc}",
+        tb,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": (
+                f"Erreur interne ({type(exc).__name__}). "
+                f"Identifiant de requete : {request_id}. "
+                "Consultez les logs Railway avec ce request_id."
+            ),
+            "request_id": request_id,
+            "type": type(exc).__name__,
+            "message": str(exc)[:300],
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

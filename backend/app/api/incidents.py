@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -30,6 +31,9 @@ from app.db.session import get_db, SessionLocal
 from app.models.models import Incident, SourceIncident, Troncon, TypeIncident, SeveriteIncident
 from app.sources.parsers.rss_parser import scraper_toutes_sources
 
+
+# Logger dédié — visible dans Railway sous le tag "paa.incidents"
+logger = logging.getLogger("paa.incidents")
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
@@ -97,25 +101,38 @@ def _enum_value(field: Any) -> str | None:
 
 
 def _incident_to_out(inc: Incident) -> IncidentOut:
-    """Convertit un modèle SQLAlchemy `Incident` vers le schéma de sortie."""
-    return IncidentOut(
-        id=inc.id,
-        titre=inc.titre,
-        resume=inc.resume,
-        source_url=inc.source_url,
-        source_nom=inc.source_nom,
-        horodatage_publication=inc.horodatage_publication,
-        horodatage_collecte=inc.horodatage_collecte,
-        lat=inc.lat,
-        lon=inc.lon,
-        lieu_extrait=inc.lieu_extrait,
-        troncon_id=inc.troncon_id,
-        type_incident=_enum_value(inc.type_incident),
-        severite=_enum_value(inc.severite),
-        actif=inc.actif,
-        verifie=inc.verifie,
-        fiabilite_source=inc.fiabilite_source,
-    )
+    """Convertit un modèle SQLAlchemy `Incident` vers le schéma de sortie.
+
+    En cas de champ corrompu en base (cas observé en prod), log explicite
+    de l'id + nom de champ + valeur brute, puis remontée vers l'appelant
+    qui la transforme en HTTP 500 enrichi.
+    """
+    try:
+        return IncidentOut(
+            id=inc.id,
+            titre=inc.titre,
+            resume=inc.resume,
+            source_url=inc.source_url,
+            source_nom=inc.source_nom,
+            horodatage_publication=inc.horodatage_publication,
+            horodatage_collecte=inc.horodatage_collecte,
+            lat=inc.lat,
+            lon=inc.lon,
+            lieu_extrait=inc.lieu_extrait,
+            troncon_id=inc.troncon_id,
+            type_incident=_enum_value(inc.type_incident),
+            severite=_enum_value(inc.severite),
+            actif=inc.actif,
+            verifie=inc.verifie,
+            fiabilite_source=inc.fiabilite_source,
+        )
+    except Exception:
+        logger.exception(
+            "Echec serialisation incident id=%s "
+            "(source_nom=%r type_incident=%r severite=%r) — voir traceback ci-dessus.",
+            inc.id, inc.source_nom, inc.type_incident, inc.severite,
+        )
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +217,11 @@ def lister_incidents(
     db: Session = Depends(get_db),
 ) -> IncidentsPage:
     """Liste et filtre les incidents."""
+    logger.info(
+        "GET /incidents — actif_seulement=%s troncon_id=%s type_incident=%r limit=%d offset=%d",
+        actif_seulement, troncon_id, type_incident, limit, offset,
+    )
+
     q = select(Incident).order_by(Incident.horodatage_publication.desc())
 
     if troncon_id is not None:
@@ -216,15 +238,46 @@ def lister_incidents(
                        "Valeurs acceptées : accident, embouteillage, route_barree, travaux, autre",
             )
 
-    tous: list[Incident] = list(db.execute(q).scalars())
+    try:
+        tous: list[Incident] = list(db.execute(q).scalars())
+    except Exception:
+        logger.exception("Echec SQL lors de la lecture des incidents.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erreur SQL lors de la lecture des incidents — voir les logs serveur.",
+        )
 
     # Filtre actif en Python (propriété calculée, pas requêtable en SQL)
     if actif_seulement:
         tous = [i for i in tous if i.actif]
 
     total = len(tous)
-    items = [_incident_to_out(i) for i in tous[offset: offset + limit]]
 
+    # Sérialisation incident-par-incident : isole l'erreur sur 1 ligne corrompue
+    # plutôt que de planter toute la liste (cas observé en prod le 2026-06-29).
+    items: list[IncidentOut] = []
+    nb_skip = 0
+    for i in tous[offset: offset + limit]:
+        try:
+            items.append(_incident_to_out(i))
+        except Exception:
+            nb_skip += 1
+            logger.exception(
+                "Incident id=%s ignore — donnees corrompues, voir traceback. "
+                "type_incident=%r severite=%r source_nom=%r",
+                i.id, i.type_incident, i.severite, i.source_nom,
+            )
+
+    if nb_skip:
+        logger.warning(
+            "GET /incidents : %d incident(s) ignore(s) sur %d a cause de donnees corrompues.",
+            nb_skip, total,
+        )
+
+    logger.info(
+        "GET /incidents OK — total=%d retourne=%d ignore=%d",
+        total, len(items), nb_skip,
+    )
     return IncidentsPage(total=total, items=items)
 
 

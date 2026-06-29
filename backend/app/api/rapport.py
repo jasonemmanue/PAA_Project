@@ -17,6 +17,7 @@ résolu en (1er du mois, dernier jour du mois) côté serveur.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date as DateType, datetime, time, timezone
 from typing import Any
@@ -29,6 +30,9 @@ from app.analyse import rapport_paa
 from app.core.config import get_settings
 from app.db.session import get_db
 
+
+# Logger dédié — visible dans Railway sous le tag "paa.rapport"
+logger = logging.getLogger("paa.rapport")
 
 router = APIRouter(prefix="/rapport", tags=["rapport DEESP"])
 
@@ -360,36 +364,102 @@ async def export_rapport_word(
     fin: DateType | None = Query(None),
     db: Session = Depends(get_db),
 ) -> Response:
-    # Imports locaux : évitent de charger matplotlib/docx au démarrage du serveur
-    import io
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from docx import Document
-    from docx.enum.section import WD_ORIENTATION
-    from docx.enum.table import WD_ALIGN_VERTICAL
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn
-    from docx.oxml import OxmlElement
-    from docx.shared import Cm, Pt, RGBColor
+    logger.info(
+        "GET /rapport/export/word — campagne=%r debut=%s fin=%s",
+        campagne, debut, fin,
+    )
 
-    debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
-    nb_jours = max(1, (fin_utc - debut_utc).days + 1)
+    # Phase 1 : imports lourds (matplotlib + python-docx). Tracé explicitement
+    # pour distinguer un échec d'installation côté Railway d'un échec métier.
+    try:
+        import io
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from docx import Document
+        from docx.enum.section import WD_ORIENTATION
+        from docx.enum.table import WD_ALIGN_VERTICAL
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+        from docx.shared import Cm, Pt, RGBColor
+    except ImportError as exc:
+        logger.exception("Echec import matplotlib/python-docx — paquet manquant ?")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Dependance manquante cote serveur : {exc}. "
+                   "Verifier que matplotlib et python-docx sont dans requirements.txt.",
+        )
 
-    # Données
-    theoriques = rapport_paa.temps_theoriques(db)
-    stats = rapport_paa.temps_traversee_par_troncon(db, debut_utc, fin_utc)
-    cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
-    seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
+    # Phase 2 : résolution des bornes (peut lever 400 si campagne malformée)
+    try:
+        debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
+        nb_jours = max(1, (fin_utc - debut_utc).days + 1)
+        logger.info(
+            "Bornes : debut_utc=%s fin_utc=%s nb_jours=%d",
+            debut_utc, fin_utc, nb_jours,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Echec resolution bornes campagne=%r debut=%s fin=%s.",
+                         campagne, debut, fin)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Bornes de campagne invalides : campagne={campagne!r}",
+        )
+
+    # Phase 3 : extraction des données métier
+    try:
+        theoriques = rapport_paa.temps_theoriques(db)
+        logger.info("temps_theoriques OK — %d ligne(s)", len(theoriques))
+    except Exception:
+        logger.exception("Echec rapport_paa.temps_theoriques.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Echec calcul Tableau 1 (temps théoriques) — voir logs serveur.",
+        )
+
+    # Variable conservée pour compatibilité avec le code en aval
+    _theoriques_marker = True  # noqa: F841
+    try:
+        stats = rapport_paa.temps_traversee_par_troncon(db, debut_utc, fin_utc)
+        logger.info("temps_traversee_par_troncon OK — %d troncons", len(stats) if stats else 0)
+    except Exception:
+        logger.exception("Echec rapport_paa.temps_traversee_par_troncon.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Echec calcul Tableaux 3-15 (temps de traversee) — voir logs serveur.",
+        )
+
+    try:
+        cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
+        seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
+        logger.info("troncons_congestionnes OK — %d entree(s), seuils jour=%s semaine=%s",
+                    len(cong) if cong else 0, seuil_j, seuil_s)
+    except Exception:
+        logger.exception("Echec rapport_paa.troncons_congestionnes/seuils_congestion.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Echec calcul Tableau 16 (zones congestionnees) — voir logs serveur.",
+        )
 
     # Tronçons actifs (pour graphiques)
     from sqlalchemy import select
     from app.models.models import Troncon
-    troncons = list(
-        db.execute(
-            select(Troncon).where(Troncon.actif.is_(True)).order_by(Troncon.id)
-        ).scalars()
-    )
+    try:
+        troncons = list(
+            db.execute(
+                select(Troncon).where(Troncon.actif.is_(True)).order_by(Troncon.id)
+            ).scalars()
+        )
+        logger.info("Troncons actifs : %d", len(troncons))
+    except Exception:
+        logger.exception("Echec lecture des troncons actifs.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Echec lecture des troncons actifs — voir logs serveur.",
+        )
 
     # ---- Construction du document ----
     doc = Document()
@@ -612,11 +682,25 @@ async def export_rapport_word(
     pr.font.color.rgb = GRIS
     pied.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Sérialisation
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
+    # Sérialisation finale du document — étape la plus susceptible
+    # d'échouer si une cellule contient une valeur non sérialisable.
+    try:
+        buf = io.BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+        taille = len(buf.getvalue())
+    except Exception:
+        logger.exception("Echec doc.save() lors de la serialisation finale du .docx.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Echec serialisation du document Word — voir logs serveur.",
+        )
+
     nom = f"rapport_deesp_{campagne}.docx"
+    logger.info(
+        "GET /rapport/export/word OK — %s genere (%d octets, %d troncons).",
+        nom, taille, len(troncons),
+    )
     return Response(
         content=buf.getvalue(),
         media_type=(
