@@ -50,9 +50,9 @@ export function TableauTempsTraversee({
               <Th>RUBRIQUE</Th>
               <Th>TRONÇON</Th>
               <Th className="text-right">JOURS OUVRABLES</Th>
-              <Th className="text-right">NB JO</Th>
+              <Th className="text-right">NB MESURES JO</Th>
               <Th className="text-right">WEEK-ENDS</Th>
-              <Th className="text-right">NB WE</Th>
+              <Th className="text-right">NB MESURES WE</Th>
             </tr>
           </thead>
           <tbody>
