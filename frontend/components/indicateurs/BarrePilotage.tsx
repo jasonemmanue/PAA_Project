@@ -271,40 +271,23 @@ export function BarrePilotage({
         )}
         {peutEcrire && troncons.length > 1 && (
           <>
-            <button
-              type="button"
-              title="Télécharger CSV pour tous les tronçons"
+            {/* Fichier unique : tous les tronçons fusionnés (pas de troncon_id → backend renvoie tout) */}
+            <a
+              href={api.urlExportMesures({ debut: aujourdHui, format: "csv" })}
+              download={`mesures_tous_troncons_${aujourdHui}.csv`}
               className="btn-secondary"
-              onClick={() => {
-                troncons.forEach((tr, i) => {
-                  setTimeout(() => {
-                    const a = document.createElement("a");
-                    a.href = api.urlExportMesures({ troncon_id: tr.id, debut: aujourdHui, format: "csv" });
-                    a.download = `mesures_troncon${tr.id}_${aujourdHui}.csv`;
-                    a.click();
-                  }, i * 600);
-                });
-              }}
+              title="Télécharger un CSV unique avec tous les tronçons"
             >
               {t("indicateurs.btnExportTousCsv")}
-            </button>
-            <button
-              type="button"
-              title="Télécharger Excel pour tous les tronçons"
+            </a>
+            <a
+              href={api.urlExportMesures({ debut: aujourdHui, format: "xlsx" })}
+              download={`mesures_tous_troncons_${aujourdHui}.xlsx`}
               className="btn-secondary"
-              onClick={() => {
-                troncons.forEach((tr, i) => {
-                  setTimeout(() => {
-                    const a = document.createElement("a");
-                    a.href = api.urlExportMesures({ troncon_id: tr.id, debut: aujourdHui, format: "xlsx" });
-                    a.download = `mesures_troncon${tr.id}_${aujourdHui}.xlsx`;
-                    a.click();
-                  }, i * 600);
-                });
-              }}
+              title="Télécharger un Excel unique avec tous les tronçons"
             >
               {t("indicateurs.btnExportTousXlsx")}
-            </button>
+            </a>
           </>
         )}
       </div>
