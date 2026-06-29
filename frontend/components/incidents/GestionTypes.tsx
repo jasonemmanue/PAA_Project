@@ -26,8 +26,17 @@ interface TypeApi {
 }
 
 const TYPE_VIDE = {
-  slug: "", libelle: "", regex: "", actif: true,
+  slug: "", libelle: "", mots: "", actif: true,
 };
+
+// Convertit une liste de mots-clés séparés par virgule/point-virgule en regex Python
+function motsVersRegex(mots: string): string {
+  return mots
+    .split(/[,;]+/)
+    .map((m) => m.trim().toLowerCase())
+    .filter(Boolean)
+    .join("|");
+}
 
 // Slugifie automatiquement le libellé saisi
 function slugifier(s: string): string {
@@ -74,9 +83,13 @@ export function GestionTypes() {
   async function ajouter() {
     setEnCours(true); setErreur(null);
     try {
+      const regex = motsVersRegex(form.mots);
+      if (!regex) { setErreur("Entrez au moins un mot-clé."); setEnCours(false); return; }
       const payload = {
-        ...form,
         slug: form.slug || slugifier(form.libelle),
+        libelle: form.libelle,
+        regex,
+        actif: true,
       };
       const rep = await fetch(`${API_BASE}/incidents/types`, {
         method: "POST",
@@ -163,8 +176,7 @@ export function GestionTypes() {
               <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
                 <tr className="text-left">
                   <th className="px-3 py-2 font-medium">Libellé</th>
-                  <th className="px-3 py-2 font-medium">Slug</th>
-                  <th className="px-3 py-2 font-medium">Regex de détection</th>
+                  <th className="px-3 py-2 font-medium">Mots-clés détectés</th>
                   <th className="px-3 py-2 font-medium text-center">Actif</th>
                   <th className="px-3 py-2 font-medium text-center">Actions</th>
                 </tr>
@@ -180,10 +192,19 @@ export function GestionTypes() {
                 {types.map((type) => (
                   <tr key={type.id} className="border-t app-border">
                     <td className="px-3 py-2 font-medium">{type.libelle}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-gray-500">{type.slug}</td>
-                    <td className="px-3 py-2 font-mono text-xs truncate max-w-[220px]"
+                    <td className="px-3 py-2 text-xs text-gray-600 dark:text-gray-300 max-w-[260px]"
                         title={type.regex}>
-                      {type.regex}
+                      {type.regex
+                        .split("|")
+                        .slice(0, 5)
+                        .map((m) => (
+                          <span key={m} className="inline-block mr-1 mb-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
+                            {m}
+                          </span>
+                        ))}
+                      {type.regex.split("|").length > 5 && (
+                        <span className="text-gray-400">+{type.regex.split("|").length - 5}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-center">
                       <button
@@ -221,23 +242,8 @@ export function GestionTypes() {
               ➕ Ajouter un type d'incident
             </legend>
 
-            <div className="mb-3 rounded-md bg-paa-blue-50 dark:bg-paa-navy-800/60 border border-paa-blue-200 dark:border-paa-navy-600 p-3 text-xs">
-              <p className="font-semibold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
-                💡 Exemple
-              </p>
-              <ul className="space-y-1 text-paa-navy-700 dark:text-paa-blue-200">
-                <li><b>Libellé</b> : Incendie / explosion</li>
-                <li><b>Regex</b> : incendie|explosion|feu de véhicule</li>
-              </ul>
-              <p className="mt-2 italic text-paa-navy-600 dark:text-paa-blue-300">
-                La regex est insensible à la casse. Utilisez <span className="font-mono">|</span> pour
-                séparer les alternatives. Le classificateur NLP l'utilisera au prochain cycle
-                d'enrichissement (après chaque scraping).
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 sm:col-span-2">
+            <div className="grid gap-3">
+              <label className="flex flex-col gap-1">
                 <span className="text-xs font-medium app-text-muted">
                   Libellé affiché <span className="text-statut-congestionne">*</span>
                 </span>
@@ -254,39 +260,58 @@ export function GestionTypes() {
                 />
               </label>
 
-              <label className="flex flex-col gap-1 sm:col-span-2">
+              <label className="flex flex-col gap-1">
                 <span className="text-xs font-medium app-text-muted">
-                  Regex de détection <span className="text-statut-congestionne">*</span>
+                  Mots-clés de détection <span className="text-statut-congestionne">*</span>
+                  <span className="ml-1 font-normal text-gray-400">(séparés par des virgules)</span>
                 </span>
                 <input
                   type="text"
-                  placeholder="Ex. incendie|explosion|feu de v"
-                  value={form.regex}
-                  onChange={(e) => setForm({ ...form, regex: e.target.value })}
-                  className="rounded border app-border px-3 py-2 text-sm app-surface font-mono"
+                  placeholder="Ex. incendie, explosion, feu de véhicule, fumée"
+                  value={form.mots}
+                  onChange={(e) => setForm({ ...form, mots: e.target.value })}
+                  className="rounded border app-border px-3 py-2 text-sm app-surface"
                 />
               </label>
 
-              <div className="flex items-end sm:col-span-2">
-                <button
-                  type="button"
-                  onClick={ajouter}
-                  disabled={
-                    enCours ||
-                    !form.libelle || form.libelle.length < 2 ||
-                    !form.regex || form.regex.length < 1
-                  }
-                  className="w-full rounded-md bg-paa-blue-500 px-4 py-2 text-sm font-semibold text-white
-                             shadow-paa-sm hover:bg-paa-blue-600 transition-colors
-                             disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {enCours ? "Ajout en cours…" : "Ajouter ce type"}
-                </button>
-              </div>
+              {/* Aperçu de la regex générée */}
+              {form.mots.trim() && (
+                <div className="rounded-md bg-gray-50 dark:bg-gray-800/60 border app-border px-3 py-2 text-xs">
+                  <span className="text-gray-500 dark:text-gray-400">Règle générée : </span>
+                  <span className="font-mono text-paa-navy-700 dark:text-paa-blue-300">
+                    {motsVersRegex(form.mots)}
+                  </span>
+                </div>
+              )}
+
+              {/* Lien vers le chatbot */}
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                💬 Vous ne savez pas quels mots-clés utiliser ?{" "}
+                <span className="text-paa-blue-600 dark:text-paa-blue-400">
+                  Demandez à l&apos;assistant PAA (bouton Aide en bas à droite) :
+                  « Quels mots-clés utiliser pour détecter des incidents de type{" "}
+                  {form.libelle || "…"} dans la presse ivoirienne ? »
+                </span>
+              </p>
+
+              <button
+                type="button"
+                onClick={ajouter}
+                disabled={
+                  enCours ||
+                  !form.libelle || form.libelle.length < 2 ||
+                  !form.mots.trim()
+                }
+                className="w-full rounded-md bg-paa-blue-500 px-4 py-2 text-sm font-semibold text-white
+                           shadow-paa-sm hover:bg-paa-blue-600 transition-colors
+                           disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {enCours ? "Ajout en cours…" : "Ajouter ce type"}
+              </button>
             </div>
 
             <p className="mt-3 text-xs app-text-muted">
-              ℹ️ Le classificateur NLP appliquera cette règle à la prochaine
+              ℹ️ Le classificateur NLP appliquera ces mots-clés à la prochaine
               exécution de l'enrichissement (automatique après chaque scraping).
             </p>
           </fieldset>
