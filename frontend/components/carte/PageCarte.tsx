@@ -30,12 +30,22 @@ const CarteLeaflet = dynamic(
 );
 
 export function PageCarte() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [etat, setEtat] = useState<CarteEtat | null>(null);
   const [selectionId, setSelectionId] = useState<number | null>(null);
 
   const handleEtat = useCallback((e: CarteEtat) => setEtat(e), []);
   const handleSelectionner = useCallback((id: number) => setSelectionId(id), []);
+
+  const sousTitre = (() => {
+    if (!etat) return t("carte.subtitle");
+    const nbAxes = etat.troncons.filter((tr) => tr.est_axe ?? (tr.id <= 6)).length;
+    const nbTroncons = etat.troncons.length - nbAxes;
+    if (locale === "fr") {
+      return `État instantané des ${nbAxes} axe${nbAxes > 1 ? "s" : ""}${nbTroncons > 0 ? ` et ${nbTroncons} tronçon${nbTroncons > 1 ? "s" : ""}` : ""} surveillés.`;
+    }
+    return `Real-time snapshot of ${nbAxes} ax${nbAxes > 1 ? "es" : "is"}${nbTroncons > 0 ? ` and ${nbTroncons} segment${nbTroncons > 1 ? "s" : ""}` : ""} monitored.`;
+  })();
 
   // Bloquer le scroll de la page — seul le panneau latéral défile
   useEffect(() => {
@@ -50,7 +60,7 @@ export function PageCarte() {
         <h1 className="text-fluid-2xl font-semibold text-paa-navy-900 dark:text-paa-blue-100">
           {t("carte.title")}
         </h1>
-        <p className="text-fluid-sm app-text-muted">{t("carte.subtitle")}</p>
+        <p className="text-fluid-sm app-text-muted">{sousTitre}</p>
       </div>
 
       <div className="grid gap-fluid-4 lg:grid-cols-3">

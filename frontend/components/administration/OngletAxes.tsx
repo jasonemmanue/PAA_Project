@@ -19,6 +19,7 @@ import dynamic from "next/dynamic";
 import { useState } from "react";
 
 import { Card } from "@/components/ui/Card";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import type { TronconAdmin } from "@/lib/types";
 
@@ -34,6 +35,7 @@ export function OngletAxes({
   troncons: TronconAdmin[];
   onChange: () => void;
 }) {
+  const { peutEcrire } = useAuth();
   const [nom, setNom] = useState<string>("");
   const [debut, setDebut] = useState<{ lat: number; lon: number } | null>(null);
   const [fin, setFin] = useState<{ lat: number; lon: number } | null>(null);
@@ -114,8 +116,9 @@ export function OngletAxes({
 
   return (
     <div className="flex flex-col gap-fluid-4">
-      {/* Formulaire de création */}
-      <Card
+      {/* Formulaire de création + carte interactive — masqués en mode lecture */}
+      {peutEcrire && (
+      <><Card
         titre="Créer un nouvel axe"
         description="Donnez un nom au tronçon, puis placez les markers Début et Fin en cliquant sur la carte (ou en saisissant les coordonnées)."
       >
@@ -274,6 +277,7 @@ export function OngletAxes({
           onClick={handleClickCarte}
         />
       </Card>
+      </>)}
 
       {/* Liste des axes et tronçons existants
           Fallback : si la migration 0013 n'est pas appliquée (est_axe undefined),

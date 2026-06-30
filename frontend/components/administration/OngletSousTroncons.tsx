@@ -12,6 +12,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 
 import { Card } from "@/components/ui/Card";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import type { SousTroncon, TronconAdmin } from "@/lib/types";
 
@@ -25,6 +26,7 @@ export function OngletSousTroncons({
 }: {
   troncons: TronconAdmin[];
 }) {
+  const { peutEcrire } = useAuth();
   const [parentId, setParentId] = useState<number | null>(null);
   const [sousTroncons, setSousTroncons] = useState<SousTroncon[]>([]);
   const [code, setCode] = useState<string>("");
@@ -145,8 +147,8 @@ export function OngletSousTroncons({
         </label>
       </Card>
 
-      {/* Formulaire de création */}
-      <Card
+      {/* Formulaire de création + carte — masqués en mode lecture */}
+      {peutEcrire && (<><Card
         titre={`Ajouter un sous-tronçon à ${parent?.nom ?? "…"}`}
         description={`Convention DEESP : T<n>A, T<n>B... (suggéré : ${codeSuggere}). Placez début et fin sur la polyline parent.`}
       >
@@ -284,6 +286,7 @@ export function OngletSousTroncons({
           onClick={handleClickCarte}
         />
       </Card>
+      </>)}
 
       {/* Liste des sous-tronçons */}
       <Card titre={`Sous-tronçons existants (${sousTroncons.length})`}>

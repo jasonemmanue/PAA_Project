@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { ImportSegmentsGpx } from "@/components/fiabilite/ImportSegmentsGpx";
 import { ResumeSegmentsBlock } from "@/components/fiabilite/ResumeSegments";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import { parserGpxTexte, type TraceGpx } from "@/lib/gpxClient";
 import { useI18n } from "@/lib/i18n";
@@ -53,6 +54,7 @@ async function chargerTracesDb(): Promise<TraceGpx[]> {
 
 export function PageFiabilite() {
   const { t } = useI18n();
+  const { peutEcrire } = useAuth();
   const [troncons, setTroncons] = useState<Troncon[]>([]);
   const [etatCarte, setEtatCarte] = useState<CarteEtat | null>(null);
   /** Traces persistées en base Railway (chargées au montage + après chaque import). */
@@ -93,15 +95,17 @@ export function PageFiabilite() {
         sousTitre={t("fiabilite.subtitle")}
       />
 
-      {/* Import segments GPX libres — la sélection de fichiers prévisualise sur la carte */}
-      <ImportSegmentsGpx
-        troncons={troncons}
-        onImporte={() => {
-          setCompteurSegments((n) => n + 1);
-          setTracesSelection([]); // les nouveaux fichiers sont maintenant en DB
-        }}
-        onTracesChange={setTracesSelection}
-      />
+      {/* Import segments GPX libres — masqué en mode lecture */}
+      {peutEcrire && (
+        <ImportSegmentsGpx
+          troncons={troncons}
+          onImporte={() => {
+            setCompteurSegments((n) => n + 1);
+            setTracesSelection([]); // les nouveaux fichiers sont maintenant en DB
+          }}
+          onTracesChange={setTracesSelection}
+        />
+      )}
 
       {/* Carte : traces DB persistées + fichiers sélectionnés en cours */}
       <CarteApercu
