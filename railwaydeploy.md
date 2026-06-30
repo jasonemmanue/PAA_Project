@@ -113,11 +113,24 @@ INFO:     100.64.x.x - "GET /health HTTP/1.1" 200 OK
 ### Déploiement frontend (code modifié)
 
 ```powershell
-# Le frontend est lié au repo GitHub → git push suffit
+# 1. Stager et committer (railway up utilise git ls-files)
 git add -A
 git commit -m "description du changement frontend"
-git push origin main
-# → Railway rebuild le frontend automatiquement
+
+# 2. Déployer le frontend (DEPUIS le dossier frontend/)
+cd frontend
+railway up --service frontend
+cd ..
+
+# 3. Suivre les logs
+railway logs --service frontend
+```
+
+**Healthcheck attendu :**
+```
+▲ Next.js 14.x.x
+✓ Ready in Xms
+Starting Container
 ```
 
 ---
@@ -440,15 +453,18 @@ curl -I https://frontend-production-xxxx.up.railway.app/
 
 Pour tout changement du frontend :
 ```powershell
+# 1. Stager + committer (obligatoire — railway up utilise git ls-files)
 git add frontend/
 git commit -m "feat: description du changement"
-git push origin main
-# Railway redéploie automatiquement via webhook GitHub
+
+# 2. Déployer depuis le dossier frontend/
+cd frontend
+railway up --service frontend
+cd ..
 ```
 
-> Railway surveille la branche `main`. Chaque push déclenche un rebuild automatique
-> du service frontend. Aucune commande `railway up` manuelle n'est nécessaire après
-> la configuration initiale.
+> `railway up --service frontend` est la **seule méthode fiable** par terminal.
+> `git push` ne déclenche pas de rebuild Railway de façon garantie.
 
 ---
 
@@ -480,7 +496,7 @@ restartPolicyMaxRetries = 10
 | # | Symptôme | Cause | Solution appliquée |
 |---|----------|-------|--------------------|
 | 1 | `railway up --service frontend` → `Service not found` | Le service n'existe pas encore — `railway up` ne le crée pas | Créer le service manuellement via le tableau de bord Railway (New → Empty service) |
-| 2 | `railway up` → `Failed to upload code 404 Not Found` | Le service est lié à GitHub → conflit avec l'upload direct | Ne pas utiliser `railway up` quand GitHub est la source. Déclencher via push GitHub ou bouton Deploy dans le dashboard |
+| 2 | ~~`railway up` → `Failed to upload code 404 Not Found`~~ | ~~Le service est lié à GitHub → conflit avec l'upload direct~~ | **Résolu** : `railway up --service frontend` depuis `frontend/` fonctionne, même service lié à GitHub. C'est la méthode officielle. |
 | 3 | Build bloqué : `SECURITY VULNERABILITIES DETECTED` | `next@14.2.33` dans `package-lock.json` contient CVE-2025-55184 et CVE-2025-67779 | `npm install next@14.2.35 --no-strict-ssl` → commit `package-lock.json` mis à jour |
 | 4 | `npm install next@14.2.35` → `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | Problème certificat SSL réseau entreprise | `npm install next@14.2.35 --no-strict-ssl` |
 | 5 | Premier déploiement ne se déclenche pas après création du service | Le webhook GitHub n'est pas actif avant le premier push APRÈS la création du service | Faire un commit vide (`git commit --allow-empty`) ou cliquer "Deploy" dans le dashboard |

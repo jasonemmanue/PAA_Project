@@ -1728,7 +1728,7 @@ Endpoints critiques backend :
 - `GET /carte/etat` → état des 6 tronçons
 - `GET /docs` → Swagger interactif
 
-**Redéploiement automatique** : tout push sur la branche `main` déclenche automatiquement le rebuild des deux services (webhook GitHub configuré sur Railway).
+**Déploiement par terminal** : `railway up --service <nom>` depuis le dossier du service. `git push` seul ne déclenche pas de rebuild Railway de façon fiable — toujours utiliser `railway up`.
 
 ### 8.2.1 Points d'attention déploiement Railway
 
@@ -1757,7 +1757,7 @@ cd frontend  &&  railway up --service frontend  &&  cd ..
 
 - **Vérification locale obligatoire avant tout déploiement** : `cd frontend && npm run build` doit réussir localement avant `railway up`.
 - **`startCommand = "npx next start -p $PORT"`** dans [frontend/railway.toml](frontend/railway.toml) : le frontend doit lancer Next.js sur le port dynamique fourni par Railway. Aucun port fixe ne doit être codé en dur.
-- **`railway up --service frontend` depuis `frontend/`** est la méthode fiable. `git push origin main` peut aussi déclencher le rebuild, mais sans garantie de cache invalidation.
+- **`railway up --service frontend` depuis `frontend/`** est la **seule méthode fiable par terminal**. `git push` ne déclenche pas de rebuild Railway.
 - **`NEXT_PUBLIC_*` = variables de build-time** — elles doivent être définies dans Railway **avant** le premier build. Ajouter une variable APRÈS le build déjà effectué n'a aucun effet : il faut redéclencher un déploiement complet.
 - **Vulnérabilités de sécurité bloquent le build** — Railway scan `package-lock.json`. Si un CVE est détecté, le build échoue avec `SECURITY VULNERABILITIES DETECTED`. Corriger dans `package-lock.json` (via `npm install <package>@<version>`) et pousser le lock file mis à jour.
 - **`builder = "RAILPACK"` dans `frontend/railway.toml`** — Railway a remplacé Nixpacks par Railpack. Utiliser `RAILPACK` (majuscules) pour que `railway.toml` soit lu entièrement (y compris `startCommand`).
