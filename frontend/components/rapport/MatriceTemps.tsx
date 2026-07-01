@@ -48,17 +48,6 @@ function formatMnSs(duree_s: number): string {
   return `${mn}:${String(ss).padStart(2, "0")}`;
 }
 
-function couleurCellule(duree_s: number, ref_s: number): string {
-  if (ref_s <= 0) return "";
-  const ratio = duree_s / ref_s;
-  if (ratio <= 1.0)
-    return "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200";
-  if (ratio <= 1.3)
-    return "bg-lime-100 dark:bg-lime-900/30 text-lime-800 dark:text-lime-200";
-  if (ratio <= 1.5)
-    return "bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200";
-  return "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200";
-}
 
 interface Props {
   campagne: string;
@@ -123,10 +112,6 @@ export function MatriceTemps({
   return (
     <Card
       titre="Temps de traversée — créneaux horaires × dates"
-      description={
-        `Plage DEESP 07h–19h. Durée réelle observée (toutes sources : google, terrain, historique). ` +
-        `Couleurs : 🟢 ≤ ref 50 km/h  🟡 +30 %  🟠 +50 %  🔴 > +50 %.`
-      }
     >
       {/* Barre d'outils */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -280,15 +265,14 @@ export function MatriceTemps({
                             </td>
                           );
                         }
-                        const cls = couleurCellule(cell.duree_s, ref_s);
                         return (
                           <td
                             key={d}
                             title={`${formatMnSs(cell.duree_s)} min (source : ${cell.source})`}
                             className={`px-1 py-1.5 text-center border-r border-gray-100
                                         dark:border-paa-navy-800 font-mono text-[11px]
-                                        ${we ? "opacity-80" : ""}
-                                        ${cls}`}
+                                        text-gray-900 dark:text-gray-100
+                                        ${we ? "opacity-80" : ""}`}
                           >
                             {formatMnSs(cell.duree_s)}
                           </td>
@@ -298,7 +282,7 @@ export function MatriceTemps({
                       <td
                         className={`px-2 py-1.5 text-center font-mono font-semibold text-[11px]
                                     border-l app-border
-                                    ${moy != null ? couleurCellule(moy, ref_s) : "app-text-muted"}`}
+                                    ${moy != null ? "text-gray-900 dark:text-gray-100" : "app-text-muted"}`}
                       >
                         {moy != null ? formatMnSs(moy) : "—"}
                       </td>
