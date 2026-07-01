@@ -282,6 +282,7 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P10.13** | ✅ Terminée (2026-06-29) | **Nettoyage code mort post-hackathon** — suppression du panneau "Mettre à jour les données pluriannuelles" dans `EvolutionPluriannuelle.tsx` (devenu inutile). Suppression du router `/import/*` (`backend/app/api/import_data.py`) : les 3 endpoints `POST /import/base-nettoyee`, `POST /import/evolution`, `POST /import/evolution-csv` n'avaient plus de caller frontend. Les scripts CLI `app/import_evolution.py` et `app/import_base_nettoyee.py` sont conservés. Renommage `NB JO` → `NB MESURES JO` et `NB WE` → `NB MESURES WE` dans `TableauTempsTraversee.tsx`. |
 | **P10.14** | ✅ Terminée (2026-06-29) | **Matrice congestion + fix PDF CORS + réordonnancement page DEESP** — Cf. § 13.1 et § 13.2. |
 | **P10.15** | ✅ Terminée (2026-06-30) | **Matrice temps de traversée + fix PDF Unicode + navigation 7 jours + import Excel mesures** — Cf. § 13.3. |
+| **P10.16** | ✅ Terminée (2026-07-01) | **Évolution pluriannuelle — mois passés reconstruits depuis Google** — dès qu'un mois calendaire complet totalise ≥ 50 mesures Google, il apparaît dans le graphique comme campagne historique. Fenêtre glissante 12 mois. Les imports Excel restent prioritaires en cas de doublon de période. Roulement automatique : Fév 2026 / Juin 2026 / Juil 2026 (en cours) dès le 2026-07-01 pour les 6 axes officiels. Cf. § 4.4.1. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -835,40 +836,101 @@ en valeur dans le pitch.
 | ~~P6.3~~ | ❌ Retiré (2026-06-23) | ~~Heure optimale d'acheminement~~ — module supprimé : code backend (`app/api/heure_optimale.py`, `app/predicteur/heure_optimale.py`) et UI (`OngletHeureOptimale.tsx`) retirés du dépôt. | — |
 | **P6.4** | ✅ Terminée | **Ajout de nouveaux parcours** — interface admin frontend + endpoint backend pour créer un nouveau tronçon sans redéploiement. | `POST /administration/troncons` |
 
-### 4.4.1 Évolution pluriannuelle dynamique par tronçon (P10.12 — 2026-06-29)
+### 4.4.1 Évolution pluriannuelle dynamique par tronçon (P10.12 — 2026-06-29, enrichi P10.16 — 2026-07-01)
 
 **Endpoint :** `GET /evolution/troncon/{id}` — tag Swagger « évolution pluriannuelle »
 
-**Réponse JSON :**
+#### Sources fusionnées (depuis P10.16 — 2026-07-01)
+
+Les campagnes historiques sont désormais construites à partir de **deux sources
+fusionnées** :
+
+1. **Import Excel** (`evolution_indicateur` — feuille `SYNTHESE COMPAREE`) —
+   autoritatif, disponible pour les 6 axes officiels DEESP.
+   `origine="import_excel"`.
+2. **Reconstruction depuis les mesures Google** — pour chaque mois calendaire
+   **complètement passé** (dans les 12 derniers mois) qui totalise ≥ 50 mesures
+   Google non aberrantes, un bloc `historique` est généré automatiquement
+   depuis la table `mesures`. `origine="mesures_google"`.
+
+**Règle de priorité :** si un même code période (ex. `fev_2026`) existe dans
+les deux sources, l'import Excel gagne (données autoritatives issues du
+protocole DEESP). Les mois reconstruits ne s'affichent donc que pour combler
+les trous entre deux campagnes ou pour prolonger l'historique après le dernier
+import.
+
+**Constantes backend** (`backend/app/api/evolution.py`) :
+- `_MIN_MESURES_MOIS_COMPLET = 50` — seuil de mesures Google pour qu'un mois
+  passé soit reconstruit.
+- `_NB_MOIS_PASSES_A_EXAMINER = 12` — fenêtre glissante des mois candidats à
+  la reconstruction.
+
+**Exemple concret (au 2026-07-01)** : avec l'import Excel `oct_2025` et
+`fev_2026`, et une collecte Google active depuis mi-juin 2026, les campagnes
+retournées par l'endpoint sont :
+- `oct_2025` (import Excel)
+- `fev_2026` (import Excel)
+- `jun_2026` (**reconstruit** — mois complet, terminé le 30 juin)
+- `jul_2026` (live — mois courant en cours)
+
+Le frontend applique `slice(-2)` sur les historiques → affiche **Fév 2026,
+Juin 2026, Juil 2026 (en cours)**. `Oct 2025` disparaît naturellement
+puisqu'il n'est plus dans les 2 plus récents.
+
+**Roulement automatique :** à chaque changement de mois, la roue tourne — le
+mois passé le plus récent devient un historique et le plus ancien des deux
+sort du graphique. Aucun code ni redéploiement n'est requis. Un cron ou une
+tâche périodique n'est pas nécessaire non plus, la reconstruction est
+recalculée à chaque appel de l'endpoint (`n_troncons × n_mois × 1 SELECT`,
+négligeable en temps CPU/DB).
+
+#### Réponse JSON
 
 ```json
 {
   "troncon_id": 1,
   "troncon_nom": "CARENA → Pharmacie Palm Beach",
   "a_donnees_historiques": true,
+  "a_import_excel": true,
   "campagnes": [
     {
       "periode": "fev_2026",
       "periode_label": "Fév 2026",
       "source": "historique",
+      "origine": "import_excel",
       "jours_ouvrables": { "min_mn": 18.2, "moyen_mn": 22.5, "max_mn": 31.0 },
       "week_ends": { "min_mn": 15.0, "moyen_mn": 19.2, "max_mn": 26.0 }
     },
     {
       "periode": "jun_2026",
-      "periode_label": "Juin 2026 (en cours)",
-      "source": "live",
+      "periode_label": "Juin 2026",
+      "source": "historique",
+      "origine": "mesures_google",
       "debut": "2026-06-01",
-      "fin": "2026-06-29",
-      "nb_mesures_total": 87,
-      "jours_ouvrables": { "min_mn": 17.0, "moyen_mn": 21.3, "max_mn": 29.0, "nb_mesures": 67 },
-      "week_ends": { "min_mn": 14.5, "moyen_mn": 18.0, "max_mn": 24.5, "nb_mesures": 20 }
+      "fin": "2026-06-30",
+      "nb_mesures_total": 264,
+      "jours_ouvrables": { "min_mn": 18.0, "moyen_mn": 21.5, "max_mn": 28.5, "nb_mesures": 190 },
+      "week_ends": { "min_mn": 15.5, "moyen_mn": 17.2, "max_mn": 24.0, "nb_mesures": 74 }
+    },
+    {
+      "periode": "jul_2026",
+      "periode_label": "Juil 2026 (en cours)",
+      "source": "live",
+      "origine": "mesures_google",
+      "debut": "2026-07-01",
+      "fin": "2026-07-01",
+      "nb_mesures_total": 24,
+      "jours_ouvrables": { "min_mn": 18.5, "moyen_mn": 21.0, "max_mn": 26.0, "nb_mesures": 24 },
+      "week_ends": null
     }
   ]
 }
 ```
 
-**Mapping tronçon → axe+sens (`backend/app/api/evolution.py`, `_TRONCON_VERS_AXE_SENS`) :**
+#### Mapping tronçon → axe+sens
+
+Pour les 6 axes officiels DEESP (`backend/app/api/evolution.py`,
+`_TRONCON_VERS_AXE_SENS`) :
 
 | `troncon_id` | `axe` | `sens` |
 |---|---|---|
@@ -878,11 +940,23 @@ en valeur dans le pitch.
 | 4 | Toyota CFAO → Pharmacie Palm Beach | Retour |
 | 5 | Agence SODECI → Pharmacie Palm Beach | Aller |
 | 6 | Agence SODECI → Pharmacie Palm Beach | Retour |
-| > 6 | — pas de données historiques — | — |
+| > 6 | pas d'import Excel — reconstruit uniquement depuis les mesures Google | — |
 
-**Fenêtre glissante automatique :** les campagnes historiques sont triées chronologiquement ; le frontend n'affiche que les **2 plus récentes** (`slice(-2)`). Quand une 3e campagne (ex. oct_2026) sera importée, Oct 2025 disparaîtra automatiquement du graphique — sans modification de code.
+**Tronçons > 6 (créés via Administration)** : n'ont pas d'entrée dans
+`evolution_indicateur`, mais bénéficient désormais de la reconstruction
+automatique — dès qu'un mois calendaire complet est collecté, il apparaît
+dans le graphique.
 
-**Mois courant en temps réel :** calculé depuis la table `mesures` (source=`google`, `aberrante=False`, depuis le 1er du mois calendaire courant en heure Africa/Abidjan). Polling frontend toutes les **5 minutes**.
+#### Comportement frontend
+
+- **Polling** du mois courant toutes les **5 minutes** (`POLLING_MS`).
+- `slice(-2)` sur `campagnes.filter(c => c.source === "historique")` — les 2
+  plus récents historiques (triés chronologiquement par le backend).
+- Ajout du mois courant `source="live"` en dernier → 3 barres au total.
+- Badge `● en cours` sous le label de la campagne live.
+- Message d'avertissement (fond ambre) si `a_donnees_historiques === false` :
+  informe que les mois passés apparaîtront dès qu'un mois calendaire complet
+  aura été collecté (≥ 50 mesures).
 
 ### 4.7 Page « Temps de traversée par période » (P6.2 refondu — 2026-06-24)
 

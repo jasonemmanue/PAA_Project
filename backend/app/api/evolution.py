@@ -9,7 +9,8 @@ Endpoints :
 from __future__ import annotations
 
 import statistics
-from datetime import datetime, time, timezone
+from calendar import monthrange
+from datetime import date, datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -23,6 +24,13 @@ from app.models.models import EvolutionIndicateur, Mesure, SourceMesure, Troncon
 
 
 router = APIRouter(prefix="/evolution", tags=["évolution pluriannuelle"])
+
+# Seuil minimal de mesures Google pour qu'un mois passé soit reconstruit
+# comme campagne "historique" depuis les mesures collectées.
+_MIN_MESURES_MOIS_COMPLET = 50
+
+# Nombre de mois passés à examiner pour compléter les campagnes historiques.
+_NB_MOIS_PASSES_A_EXAMINER = 12
 
 # ---------------------------------------------------------------------------
 # Mapping tronçon id → (axe, sens) dans la table evolution_indicateur.
@@ -66,26 +74,29 @@ def _periode_label(periode: str) -> str:
     return periode
 
 
+_MOIS_ABBR = ["jan", "fev", "mar", "avr", "mai", "jun",
+              "jul", "aou", "sep", "oct", "nov", "dec"]
+
+
+def _code_periode(annee: int, mois: int) -> str:
+    """Retourne le code periode ex. 'jun_2026' pour (2026, 6)."""
+    return f"{_MOIS_ABBR[mois - 1]}_{annee}"
+
+
 def _code_mois_courant(fuseau: ZoneInfo) -> str:
     """Retourne le code periode du mois courant, ex. 'jun_2026'."""
     maintenant = datetime.now(tz=fuseau)
-    mois_abbr = ["jan", "fev", "mar", "avr", "mai", "jun",
-                 "jul", "aou", "sep", "oct", "nov", "dec"]
-    return f"{mois_abbr[maintenant.month - 1]}_{maintenant.year}"
+    return _code_periode(maintenant.year, maintenant.month)
 
 
-def _stats_mois_courant_par_troncon(
-    db: Session, troncon_id: int
+def _stats_periode_par_troncon(
+    db: Session,
+    troncon_id: int,
+    debut_utc: datetime,
+    fin_utc: datetime,
 ) -> dict[str, Any]:
-    """Stats min/moyen/max depuis le 1er du mois courant, par type de jour."""
+    """Stats min/moyen/max sur une fenêtre UTC arbitraire, par type de jour local."""
     fuseau = ZoneInfo(get_settings().tz)
-    maintenant_local = datetime.now(tz=fuseau)
-    maintenant_utc = maintenant_local.astimezone(timezone.utc)
-
-    debut_mois_date = maintenant_local.date().replace(day=1)
-    debut_mois_utc = datetime.combine(
-        debut_mois_date, time(0, 0), tzinfo=fuseau
-    ).astimezone(timezone.utc)
 
     rows = list(
         db.execute(
@@ -95,8 +106,8 @@ def _stats_mois_courant_par_troncon(
                 Mesure.source == SourceMesure.google,
                 Mesure.duree_trafic_s.is_not(None),
                 Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_mois_utc,
-                Mesure.horodatage <= maintenant_utc,
+                Mesure.horodatage >= debut_utc,
+                Mesure.horodatage <= fin_utc,
             )
         ).all()
     )
@@ -124,11 +135,52 @@ def _stats_mois_courant_par_troncon(
         }
 
     return {
-        "debut": debut_mois_date.isoformat(),
-        "fin": maintenant_local.date().isoformat(),
         "jour_ouvrable": _calc(par_type["jour_ouvrable"]),
         "week_end": _calc(par_type["week_end"]),
         "nb_mesures_total": len(rows),
+    }
+
+
+def _stats_mois_courant_par_troncon(
+    db: Session, troncon_id: int
+) -> dict[str, Any]:
+    """Stats min/moyen/max depuis le 1er du mois courant jusqu'à maintenant."""
+    fuseau = ZoneInfo(get_settings().tz)
+    maintenant_local = datetime.now(tz=fuseau)
+    debut_mois_date = maintenant_local.date().replace(day=1)
+    debut_mois_utc = datetime.combine(
+        debut_mois_date, time(0, 0), tzinfo=fuseau
+    ).astimezone(timezone.utc)
+    fin_utc = maintenant_local.astimezone(timezone.utc)
+
+    stats = _stats_periode_par_troncon(db, troncon_id, debut_mois_utc, fin_utc)
+    return {
+        "debut": debut_mois_date.isoformat(),
+        "fin": maintenant_local.date().isoformat(),
+        **stats,
+    }
+
+
+def _stats_mois_complet_par_troncon(
+    db: Session, troncon_id: int, annee: int, mois: int
+) -> dict[str, Any]:
+    """Stats min/moyen/max pour un mois calendaire complet passé."""
+    fuseau = ZoneInfo(get_settings().tz)
+    dernier_jour = monthrange(annee, mois)[1]
+    debut_date = date(annee, mois, 1)
+    fin_date = date(annee, mois, dernier_jour)
+    debut_utc = datetime.combine(
+        debut_date, time(0, 0), tzinfo=fuseau
+    ).astimezone(timezone.utc)
+    fin_utc = datetime.combine(
+        fin_date, time(23, 59, 59), tzinfo=fuseau
+    ).astimezone(timezone.utc)
+
+    stats = _stats_periode_par_troncon(db, troncon_id, debut_utc, fin_utc)
+    return {
+        "debut": debut_date.isoformat(),
+        "fin": fin_date.isoformat(),
+        **stats,
     }
 
 
@@ -141,10 +193,17 @@ def _stats_mois_courant_par_troncon(
     "/troncon/{troncon_id}",
     summary="Évolution pluriannuelle par tronçon — historique + mois courant",
     description=(
-        "Retourne les campagnes de mesure passées (depuis `evolution_indicateur`) "
-        "pour le tronçon sélectionné, triées chronologiquement, plus les statistiques "
-        "du mois calendaire courant calculées en temps réel depuis la table `mesures`. "
-        "Le frontend affiche les 2 campagnes complètes les plus récentes + le mois courant."
+        "Retourne les campagnes de mesure passées pour le tronçon sélectionné, "
+        "triées chronologiquement, plus les statistiques du mois calendaire courant "
+        "calculées en temps réel depuis la table `mesures`.\n\n"
+        "Les campagnes historiques proviennent de deux sources fusionnées : "
+        "1) les campagnes importées manuellement dans `evolution_indicateur` "
+        "(Excel `SYNTHESE COMPAREE` — autoritatives) ; "
+        "2) les mois calendaires **complets déjà passés** reconstruits automatiquement "
+        f"depuis les mesures Google (seuil ≥ {_MIN_MESURES_MOIS_COMPLET} mesures, "
+        f"fenêtre {_NB_MOIS_PASSES_A_EXAMINER} derniers mois). En cas de doublon "
+        "de période, l'import Excel a la priorité.\n\n"
+        "Le frontend affiche les 2 campagnes historiques les plus récentes + le mois courant."
     ),
 )
 async def evolution_par_troncon(
@@ -160,8 +219,9 @@ async def evolution_par_troncon(
 
     fuseau = ZoneInfo(get_settings().tz)
 
-    # --- Données historiques (table evolution_indicateur) ---
-    campagnes_historiques: list[dict] = []
+    # --- 1. Campagnes historiques importées (evolution_indicateur) ---
+    par_code_periode: dict[str, dict] = {}
+    a_donnees_importees = False
     mapping = _TRONCON_VERS_AXE_SENS.get(troncon_id)
     if mapping is not None:
         axe_nom, sens_nom = mapping
@@ -177,31 +237,71 @@ async def evolution_par_troncon(
         )
 
         # Regroupe par période → { type_jour: {min, moyen, max} }
-        par_periode: dict[str, dict] = {}
+        par_periode_import: dict[str, dict] = {}
         for l in lignes:
-            if l.periode not in par_periode:
-                par_periode[l.periode] = {"jours_ouvrables": None, "week_ends": None}
+            if l.periode not in par_periode_import:
+                par_periode_import[l.periode] = {"jours_ouvrables": None, "week_ends": None}
             bloc = {
                 "min_mn": round(l.temps_min_s / 60, 1) if l.temps_min_s is not None else None,
                 "moyen_mn": round(l.temps_moyen_s / 60, 1) if l.temps_moyen_s is not None else None,
                 "max_mn": round(l.temps_max_s / 60, 1) if l.temps_max_s is not None else None,
             }
             if l.type_jour == "Jours ouvrables":
-                par_periode[l.periode]["jours_ouvrables"] = bloc
+                par_periode_import[l.periode]["jours_ouvrables"] = bloc
             elif l.type_jour == "Week-ends":
-                par_periode[l.periode]["week_ends"] = bloc
+                par_periode_import[l.periode]["week_ends"] = bloc
 
-        # Tri chronologique
-        for periode, blocs in sorted(par_periode.items(), key=lambda x: _periode_sort_key(x[0])):
-            campagnes_historiques.append({
+        for periode, blocs in par_periode_import.items():
+            par_code_periode[periode] = {
                 "periode": periode,
                 "periode_label": _periode_label(periode),
                 "source": "historique",
+                "origine": "import_excel",
                 "jours_ouvrables": blocs["jours_ouvrables"],
                 "week_ends": blocs["week_ends"],
-            })
+            }
+            a_donnees_importees = True
 
-    # --- Mois courant (table mesures, temps réel) ---
+    # --- 2. Mois calendaires complets passés reconstruits depuis mesures Google ---
+    #     N'écrase JAMAIS un import Excel pour la même période (autoritatif).
+    maintenant = datetime.now(tz=fuseau)
+    for delta_mois in range(1, _NB_MOIS_PASSES_A_EXAMINER + 1):
+        # Recule de `delta_mois` mois par rapport au mois courant
+        annee_cible = maintenant.year
+        mois_cible = maintenant.month - delta_mois
+        while mois_cible <= 0:
+            mois_cible += 12
+            annee_cible -= 1
+
+        code_p = _code_periode(annee_cible, mois_cible)
+        if code_p in par_code_periode:
+            continue  # import Excel prioritaire
+
+        stats_m = _stats_mois_complet_par_troncon(
+            db, troncon_id, annee_cible, mois_cible
+        )
+        if stats_m["nb_mesures_total"] < _MIN_MESURES_MOIS_COMPLET:
+            continue
+
+        par_code_periode[code_p] = {
+            "periode": code_p,
+            "periode_label": _periode_label(code_p),
+            "source": "historique",
+            "origine": "mesures_google",
+            "debut": stats_m["debut"],
+            "fin": stats_m["fin"],
+            "nb_mesures_total": stats_m["nb_mesures_total"],
+            "jours_ouvrables": stats_m["jour_ouvrable"],
+            "week_ends": stats_m["week_end"],
+        }
+
+    # Tri chronologique global des historiques (import + reconstruit)
+    campagnes_historiques = sorted(
+        par_code_periode.values(),
+        key=lambda c: _periode_sort_key(c["periode"]),
+    )
+
+    # --- 3. Mois courant (table mesures, temps réel) ---
     code_mois = _code_mois_courant(fuseau)
     stats_live = _stats_mois_courant_par_troncon(db, troncon_id)
 
@@ -209,6 +309,7 @@ async def evolution_par_troncon(
         "periode": code_mois,
         "periode_label": f"{_periode_label(code_mois)} (en cours)",
         "source": "live",
+        "origine": "mesures_google",
         "debut": stats_live["debut"],
         "fin": stats_live["fin"],
         "nb_mesures_total": stats_live["nb_mesures_total"],
@@ -219,7 +320,10 @@ async def evolution_par_troncon(
     return {
         "troncon_id": troncon_id,
         "troncon_nom": troncon.nom,
+        # True si au moins une campagne historique existe (import ou reconstruite)
         "a_donnees_historiques": len(campagnes_historiques) > 0,
+        # Compatibilité : indique s'il existe un import Excel manuel pour ce tronçon
+        "a_import_excel": a_donnees_importees,
         "campagnes": campagnes_historiques + [campagne_live],
     }
 

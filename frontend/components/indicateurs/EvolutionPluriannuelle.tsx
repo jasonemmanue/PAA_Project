@@ -44,6 +44,9 @@ interface Campagne {
   periode: string;
   periode_label: string;
   source: "historique" | "live";
+  // "import_excel" = importé depuis SYNTHESE COMPAREE (autoritatif)
+  // "mesures_google" = mois complet reconstruit depuis les mesures Google, ou mois courant live
+  origine?: "import_excel" | "mesures_google";
   debut?: string;
   fin?: string;
   nb_mesures_total?: number;
@@ -55,6 +58,7 @@ interface EvolutionTronconResponse {
   troncon_id: number;
   troncon_nom: string;
   a_donnees_historiques: boolean;
+  a_import_excel?: boolean;
   campagnes: Campagne[];
 }
 
@@ -276,8 +280,10 @@ export function EvolutionPluriannuelle({ tronconId }: Props) {
           {/* Message si pas de données historiques pour ce tronçon */}
           {data && !data.a_donnees_historiques && (
             <p className="mt-2 rounded-md border app-border bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2 text-fluid-xs text-amber-700 dark:text-amber-400">
-              ℹ️ Pas de campagne historique pour ce tronçon. Seul le mois courant est affiché.
-              Les données pluriannuelles sont disponibles uniquement pour les 6 axes officiels DEESP.
+              ℹ️ Aucune campagne historique disponible pour ce tronçon (ni import Excel,
+              ni mois complet passé avec assez de mesures Google). Seul le mois courant
+              est affiché. Les mois passés apparaîtront automatiquement dès qu'un mois
+              calendaire complet aura été collecté (≥ 50 mesures).
             </p>
           )}
         </>
