@@ -309,7 +309,7 @@ export function PagePrediction() {
                             {locale === "fr" ? `7 dern. ${typeJourLabel}` : `last 7 ${typeJourLabel}`}
                           </div>
                         </div>
-                        <div className="rounded-lg border-2 border-paa-blue-300 dark:border-paa-blue-600 p-3 bg-paa-blue-50/50 dark:bg-paa-blue-950/10 shadow-sm">
+                        <div className="rounded-lg border-2 border-paa-blue-300 dark:border-paa-blue-600 p-3 bg-paa-blue-50/50 dark:bg-slate-800/60 shadow-sm">
                           <div className="text-[10px] font-semibold uppercase tracking-wider text-paa-blue-600 dark:text-paa-blue-300 mb-1">
                             {t("prediction.labelMoy")}
                           </div>
