@@ -114,16 +114,14 @@ export function PageIncidents() {
     (i) => i.actif && i.lat != null && i.lon != null
   );
 
-  // Accidents groupés par mois (format "YYYY-MM")
-  const accidentsParMois: { mois: string; nb: number }[] = (() => {
+  // Incidents groupés par mois (format "YYYY-MM")
+  const incidentsParMois: { mois: string; nb: number }[] = (() => {
     const carte = new Map<string, number>();
-    incidents
-      .filter((i) => i.type_incident === "accident")
-      .forEach((i) => {
-        const d = new Date(i.horodatage_publication);
-        const cle = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        carte.set(cle, (carte.get(cle) ?? 0) + 1);
-      });
+    incidents.forEach((i) => {
+      const d = new Date(i.horodatage_publication);
+      const cle = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      carte.set(cle, (carte.get(cle) ?? 0) + 1);
+    });
     return Array.from(carte.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([mois, nb]) => ({ mois, nb }));
@@ -232,23 +230,23 @@ export function PageIncidents() {
       <GestionSources />
       <GestionTypes onTypeChange={chargerTypes} />
 
-      {/* Accidents par mois */}
-      {accidentsParMois.length > 0 && (
+      {/* Incidents par mois */}
+      {incidentsParMois.length > 0 && (
         <div className="paa-card p-4">
           <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-            Accidents par mois
+            Incidents par mois
           </h2>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={accidentsParMois} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+            <BarChart data={incidentsParMois} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" />
               <XAxis dataKey="mois" tick={{ fontSize: 11 }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
               <Tooltip
-                formatter={(v: number) => [`${v} accident(s)`, "Accidents"]}
+                formatter={(v: number) => [`${v} incident(s)`, "Incidents"]}
                 labelFormatter={(l) => `Mois : ${l}`}
               />
-              <Bar dataKey="nb" name="Accidents" radius={[3, 3, 0, 0]}>
-                {accidentsParMois.map((_entry, i) => (
+              <Bar dataKey="nb" name="Incidents" radius={[3, 3, 0, 0]}>
+                {incidentsParMois.map((_entry, i) => (
                   <Cell key={i} fill="#dc2626" />
                 ))}
               </Bar>
