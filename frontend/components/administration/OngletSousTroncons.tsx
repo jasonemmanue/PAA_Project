@@ -298,49 +298,75 @@ export function OngletSousTroncons({
       </Card>
       </>)}
 
-      {/* Liste des sous-tronçons */}
-      <Card titre={`Tronçons existants (${sousTroncons.length})`}>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-fluid-sm">
-            <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
-              <tr className="text-left">
-                <th className="px-3 py-2 font-medium">Code</th>
-                <th className="px-3 py-2 font-medium">Nom court</th>
-                <th className="px-3 py-2 font-medium text-right">Ordre</th>
-                <th className="px-3 py-2 font-medium text-right">Distance</th>
-                <th className="px-3 py-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sousTroncons.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-3 py-4 text-center app-text-muted text-fluid-xs">
-                    Aucun tronçon défini pour cet axe.
-                  </td>
-                </tr>
-              ) : (
-                sousTroncons.map((s) => (
-                  <tr key={s.id} className="border-t app-border">
-                    <td className="px-3 py-2 font-mono font-semibold">{s.code}</td>
-                    <td className="px-3 py-2">{s.nom_court}</td>
-                    <td className="px-3 py-2 text-right">{s.ordre}</td>
-                    <td className="px-3 py-2 text-right">{s.distance_m} m</td>
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={() => archiver(s)}
-                        className="text-fluid-xs text-statut-congestionne hover:underline"
-                      >
-                        🗄 Archiver
-                      </button>
-                    </td>
+      {/* Liste des tronçons : sous-tronçons codifiés + tronçons supplémentaires */}
+      {(() => {
+        const tronconsSupp = troncons.filter((t) => t.actif && !(t.est_axe ?? (t.id <= 6)));
+        const nbTotal = sousTroncons.length + tronconsSupp.length;
+        return (
+          <Card titre={`Tronçons existants (${nbTotal})`}>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-fluid-sm">
+                <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
+                  <tr className="text-left">
+                    <th className="px-3 py-2 font-medium">Code</th>
+                    <th className="px-3 py-2 font-medium">Nom</th>
+                    <th className="px-3 py-2 font-medium text-right">Distance</th>
+                    <th className="px-3 py-2 font-medium">Type</th>
+                    <th className="px-3 py-2 font-medium">Actions</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                </thead>
+                <tbody>
+                  {nbTotal === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-4 text-center app-text-muted text-fluid-xs">
+                        Aucun tronçon défini pour cet axe.
+                      </td>
+                    </tr>
+                  ) : (<>
+                    {sousTroncons.map((s) => (
+                      <tr key={`st-${s.id}`} className="border-t app-border">
+                        <td className="px-3 py-2 font-mono font-semibold">{s.code}</td>
+                        <td className="px-3 py-2">{s.nom_court}</td>
+                        <td className="px-3 py-2 text-right">{s.distance_m} m</td>
+                        <td className="px-3 py-2">
+                          <span className="inline-block rounded bg-paa-blue-100 px-2 py-0.5 text-fluid-xs font-medium text-paa-navy-800 dark:bg-paa-navy-700 dark:text-paa-blue-100">
+                            Codifié
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <button type="button" onClick={() => archiver(s)}
+                            className="text-fluid-xs text-statut-congestionne hover:underline">
+                            Archiver
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {tronconsSupp.map((t) => (
+                      <tr key={`tr-${t.id}`} className="border-t app-border">
+                        <td className="px-3 py-2 font-mono font-semibold text-paa-blue-500">T{t.id}</td>
+                        <td className="px-3 py-2">{t.nom}</td>
+                        <td className="px-3 py-2 text-right">{t.distance_km} km</td>
+                        <td className="px-3 py-2">
+                          <span className="inline-block rounded bg-amber-100 px-2 py-0.5 text-fluid-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                            Supplémentaire
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className="inline-block h-3 w-3 rounded-full border app-border align-middle mr-1"
+                            style={{ backgroundColor: t.couleur }}
+                          />
+                          <span className="text-fluid-xs app-text-muted">Actif</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </>)}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* Récapitulatif de tous les axes et tronçons */}
       <Card titre={(() => {
