@@ -207,7 +207,7 @@
     "labelMoyen": "Moyen",
     "labelMoy": "Moy.",
     "labelMax": "Max",
-    "uniteMn": "mn",
+    "uniteMn": "min",
     "confrontationTitre": "Confrontation — Terrain mesuré (GPX)",
     "confrontationDesc": "Temps réellement parcourus en voiture — comparez avec les valeurs Google Maps ci-dessus.",
     "aucuneSessionImport": "Aucune session terrain importée — importez des fichiers GPX via la page",

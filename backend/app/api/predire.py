@@ -33,8 +33,8 @@ from app.predicteur.profils import (
 
 router = APIRouter(prefix="/predire", tags=["temps de traversée par période"])
 
-# Plage horaire DEESP (7h inclus, 19h exclus)
-_H_DEBUT, _H_FIN = 7, 19
+# Plage horaire par défaut : 24h/24 (anciennement 7h-19h DEESP)
+_H_DEBUT, _H_FIN = 0, 24
 
 
 @router.get(
@@ -155,6 +155,8 @@ async def get_heure_optimale(
         "jour_ouvrable",
         description="'jour_ouvrable', 'week_end' ou 'tous'",
     ),
+    heure_debut: int = Query(0, ge=0, le=23, description="Heure de début de la plage (incluse). Défaut 0 = 24h/24."),
+    heure_fin: int = Query(24, ge=1, le=24, description="Heure de fin de la plage (exclue). Défaut 24 = 24h/24."),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     troncon = db.get(Troncon, troncon_id)
@@ -190,8 +192,8 @@ async def get_heure_optimale(
                 ProfilHoraire.troncon_id == troncon_id,
                 ProfilHoraire.fenetre_jours == 30,
                 ProfilHoraire.jour_semaine.in_(jours_filtre),
-                ProfilHoraire.heure >= _H_DEBUT,
-                ProfilHoraire.heure < _H_FIN,
+                ProfilHoraire.heure >= heure_debut,
+                ProfilHoraire.heure < heure_fin,
                 ProfilHoraire.nb_mesures > 0,
             )
             .group_by(ProfilHoraire.heure)
@@ -236,7 +238,7 @@ async def get_heure_optimale(
         for m in mesures_db:
             h_local = m.horodatage.astimezone(fuseau).hour
             weekday = m.horodatage.astimezone(fuseau).weekday()
-            if _H_DEBUT <= h_local < _H_FIN and weekday in jours_filtre:
+            if heure_debut <= h_local < heure_fin and weekday in jours_filtre:
                 buckets[h_local].append(m.duree_trafic_s)
 
         for h in sorted(buckets.keys()):

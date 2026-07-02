@@ -77,6 +77,8 @@ interface Props {
   tronconId: number | null;
   troncons: Troncon[];
   onTronconChange: (id: number) => void;
+  heureDebut?: number;
+  heureFin?: number;
 }
 
 export function MatriceCongestion({
@@ -86,6 +88,8 @@ export function MatriceCongestion({
   tronconId,
   troncons,
   onTronconChange,
+  heureDebut = 0,
+  heureFin = 24,
 }: Props) {
   const [data, setData] = useState<MatriceData | null>(null);
   const [chargement, setChargement] = useState(false);
@@ -103,6 +107,8 @@ export function MatriceCongestion({
         debut: debutRange,
         fin: finRange,
       });
+      if (heureDebut !== 0) params.set("heure_debut", String(heureDebut));
+      if (heureFin !== 24) params.set("heure_fin", String(heureFin));
       const rep = await fetch(`${API_BASE}/rapport/matrice-congestion?${params.toString()}`);
       if (!rep.ok) {
         const txt = await rep.text().catch(() => "");
@@ -114,7 +120,7 @@ export function MatriceCongestion({
     } finally {
       setChargement(false);
     }
-  }, [campagne, debutRange, finRange, tronconId]);
+  }, [campagne, debutRange, finRange, tronconId, heureDebut, heureFin]);
 
   useEffect(() => {
     setFenetre(0); // reset au changement de période
@@ -132,7 +138,7 @@ export function MatriceCongestion({
   return (
     <Card
       titre="Analyse détaillée des congestions — créneaux horaires × dates"
-      description="Plage DEESP 07h–19h. 🟥 Congestionné  🟩 Fluide  ◻ Indéterminé (pas de données couleur)  — Sans mesure. Les week-ends sont sur fond grisé."
+      description={`Plage ${heureDebut === 0 && heureFin === 24 ? "24h/24" : `${String(heureDebut).padStart(2, "0")}h–${String(heureFin).padStart(2, "0")}h`}. 🟥 Congestionné  🟩 Fluide  ◻ Indéterminé (pas de données couleur)  — Sans mesure. Les week-ends sont sur fond grisé.`}
     >
       {/* Sélecteur de tronçon */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -308,7 +314,7 @@ export function MatriceCongestion({
 
       {!chargement && data && data.tranches.length === 0 && (
         <p className="text-fluid-sm app-text-muted">
-          Aucune mesure dans la plage DEESP (07h–19h) pour ce tronçon sur la période sélectionnée.
+          Aucune mesure dans la plage {heureDebut === 0 && heureFin === 24 ? "24h/24" : `${String(heureDebut).padStart(2, "0")}h–${String(heureFin).padStart(2, "0")}h`} pour ce tronçon sur la période sélectionnée.
         </p>
       )}
     </Card>

@@ -56,6 +56,8 @@ interface Props {
   tronconId: number | null;
   troncons: Troncon[];
   onTronconChange: (id: number) => void;
+  heureDebut?: number;
+  heureFin?: number;
 }
 
 export function MatriceTemps({
@@ -65,6 +67,8 @@ export function MatriceTemps({
   tronconId,
   troncons,
   onTronconChange,
+  heureDebut = 0,
+  heureFin = 24,
 }: Props) {
   const [data, setData] = useState<MatriceTempsData | null>(null);
   const [chargement, setChargement] = useState(false);
@@ -83,6 +87,8 @@ export function MatriceTemps({
         debut: debutRange,
         fin: finRange,
       });
+      if (heureDebut !== 0) params.set("heure_debut", String(heureDebut));
+      if (heureFin !== 24) params.set("heure_fin", String(heureFin));
       const rep = await fetch(`${API_BASE}/rapport/matrice-temps?${params.toString()}`);
       if (!rep.ok) {
         const txt = await rep.text().catch(() => "");
@@ -94,7 +100,7 @@ export function MatriceTemps({
     } finally {
       setChargement(false);
     }
-  }, [campagne, debutRange, finRange, tronconId]);
+  }, [campagne, debutRange, finRange, tronconId, heureDebut, heureFin]);
 
   useEffect(() => {
     charger();
@@ -298,7 +304,7 @@ export function MatriceTemps({
 
       {!chargement && data && data.tranches.length === 0 && (
         <p className="text-fluid-sm app-text-muted">
-          Aucune mesure dans la plage DEESP (07h–19h) pour ce tronçon sur la période sélectionnée.
+          Aucune mesure dans la plage {heureDebut === 0 && heureFin === 24 ? "24h/24" : `${String(heureDebut).padStart(2, "0")}h–${String(heureFin).padStart(2, "0")}h`} pour ce tronçon sur la période sélectionnée.
         </p>
       )}
     </Card>

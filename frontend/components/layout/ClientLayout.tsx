@@ -6,6 +6,7 @@ import { PasswordGate } from "@/components/auth/PasswordGate";
 import { AppShell } from "@/components/layout/AppShell";
 import { SplashScreen } from "@/components/SplashScreen";
 import { AuthProvider, type NiveauAcces } from "@/contexts/AuthContext";
+import { PlageHoraireProvider } from "@/contexts/PlageHoraireContext";
 
 interface Props {
   children: React.ReactNode;
@@ -24,8 +25,10 @@ export function ClientLayout({ children }: Props) {
 
   return (
     <AuthProvider niveau={niveau}>
-      <AppShell>{children}</AppShell>
-      <SplashScreen />
+      <PlageHoraireProvider>
+        <AppShell>{children}</AppShell>
+        <SplashScreen />
+      </PlageHoraireProvider>
     </AuthProvider>
   );
 }

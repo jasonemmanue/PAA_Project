@@ -391,10 +391,14 @@ export function getRapportTempsTraversee(
   campagne: string,
   debut?: string,
   fin?: string,
+  heureDebut = 0,
+  heureFin = 24,
 ): Promise<RapportTempsTraversee> {
   const p = new URLSearchParams({ campagne });
   if (debut) p.set("debut", debut);
   if (fin) p.set("fin", fin);
+  if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
+  if (heureFin !== 24) p.set("heure_fin", String(heureFin));
   return appel<RapportTempsTraversee>(`/rapport/temps-traversee?${p}`);
 }
 
@@ -402,10 +406,14 @@ export function getRapportZonesCongestionnees(
   campagne: string,
   debut?: string,
   fin?: string,
+  heureDebut = 0,
+  heureFin = 24,
 ): Promise<RapportZonesCongestionnees> {
   const p = new URLSearchParams({ campagne });
   if (debut) p.set("debut", debut);
   if (fin) p.set("fin", fin);
+  if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
+  if (heureFin !== 24) p.set("heure_fin", String(heureFin));
   return appel<RapportZonesCongestionnees>(`/rapport/zones-congestionnees?${p}`);
 }
 
@@ -413,10 +421,13 @@ export function getRapportGraphique(
   tronconId: number,
   campagne: string,
   agregat: "min" | "max",
+  heureDebut = 0,
+  heureFin = 24,
 ): Promise<RapportGraphique> {
-  return appel<RapportGraphique>(
-    `/rapport/graphique/${tronconId}?campagne=${encodeURIComponent(campagne)}&agregat=${agregat}`,
-  );
+  const p = new URLSearchParams({ campagne, agregat });
+  if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
+  if (heureFin !== 24) p.set("heure_fin", String(heureFin));
+  return appel<RapportGraphique>(`/rapport/graphique/${tronconId}?${p}`);
 }
 
 export const api = {
@@ -471,10 +482,13 @@ export function getResumePrediction(tronconId: number): Promise<ResumePrediction
 export function getHeureOptimale(
   tronconId: number,
   typeJour: "jour_ouvrable" | "week_end" | "tous" = "jour_ouvrable",
+  heureDebut = 0,
+  heureFin = 24,
 ): Promise<HeureOptimaleResponse> {
-  return appel<HeureOptimaleResponse>(
-    `/predire/heure-optimale?troncon_id=${tronconId}&type_jour=${typeJour}`,
-  );
+  const p = new URLSearchParams({ troncon_id: String(tronconId), type_jour: typeJour });
+  if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
+  if (heureFin !== 24) p.set("heure_fin", String(heureFin));
+  return appel<HeureOptimaleResponse>(`/predire/heure-optimale?${p}`);
 }
 
 // ---------------------------------------------------------------------------

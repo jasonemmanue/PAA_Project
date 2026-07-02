@@ -372,7 +372,7 @@ export function PagePrediction() {
                       <div className="flex-shrink-0 flex items-center justify-center h-12 w-12
                                       rounded-full bg-paa-navy-100 dark:bg-paa-navy-700">
                         <span className="text-fluid-lg font-bold text-paa-navy-700 dark:text-paa-blue-200">
-                          {resume.courante.prediction.moyen_mn ?? "—"}
+                          {resume.courante.prediction.moyen_mn != null ? `${resume.courante.prediction.moyen_mn} min` : "—"}
                         </span>
                       </div>
                       <div className="flex-1">

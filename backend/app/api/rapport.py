@@ -160,10 +160,12 @@ async def get_temps_traversee(
     ),
     debut: DateType | None = Query(None, description="Date de début (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
     fin: DateType | None = Query(None, description="Date de fin (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
+    heure_debut: int = Query(0, ge=0, le=23, description="Heure de début de la plage (incluse, 0-23). Défaut 0 = 24h/24."),
+    heure_fin: int = Query(24, ge=1, le=24, description="Heure de fin de la plage (exclue, 1-24). Défaut 24 = 24h/24."),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
-    stats = rapport_paa.temps_traversee_par_troncon(db, debut_utc, fin_utc)
+    stats = rapport_paa.temps_traversee_par_troncon(db, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
     return {
         "campagne": campagne,
         "debut_utc": debut_utc.isoformat(),
@@ -208,10 +210,12 @@ async def get_zones_congestionnees(
     campagne: str = Query(..., description="Format 'AAAA-MM'."),
     debut: DateType | None = Query(None, description="Date de début (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
     fin: DateType | None = Query(None, description="Date de fin (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
+    heure_debut: int = Query(0, ge=0, le=23, description="Heure de début de la plage (incluse, 0-23). Défaut 0 = 24h/24."),
+    heure_fin: int = Query(24, ge=1, le=24, description="Heure de fin de la plage (exclue, 1-24). Défaut 24 = 24h/24."),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
-    cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
+    cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
     nb_jours = max(1, (fin_utc - debut_utc).days + 1)
     seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
     return {
@@ -267,11 +271,13 @@ async def get_zones_congestionnees_pdf(
     campagne: str = Query(..., description="Format 'AAAA-MM'."),
     debut: DateType | None = Query(None),
     fin: DateType | None = Query(None),
+    heure_debut: int = Query(0, ge=0, le=23),
+    heure_fin: int = Query(24, ge=1, le=24),
     db: Session = Depends(get_db),
 ) -> Response:
     logger.info(
-        "GET /rapport/zones-congestionnees/pdf — campagne=%r debut=%s fin=%s",
-        campagne, debut, fin,
+        "GET /rapport/zones-congestionnees/pdf — campagne=%r debut=%s fin=%s heure=%d-%d",
+        campagne, debut, fin, heure_debut, heure_fin,
     )
     try:
         from fpdf import FPDF  # import local : évite de charger fpdf au démarrage
@@ -284,7 +290,7 @@ async def get_zones_congestionnees_pdf(
     logger.info("Bornes calculées : debut_utc=%s fin_utc=%s", debut_utc, fin_utc)
 
     try:
-        cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
+        cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
         logger.info("Données récupérées : %d zone(s) congestionnée(s)", len(cong))
     except Exception as exc:
         logger.error("Erreur récupération données congestion : %s", exc, exc_info=True)
@@ -411,18 +417,20 @@ async def get_matrice_congestion(
     troncon_id: int = Query(..., description="ID du tronçon à analyser."),
     debut: DateType | None = Query(None),
     fin: DateType | None = Query(None),
+    heure_debut: int = Query(0, ge=0, le=23),
+    heure_fin: int = Query(24, ge=1, le=24),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     from app.models.models import Troncon
     logger.info(
-        "GET /rapport/matrice-congestion — troncon_id=%d campagne=%r debut=%s fin=%s",
-        troncon_id, campagne, debut, fin,
+        "GET /rapport/matrice-congestion — troncon_id=%d campagne=%r debut=%s fin=%s heure=%d-%d",
+        troncon_id, campagne, debut, fin, heure_debut, heure_fin,
     )
     troncon = db.get(Troncon, troncon_id)
     if troncon is None:
         raise HTTPException(status_code=404, detail=f"Tronçon {troncon_id} introuvable.")
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
-    result = rapport_paa.matrice_congestion(db, troncon_id, debut_utc, fin_utc)
+    result = rapport_paa.matrice_congestion(db, troncon_id, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
     return {"troncon_nom": troncon.nom, **result}
 
 
@@ -446,6 +454,8 @@ async def export_rapport_word(
     campagne: str = Query(..., description="Format 'AAAA-MM'."),
     debut: DateType | None = Query(None),
     fin: DateType | None = Query(None),
+    heure_debut: int = Query(0, ge=0, le=23),
+    heure_fin: int = Query(24, ge=1, le=24),
     db: Session = Depends(get_db),
 ) -> Response:
     logger.info(
@@ -507,7 +517,7 @@ async def export_rapport_word(
     # Variable conservée pour compatibilité avec le code en aval
     _theoriques_marker = True  # noqa: F841
     try:
-        stats = rapport_paa.temps_traversee_par_troncon(db, debut_utc, fin_utc)
+        stats = rapport_paa.temps_traversee_par_troncon(db, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
         logger.info("temps_traversee_par_troncon OK — %d troncons", len(stats) if stats else 0)
     except Exception:
         logger.exception("Echec rapport_paa.temps_traversee_par_troncon.")
@@ -517,7 +527,7 @@ async def export_rapport_word(
         )
 
     try:
-        cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc)
+        cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
         seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
         logger.info("troncons_congestionnes OK — %d entree(s), seuils jour=%s semaine=%s",
                     len(cong) if cong else 0, seuil_j, seuil_s)
@@ -682,6 +692,7 @@ async def export_rapport_word(
         for t in troncons:
             serie = rapport_paa.serie_graphique(
                 db, t.id, debut_utc, fin_utc, agregat=agregat,
+                heure_debut=heure_debut, heure_fin=heure_fin,
             )
             if not serie:
                 continue
@@ -815,18 +826,20 @@ async def get_matrice_temps(
     troncon_id: int = Query(..., description="ID du tronçon à analyser."),
     debut: DateType | None = Query(None),
     fin: DateType | None = Query(None),
+    heure_debut: int = Query(0, ge=0, le=23),
+    heure_fin: int = Query(24, ge=1, le=24),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     from app.models.models import Troncon
     logger.info(
-        "GET /rapport/matrice-temps — troncon_id=%d campagne=%r debut=%s fin=%s",
-        troncon_id, campagne, debut, fin,
+        "GET /rapport/matrice-temps — troncon_id=%d campagne=%r debut=%s fin=%s heure=%d-%d",
+        troncon_id, campagne, debut, fin, heure_debut, heure_fin,
     )
     troncon = db.get(Troncon, troncon_id)
     if troncon is None:
         raise HTTPException(status_code=404, detail=f"Tronçon {troncon_id} introuvable.")
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
-    result = rapport_paa.matrice_temps(db, troncon_id, debut_utc, fin_utc)
+    result = rapport_paa.matrice_temps(db, troncon_id, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
     return {
         "troncon_nom": troncon.nom,
         "distance_m": troncon.distance_m,
@@ -985,6 +998,8 @@ async def get_graphique(
     troncon_id: int,
     campagne: str = Query(..., description="Format 'AAAA-MM'."),
     agregat: str = Query("min", description="`min` ou `max`."),
+    heure_debut: int = Query(0, ge=0, le=23),
+    heure_fin: int = Query(24, ge=1, le=24),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     if agregat not in ("min", "max"):
@@ -995,6 +1010,7 @@ async def get_graphique(
     debut_utc, fin_utc = _parser_campagne(campagne)
     serie = rapport_paa.serie_graphique(
         db, troncon_id, debut_utc, fin_utc, agregat=agregat,
+        heure_debut=heure_debut, heure_fin=heure_fin,
     )
     return {
         "troncon_id": troncon_id,

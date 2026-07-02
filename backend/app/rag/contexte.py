@@ -218,7 +218,7 @@ def recuperer_heure_optimale(db: Session) -> str:
     ).scalars().all()
 
     lignes = [
-        f"CRÉNEAUX OPTIMAUX — {type_jour_label} (historique 30 jours, plage 7h-19h)"
+        f"CRÉNEAUX OPTIMAUX — {type_jour_label} (historique 30 jours, 24h/24)"
     ]
 
     for t in troncons:
@@ -234,8 +234,8 @@ def recuperer_heure_optimale(db: Session) -> str:
                 ProfilHoraire.troncon_id == t.id,
                 ProfilHoraire.fenetre_jours == 30,
                 ProfilHoraire.jour_semaine.in_(jours_filtre),
-                ProfilHoraire.heure >= 7,
-                ProfilHoraire.heure < 19,
+                ProfilHoraire.heure >= 0,
+                ProfilHoraire.heure < 24,
                 ProfilHoraire.nb_mesures > 0,
             )
             .group_by(ProfilHoraire.heure)

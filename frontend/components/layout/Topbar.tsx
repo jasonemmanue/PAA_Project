@@ -9,6 +9,7 @@
 import { useI18n } from "@/lib/i18n";
 import { IconBurger } from "@/components/ui/Icons";
 import { LangSwitcher } from "@/components/i18n/LangSwitcher";
+import { SelecteurPlageHoraire } from "@/components/layout/SelecteurPlageHoraire";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 
 export function Topbar({ ouvrirMenu }: { ouvrirMenu: () => void }) {
@@ -38,8 +39,9 @@ export function Topbar({ ouvrirMenu }: { ouvrirMenu: () => void }) {
           </span>
         </div>
 
-        {/* Sélecteur de langue + thème (toujours visibles) */}
+        {/* Plage horaire + langue + thème */}
         <div className="flex items-center gap-2">
+          <SelecteurPlageHoraire />
           <LangSwitcher />
           <ThemeToggle />
         </div>

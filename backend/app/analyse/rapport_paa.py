@@ -53,15 +53,15 @@ from app.models.models import Mesure, SourceMesure, Troncon
 # notre collecte étend à 24h/24 (cf. CLAUDE.md § 4.5.1 et § 4.5.7).
 # Les heures hors plage sont **filtrées** des calculs publiés dans /rapport
 # pour préserver la conformité méthodologique stricte.
-DEESP_HEURE_DEBUT = 7
-DEESP_HEURE_FIN = 19  # exclusive : tranches 7h-18h59 incluses
+DEESP_HEURE_DEBUT = 0
+DEESP_HEURE_FIN = 24  # Par défaut 24h/24 — filtrable via paramètres API
 
 TypeJour = Literal["jour_ouvrable", "week_end"]
 
 
-def _dans_plage_deesp(horodatage_local) -> bool:
-    """True si l'heure locale est dans la plage DEESP officielle (7h-19h)."""
-    return DEESP_HEURE_DEBUT <= horodatage_local.hour < DEESP_HEURE_FIN
+def _dans_plage_horaire(horodatage_local, heure_debut: int = DEESP_HEURE_DEBUT, heure_fin: int = DEESP_HEURE_FIN) -> bool:
+    """True si l'heure locale est dans la plage [heure_debut, heure_fin[."""
+    return heure_debut <= horodatage_local.hour < heure_fin
 
 
 def _type_jour(d: date) -> TypeJour:
@@ -147,7 +147,7 @@ def _format_mn_s(secondes: int) -> str:
     """Formate des secondes en "X mn YY s" (style rapport DEESP)."""
     mn = secondes // 60
     sec = secondes % 60
-    return f"{mn} mn {sec:02d} s"
+    return f"{mn} min {sec:02d} s"
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +172,9 @@ def temps_traversee_par_troncon(
     db: Session,
     debut_utc: datetime,
     fin_utc: datetime,
+    *,
+    heure_debut: int = DEESP_HEURE_DEBUT,
+    heure_fin: int = DEESP_HEURE_FIN,
 ) -> list[TempsTraverseeStat]:
     """Calcule min/moyen/max par tronçon × type_jour sur la fenêtre demandée.
 
@@ -209,7 +212,7 @@ def temps_traversee_par_troncon(
     par_jour: dict[tuple[int, TypeJour, date], list[int]] = defaultdict(list)
     for m in mesures:
         local = m.horodatage.astimezone(fuseau_local)
-        if not _dans_plage_deesp(local):
+        if not _dans_plage_horaire(local, heure_debut, heure_fin):
             continue
         d_local = local.date()
         tj = _type_jour(d_local)
@@ -296,6 +299,9 @@ def troncons_congestionnes(
     db: Session,
     debut_utc: datetime,
     fin_utc: datetime,
+    *,
+    heure_debut: int = DEESP_HEURE_DEBUT,
+    heure_fin: int = DEESP_HEURE_FIN,
 ) -> list[CongestionHoraire]:
     """Applique les règles § 4.5.3 pour identifier les tronçons congestionnés.
 
@@ -343,7 +349,7 @@ def troncons_congestionnes(
         if m.troncon_id not in troncons:
             continue
         local = m.horodatage.astimezone(fuseau_local)
-        if not _dans_plage_deesp(local):
+        if not _dans_plage_horaire(local, heure_debut, heure_fin):
             continue
         occurrences[
             (m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)
@@ -394,6 +400,9 @@ def matrice_congestion(
     troncon_id: int,
     debut_utc: datetime,
     fin_utc: datetime,
+    *,
+    heure_debut: int = DEESP_HEURE_DEBUT,
+    heure_fin: int = DEESP_HEURE_FIN,
 ) -> dict:
     """Retourne pour chaque (date locale, heure DEESP) l'état congestionné/fluide.
 
@@ -433,7 +442,7 @@ def matrice_congestion(
             if horodatage.tzinfo
             else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
         )
-        if not _dans_plage_deesp(h_local):
+        if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
             continue
         date_str = h_local.date().isoformat()
         heure = h_local.hour
@@ -446,9 +455,8 @@ def matrice_congestion(
 
     dates_list = sorted(dates_set)
 
-    # Tranches DEESP (7h–19h) — uniquement celles qui ont au moins une mesure
     tranches = []
-    for h in range(DEESP_HEURE_DEBUT, DEESP_HEURE_FIN):
+    for h in range(heure_debut, heure_fin):
         par_date = {
             date_str: par_date_heure.get(date_str, {}).get(h)
             for date_str in dates_list
@@ -478,6 +486,9 @@ def matrice_temps(
     troncon_id: int,
     debut_utc: datetime,
     fin_utc: datetime,
+    *,
+    heure_debut: int = DEESP_HEURE_DEBUT,
+    heure_fin: int = DEESP_HEURE_FIN,
 ) -> dict:
     """Retourne pour chaque (date locale, heure DEESP) la durée de traversée en secondes.
 
@@ -519,12 +530,11 @@ def matrice_temps(
             if horodatage.tzinfo
             else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
         )
-        if not _dans_plage_deesp(h_local):
+        if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
             continue
         date_str = h_local.date().isoformat()
         heure = h_local.hour
         dates_set.add(date_str)
-        # La dernière mesure de l'heure gagne (ordre chronologique dans la requête)
         par_date_heure.setdefault(date_str, {})[heure] = {
             "duree_s": duree_s,
             "source": source.value if hasattr(source, "value") else str(source),
@@ -533,7 +543,7 @@ def matrice_temps(
     dates_list = sorted(dates_set)
 
     tranches = []
-    for h in range(DEESP_HEURE_DEBUT, DEESP_HEURE_FIN):
+    for h in range(heure_debut, heure_fin):
         par_date = {
             date_str: par_date_heure.get(date_str, {}).get(h)
             for date_str in dates_list
@@ -572,6 +582,8 @@ def serie_graphique(
     fin_utc: datetime,
     *,
     agregat: Literal["min", "max"],
+    heure_debut: int = DEESP_HEURE_DEBUT,
+    heure_fin: int = DEESP_HEURE_FIN,
 ) -> list[PointGraphique]:
     """Construit la série pour les graphiques DEESP 1-12 (BarChart).
 
@@ -596,8 +608,10 @@ def serie_graphique(
 
     par_jour: dict[date, list[int]] = defaultdict(list)
     for m in mesures:
-        d = m.horodatage.astimezone(fuseau_local).date()
-        par_jour[d].append(m.duree_trafic_s)
+        local = m.horodatage.astimezone(fuseau_local)
+        if not _dans_plage_horaire(local, heure_debut, heure_fin):
+            continue
+        par_jour[local.date()].append(m.duree_trafic_s)
 
     resultats: list[PointGraphique] = []
     for d in sorted(par_jour):

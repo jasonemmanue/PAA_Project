@@ -15,6 +15,7 @@ import {
 
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
+import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { CreneauHoraire, HeureOptimaleResponse, Troncon } from "@/lib/types";
@@ -189,6 +190,7 @@ function TableauCreneaux({ creneaux }: { creneaux: CreneauHoraire[] }) {
 
 export function PageHeureOptimale() {
   const { t } = useI18n();
+  const { heureDebut, heureFin } = usePlageHoraire();
   const [troncons, setTroncons] = useState<Troncon[]>([]);
   const [tronconId, setTronconId] = useState<number | null>(null);
   const [typeJour, setTypeJour] = useState<TypeJour>("jour_ouvrable");
@@ -213,14 +215,14 @@ export function PageHeureOptimale() {
     setChargement(true);
     setErreur(null);
     try {
-      const res = await api.heureOptimale(tronconId, typeJour);
+      const res = await api.heureOptimale(tronconId, typeJour, heureDebut, heureFin);
       setResultat(res);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
       setChargement(false);
     }
-  }, [tronconId, typeJour]);
+  }, [tronconId, typeJour, heureDebut, heureFin]);
 
   useEffect(() => {
     charger();

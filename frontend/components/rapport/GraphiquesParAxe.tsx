@@ -35,9 +35,11 @@ interface Props {
   campagne: string;
   agregat: "min" | "max";
   titre: string;
+  heureDebut?: number;
+  heureFin?: number;
 }
 
-export function GraphiquesParAxe({ troncons, campagne, agregat, titre }: Props) {
+export function GraphiquesParAxe({ troncons, campagne, agregat, titre, heureDebut = 0, heureFin = 24 }: Props) {
   return (
     <Card titre={titre} description="Axe Y en minutes — 1 barre = 1 observation journalière.">
       <div className="grid gap-fluid-4 lg:grid-cols-2">
@@ -47,6 +49,8 @@ export function GraphiquesParAxe({ troncons, campagne, agregat, titre }: Props) 
             troncon={t}
             campagne={campagne}
             agregat={agregat}
+            heureDebut={heureDebut}
+            heureFin={heureFin}
           />
         ))}
       </div>
@@ -58,10 +62,14 @@ function GraphiqueTroncon({
   troncon,
   campagne,
   agregat,
+  heureDebut = 0,
+  heureFin = 24,
 }: {
   troncon: Troncon;
   campagne: string;
   agregat: "min" | "max";
+  heureDebut?: number;
+  heureFin?: number;
 }) {
   const [data, setData] = useState<RapportGraphique | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -71,7 +79,7 @@ function GraphiqueTroncon({
     setData(null);
     setErreur(null);
     api
-      .rapportGraphique(troncon.id, campagne, agregat)
+      .rapportGraphique(troncon.id, campagne, agregat, heureDebut, heureFin)
       .then((r) => {
         if (!annule) setData(r);
       })
@@ -81,7 +89,7 @@ function GraphiqueTroncon({
     return () => {
       annule = true;
     };
-  }, [troncon.id, campagne, agregat]);
+  }, [troncon.id, campagne, agregat, heureDebut, heureFin]);
 
   const couleur = agregat === "min" ? COULEUR_BAR_MIN : COULEUR_BAR_MAX;
   const points = data?.points ?? [];
@@ -107,9 +115,9 @@ function GraphiqueTroncon({
                 tick={{ fontSize: 10 }}
                 interval={0}
               />
-              <YAxis tick={{ fontSize: 10 }} unit=" mn" />
+              <YAxis tick={{ fontSize: 10 }} unit=" min" />
               <Tooltip
-                formatter={(v: unknown) => [`${v} mn`, "Temps"]}
+                formatter={(v: unknown) => [`${v} min`, "Temps"]}
                 labelFormatter={(_, payload) => {
                   const p = payload?.[0]?.payload as { date?: string } | undefined;
                   return p?.date ?? "";

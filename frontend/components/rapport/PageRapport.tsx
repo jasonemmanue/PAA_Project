@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { MatriceCongestion } from "@/components/rapport/MatriceCongestion";
 import { MatriceTemps } from "@/components/rapport/MatriceTemps";
@@ -49,6 +50,7 @@ function dernierJourMois(cam: string): string {
 }
 
 export function PageRapport() {
+  const { heureDebut, heureFin } = usePlageHoraire();
   const campagneDefaut = defautCampagne();
   const [campagne, setCampagne] = useState<string>(campagneDefaut);
   const [debutRange, setDebutRange] = useState<string>(premierJourMois(campagneDefaut));
@@ -68,8 +70,8 @@ export function PageRapport() {
       const [t, tt, ttv, zc] = await Promise.all([
         api.troncons(),
         api.rapportTempsTheoriques(),
-        api.rapportTempsTraversee(campagne, debutRange, finRange),
-        api.rapportZonesCongestionnees(campagne, debutRange, finRange),
+        api.rapportTempsTraversee(campagne, debutRange, finRange, heureDebut, heureFin),
+        api.rapportZonesCongestionnees(campagne, debutRange, finRange, heureDebut, heureFin),
       ]);
       const liste = Array.isArray(t) ? t : [];
       setTroncons(liste);
@@ -83,7 +85,7 @@ export function PageRapport() {
     } finally {
       setChargement(false);
     }
-  }, [campagne, debutRange, finRange]);
+  }, [campagne, debutRange, finRange, heureDebut, heureFin]);
 
   useEffect(() => {
     recharger();
@@ -95,7 +97,7 @@ export function PageRapport() {
   async function exporterWord() {
     setExportEnCours(true);
     try {
-      const url = `${API_BASE}/rapport/export/word?campagne=${campagne}&debut=${debutRange}&fin=${finRange}`;
+      const url = `${API_BASE}/rapport/export/word?campagne=${campagne}&debut=${debutRange}&fin=${finRange}&heure_debut=${heureDebut}&heure_fin=${heureFin}`;
       const rep = await fetch(url);
       if (!rep.ok) throw new Error(`HTTP ${rep.status}`);
       const blob = await rep.blob();
@@ -211,6 +213,8 @@ export function PageRapport() {
         tronconId={tronconId}
         troncons={troncons}
         onTronconChange={setTronconId}
+        heureDebut={heureDebut}
+        heureFin={heureFin}
       />
 
       {/* Matrice temps de traversée — durées réelles (mm:ss) par créneau × date */}
@@ -221,6 +225,8 @@ export function PageRapport() {
         tronconId={tronconId}
         troncons={troncons}
         onTronconChange={setTronconId}
+        heureDebut={heureDebut}
+        heureFin={heureFin}
       />
 
       {/* Tableau 16 — Synthèse zones congestionnées (tous tronçons, règles DEESP) */}
@@ -259,12 +265,16 @@ export function PageRapport() {
         campagne={campagne}
         agregat="min"
         titre="Graphiques 1-6 — Temps MIN observé par jour (BarChart)"
+        heureDebut={heureDebut}
+        heureFin={heureFin}
       />
       <GraphiquesParAxe
         troncons={troncons}
         campagne={campagne}
         agregat="max"
         titre="Graphiques 7-12 — Temps MAX observé par jour (BarChart)"
+        heureDebut={heureDebut}
+        heureFin={heureFin}
       />
 
       {chargement && (
