@@ -3266,16 +3266,24 @@ UPDATE troncons SET est_axe = FALSE WHERE id >  6;
 
 **Sémantique** :
 - `est_axe = True` → axe officiel DEESP du cahier des charges (6 initiaux
-  + nouveaux axes créés via Admin avec radio « Axe »)
+  + nouveaux axes créés via l'onglet « Axes principaux » de la page Admin)
 - `est_axe = False` → tronçon supplémentaire ajouté en complément
 
 **Distinction purement cosmétique** : la collecte Google, l'agrégation
 nocturne, le rapport DEESP, la calibration GPX traitent identiquement
 les deux catégories. Seule l'UI les sépare.
 
-**Modifications UI** :
-- Formulaire Administration : `<fieldset>` radio « Tronçon (défaut) / Axe »
-- Liste Admin : nouvelle colonne « Catégorie » avec badge AXE / Tronçon
+**Modifications UI (état final 2026-07-02)** :
+- **Onglet « Axes principaux »** : crée directement des axes (`est_axe=true`
+  forcé, plus de fieldset radio Catégorie). Tableau en bas avec colonne
+  « Catégorie » (badge AXE / Tronçon) + « Actions » (archiver).
+- **Onglet « Tronçons codifiés »** (anciennement « Sous-tronçons codifiés ») :
+  - Terminologie refondée : « sous-tronçon » → « tronçon », « tronçon parent » → « axe parent »
+  - Sélecteur d'axe parent séparé en `<optgroup>` (axes DEESP / tronçons supplémentaires)
+  - Tableau « Tronçons existants » : affiche **à la fois** les sous-tronçons
+    codifiés de l'axe sélectionné **et** tous les tronçons supplémentaires
+    (est_axe=false), communs à tous les axes. Colonnes : Code, Nom, Distance, État
+    (badge vert « Actif »). Plus de colonne « Type » ni de boutons d'action.
 - `SelecteurTroncon` (Indicateurs, etc.) utilise
   `<optgroup label="── Axes officiels DEESP ──">` et
   `<optgroup label="── Tronçons supplémentaires ──">`
@@ -3283,8 +3291,8 @@ les deux catégories. Seule l'UI les sépare.
   `/troncons/{id}`, `/administration/troncons`
 
 **Chatbot** : `SYSTEM_PROMPT` enrichi d'une section
-« DISTINCTION AXES VS TRONÇONS » qui explique au LLM comment
-interpréter le vocabulaire utilisateur.
+« DISTINCTION AXES VS TRONÇONS » et de la description détaillée des
+deux onglets de la page Administration.
 
 **Commande pour supprimer/reclasser les tronçons supplémentaires (>6)** :
 
