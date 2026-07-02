@@ -39,12 +39,11 @@ export function PageCarte() {
 
   const sousTitre = (() => {
     if (!etat) return t("carte.subtitle");
-    const nbAxes = etat.troncons.filter((tr) => tr.est_axe ?? (tr.id <= 6)).length;
-    const nbTroncons = etat.troncons.length - nbAxes;
+    const nb = etat.troncons.length;
     if (locale === "fr") {
-      return `État instantané des ${nbAxes} axe${nbAxes > 1 ? "s" : ""}${nbTroncons > 0 ? ` et ${nbTroncons} tronçon${nbTroncons > 1 ? "s" : ""}` : ""} surveillés.`;
+      return `État instantané des ${nb} axe${nb > 1 ? "s" : ""} surveillés.`;
     }
-    return `Real-time snapshot of ${nbAxes} ax${nbAxes > 1 ? "es" : "is"}${nbTroncons > 0 ? ` and ${nbTroncons} segment${nbTroncons > 1 ? "s" : ""}` : ""} monitored.`;
+    return `Real-time snapshot of ${nb} ax${nb > 1 ? "es" : "is"} monitored.`;
   })();
 
   // Bloquer le scroll de la page — seul le panneau latéral défile

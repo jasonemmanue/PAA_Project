@@ -244,15 +244,7 @@ export function OngletAxes({
       {/* Carte */}
       <Card
         titre="Carte interactive"
-        description={(() => {
-          const actifs = troncons.filter((t) => t.actif);
-          const nAxes = actifs.filter((t) => t.est_axe ?? (t.id <= 6)).length;
-          const nTr = actifs.length - nAxes;
-          const parts: string[] = [];
-          if (nAxes > 0) parts.push(`${nAxes} axe${nAxes > 1 ? "s" : ""}`);
-          if (nTr > 0) parts.push(`${nTr} tronçon${nTr > 1 ? "s" : ""}`);
-          return `Les ${parts.join(" et ")} actifs en pointillés. Le nouvel axe en violet plein.`;
-        })()}
+        description={`Les ${troncons.filter((t) => t.actif).length} axes actifs en pointillés. Le nouvel axe en violet plein.`}
       >
         <CarteAdmin
           pointActif={pointActif}
@@ -266,22 +258,12 @@ export function OngletAxes({
       </Card>
       </>)}
 
-      {/* Liste des axes et tronçons existants
-          Fallback : si la migration 0013 n'est pas appliquée (est_axe undefined),
-          on considère que les IDs 1-6 sont les axes officiels du seed initial. */}
-      <Card titre={(() => {
-        const actifs = troncons.filter((t) => t.actif);
-        const estAxeReel = (t: { id: number; est_axe?: boolean }) => t.est_axe ?? (t.id <= 6);
-        const nAxes = actifs.filter(estAxeReel).length;
-        const nTr = actifs.length - nAxes;
-        return `${nAxes} axe${nAxes > 1 ? "s" : ""} actif${nAxes > 1 ? "s" : ""}${nTr > 0 ? ` + ${nTr} tronçon${nTr > 1 ? "s" : ""}` : ""}`;
-      })()}>
+      <Card titre={`${troncons.filter((t) => t.actif).length} axe${troncons.filter((t) => t.actif).length > 1 ? "s" : ""} actif${troncons.filter((t) => t.actif).length > 1 ? "s" : ""}`}>
         <div className="overflow-x-auto">
           <table className="min-w-full text-fluid-sm">
             <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
               <tr className="text-left">
                 <th className="px-3 py-2 font-medium">ID</th>
-                <th className="px-3 py-2 font-medium">Catégorie</th>
                 <th className="px-3 py-2 font-medium">Nom</th>
                 <th className="px-3 py-2 font-medium text-right">Distance</th>
                 <th className="px-3 py-2 font-medium">Couleur</th>
@@ -297,17 +279,6 @@ export function OngletAxes({
                   }
                 >
                   <td className="px-3 py-2 font-mono">{t.id}</td>
-                  <td className="px-3 py-2">
-                    {(t.est_axe ?? (t.id <= 6)) ? (
-                      <span className="inline-block rounded bg-paa-navy-700 px-2 py-0.5 text-fluid-xs font-semibold text-white">
-                        AXE
-                      </span>
-                    ) : (
-                      <span className="inline-block rounded bg-paa-blue-50 px-2 py-0.5 text-fluid-xs font-semibold text-paa-navy-800 dark:bg-paa-navy-800 dark:text-paa-blue-100">
-                        Tronçon
-                      </span>
-                    )}
-                  </td>
                   <td className="px-3 py-2">{t.nom}</td>
                   <td className="px-3 py-2 text-right">{t.distance_km} km</td>
                   <td className="px-3 py-2">

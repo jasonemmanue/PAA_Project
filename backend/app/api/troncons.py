@@ -51,8 +51,7 @@ class TronconResume(BaseModel):
     actif: bool
     est_axe: bool = Field(
         default=True,
-        description="True = axe officiel DEESP du cahier des charges, "
-                    "False = tronçon supplémentaire ajouté via Administration.",
+        description="True = axe, False = tronçon codifié (enfant d'un axe).",
     )
 
 

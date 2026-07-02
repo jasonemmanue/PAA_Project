@@ -38,7 +38,7 @@ export interface Troncon {
   vitesse_ref_kmh: number;
   couleur: string;
   actif: boolean;
-  /** True = axe officiel DEESP. False = tronçon supplémentaire ajouté via Administration. */
+  /** True = axe. False = tronçon codifié (enfant d'un axe). */
   est_axe?: boolean;
 }
 
@@ -511,7 +511,7 @@ export interface TronconAdmin {
   vitesse_ref_kmh: number;
   couleur: string;
   actif: boolean;
-  /** True = axe officiel DEESP, False = tronçon supplémentaire (migration 0013). */
+  /** True = axe, False = tronçon codifié (enfant d'un axe). */
   est_axe?: boolean;
   /**
    * Résumé d'adoption renvoyé uniquement par POST /administration/troncons —
@@ -562,7 +562,7 @@ export interface TronconCreer {
   distance_m?: number;
   vitesse_ref_kmh?: number;
   couleur?: string;
-  /** True = nouvel axe officiel, False (défaut) = tronçon supplémentaire. */
+  /** True = axe, False = tronçon codifié (enfant d'un axe). */
   est_axe?: boolean;
 }
 

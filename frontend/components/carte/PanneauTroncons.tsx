@@ -61,11 +61,7 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
   };
   for (const tr of etat.troncons) compteurs[tr.classe_congestion]++;
 
-  // Comptage axes vs tronçons
-  // Fallback : si est_axe absent (migration 0013 non appliquée), les IDs ≤ 6
-  // sont les 6 axes officiels du seed initial.
-  const nbAxes = etat.troncons.filter((tr) => tr.est_axe ?? (tr.id <= 6)).length;
-  const nbTroncons = etat.troncons.length - nbAxes;
+  const nbAxes = etat.troncons.length;
 
   // Tri par gravité décroissante : congestionnés (worst rouge%) en tête
   const tronconsTries = etat.troncons.slice().sort((a, b) => {
@@ -89,8 +85,8 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
       <div className="paa-card p-3">
         <p className="mb-2 text-fluid-xs font-medium app-text-muted">
           {locale === "fr"
-            ? `État : ${nbAxes} axe${nbAxes > 1 ? "s" : ""}${nbTroncons > 0 ? ` et ${nbTroncons} tronçon${nbTroncons > 1 ? "s" : ""}` : ""} (couleurs Google Maps)`
-            : `Status: ${nbAxes} ax${nbAxes > 1 ? "es" : "is"}${nbTroncons > 0 ? ` and ${nbTroncons} segment${nbTroncons > 1 ? "s" : ""}` : ""} (Google Maps colours)`}
+            ? `État : ${nbAxes} axe${nbAxes > 1 ? "s" : ""} (couleurs Google Maps)`
+            : `Status: ${nbAxes} ax${nbAxes > 1 ? "es" : "is"} (Google Maps colours)`}
         </p>
         <div className="grid grid-cols-3 gap-2">
           <KpiCompteur
@@ -154,8 +150,8 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
         <div className="border-b app-border bg-paa-blue-100 px-4 py-2 text-fluid-sm font-semibold
                         text-paa-navy-900 dark:bg-paa-navy-700 dark:text-paa-blue-100">
           {locale === "fr"
-            ? `${nbAxes} axe${nbAxes > 1 ? "s" : ""}${nbTroncons > 0 ? ` + ${nbTroncons} tronçon${nbTroncons > 1 ? "s" : ""}` : ""} surveillé${etat.nb_troncons > 1 ? "s" : ""}`
-            : `${nbAxes} ax${nbAxes > 1 ? "es" : "is"}${nbTroncons > 0 ? ` + ${nbTroncons} segment${nbTroncons > 1 ? "s" : ""}` : ""} monitored`}
+            ? `${nbAxes} axe${nbAxes > 1 ? "s" : ""} surveillé${nbAxes > 1 ? "s" : ""}`
+            : `${nbAxes} ax${nbAxes > 1 ? "es" : "is"} monitored`}
         </div>
         <ul className="divide-y divide-[rgb(var(--app-border))]">
           {tronconsTries.map((tr) => {

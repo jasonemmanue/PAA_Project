@@ -38,7 +38,6 @@ export function OngletSousTroncons({
   const [succes, setSucces] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
 
-  // 1er axe par défaut (exclut les tronçons supplémentaires)
   useEffect(() => {
     if (parentId === null && troncons.length > 0) {
       const premierAxe = troncons.find((t) => t.actif && (t.est_axe ?? (t.id <= 6)));
@@ -288,76 +287,51 @@ export function OngletSousTroncons({
       </Card>
       </>)}
 
-      {/* Liste des tronçons : sous-tronçons codifiés + tronçons supplémentaires */}
-      {(() => {
-        const tronconsSupp = troncons.filter((t) => t.actif && !(t.est_axe ?? (t.id <= 6)));
-        const nbTotal = sousTroncons.length + tronconsSupp.length;
-        return (
-          <Card titre={`Tronçons existants (${nbTotal})`}>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-fluid-sm">
-                <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
-                  <tr className="text-left">
-                    <th className="px-3 py-2 font-medium">Code</th>
-                    <th className="px-3 py-2 font-medium">Nom</th>
-                    <th className="px-3 py-2 font-medium text-right">Distance</th>
-                    <th className="px-3 py-2 font-medium">État</th>
+      {/* Liste des tronçons codifiés de l'axe sélectionné */}
+      <Card titre={`Tronçons de ${parent?.nom ?? "…"} (${sousTroncons.length})`}>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-fluid-sm">
+            <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
+              <tr className="text-left">
+                <th className="px-3 py-2 font-medium">Code</th>
+                <th className="px-3 py-2 font-medium">Nom</th>
+                <th className="px-3 py-2 font-medium text-right">Distance</th>
+                <th className="px-3 py-2 font-medium">État</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sousTroncons.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-3 py-4 text-center app-text-muted text-fluid-xs">
+                    Aucun tronçon défini pour cet axe.
+                  </td>
+                </tr>
+              ) : (
+                sousTroncons.map((s) => (
+                  <tr key={`st-${s.id}`} className="border-t app-border">
+                    <td className="px-3 py-2 font-mono font-semibold">{s.code}</td>
+                    <td className="px-3 py-2">{s.nom_court}</td>
+                    <td className="px-3 py-2 text-right">{s.distance_m} m</td>
+                    <td className="px-3 py-2">
+                      <span className="inline-block rounded bg-statut-fluide/20 px-2 py-0.5 text-fluid-xs font-medium text-statut-fluide">
+                        Actif
+                      </span>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {nbTotal === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-3 py-4 text-center app-text-muted text-fluid-xs">
-                        Aucun tronçon défini pour cet axe.
-                      </td>
-                    </tr>
-                  ) : (<>
-                    {sousTroncons.map((s) => (
-                      <tr key={`st-${s.id}`} className="border-t app-border">
-                        <td className="px-3 py-2 font-mono font-semibold">{s.code}</td>
-                        <td className="px-3 py-2">{s.nom_court}</td>
-                        <td className="px-3 py-2 text-right">{s.distance_m} m</td>
-                        <td className="px-3 py-2">
-                          <span className="inline-block rounded bg-statut-fluide/20 px-2 py-0.5 text-fluid-xs font-medium text-statut-fluide">
-                            Actif
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                    {tronconsSupp.map((t) => (
-                      <tr key={`tr-${t.id}`} className="border-t app-border">
-                        <td className="px-3 py-2 font-mono font-semibold text-paa-blue-500">T{t.id}</td>
-                        <td className="px-3 py-2">{t.nom}</td>
-                        <td className="px-3 py-2 text-right">{t.distance_km} km</td>
-                        <td className="px-3 py-2">
-                          <span className="inline-block rounded bg-statut-fluide/20 px-2 py-0.5 text-fluid-xs font-medium text-statut-fluide">
-                            Actif
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </>)}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        );
-      })()}
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
-      {/* Récapitulatif de tous les axes et tronçons */}
-      <Card titre={(() => {
-        const actifs = troncons.filter((t) => t.actif);
-        const estAxeReel = (t: { id: number; est_axe?: boolean }) => t.est_axe ?? (t.id <= 6);
-        const nAxes = actifs.filter(estAxeReel).length;
-        const nTr = actifs.length - nAxes;
-        return `Tous les parcours (${nAxes} axe${nAxes > 1 ? "s" : ""}${nTr > 0 ? ` + ${nTr} tronçon${nTr > 1 ? "s" : ""}` : ""})`;
-      })()}>
+      {/* Récapitulatif de tous les axes */}
+      <Card titre={`Tous les axes (${troncons.filter((t) => t.actif).length})`}>
         <div className="overflow-x-auto">
           <table className="min-w-full text-fluid-sm">
             <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
               <tr className="text-left">
                 <th className="px-3 py-2 font-medium">ID</th>
-                <th className="px-3 py-2 font-medium">Catégorie</th>
                 <th className="px-3 py-2 font-medium">Nom</th>
                 <th className="px-3 py-2 font-medium text-right">Distance</th>
                 <th className="px-3 py-2 font-medium">Couleur</th>
@@ -367,17 +341,6 @@ export function OngletSousTroncons({
               {troncons.filter((t) => t.actif).map((t) => (
                 <tr key={t.id} className="border-t app-border">
                   <td className="px-3 py-2 font-mono">{t.id}</td>
-                  <td className="px-3 py-2">
-                    {(t.est_axe ?? (t.id <= 6)) ? (
-                      <span className="inline-block rounded bg-paa-navy-700 px-2 py-0.5 text-fluid-xs font-semibold text-white">
-                        AXE
-                      </span>
-                    ) : (
-                      <span className="inline-block rounded bg-paa-blue-50 px-2 py-0.5 text-fluid-xs font-semibold text-paa-navy-800 dark:bg-paa-navy-800 dark:text-paa-blue-100">
-                        Tronçon
-                      </span>
-                    )}
-                  </td>
                   <td className="px-3 py-2">{t.nom}</td>
                   <td className="px-3 py-2 text-right">{t.distance_km} km</td>
                   <td className="px-3 py-2">

@@ -92,9 +92,7 @@ class Troncon(Base):
     # Suppression logique : False = tronçon archivé, historique préservé
     actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    # Distinction axe officiel DEESP / tronçon supplémentaire (migration 0013)
-    # True  → fait partie des 3 axes officiels du cahier des charges
-    # False → tronçon ajouté en complément via la page Administration
+    # True = axe, False = tronçon codifié enfant d'un axe (migration 0013)
     est_axe: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # Relations

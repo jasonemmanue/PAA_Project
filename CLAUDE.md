@@ -270,7 +270,7 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P10.2** | ✅ Terminée (2026-06-28) | **Refonte portail d'accès** — logo PAA gauche + carte centrale + "HACKATONIA" vertical droit (bleu ciel sky-400) + toggle thème clair/sombre. Layout responsive desktop/mobile. Logo en filigrane sur fond. Thème clair par défaut (`ThemeProvider defaultTheme="light"`). |
 | **P10.3** | ✅ Terminée (2026-06-28) | **Vue satellite sur toutes les cartes** — toggle "🛰 Satellite / 🗺 OSM" sur CarteLeaflet, CarteApercu, CarteIncidents. Tuiles ESRI WorldImagery gratuites (URL `{z}/{y}/{x}`). |
 | **P10.4** | ✅ Terminée (2026-06-28) | **Export global indicateurs** — boutons "Tout CSV" / "Tout Excel" dans `BarrePilotage` téléchargent séquentiellement les mesures des 6+ tronçons (600 ms d'intervalle). Cf. § 12.4. |
-| **P10.5** | ✅ Terminée (2026-06-28) | **Distinction axes / tronçons** — migration **0013** ajoute `troncons.est_axe` (Boolean NOT NULL DEFAULT TRUE). IDs ≤ 6 → True (axes officiels DEESP), IDs > 6 → False. Sélecteur Indicateurs en `<optgroup>` séparés. Formulaire Admin avec radio Axe/Tronçon (défaut Tronçon). Chatbot mis à jour. Cf. § 12.5. |
+| **P10.5** | ✅ Terminée (2026-06-28) | **Axes et tronçons** — migration **0013** ajoute `troncons.est_axe`. Chaque axe peut être découpé en tronçons codifiés (enfants). Sélecteur Indicateurs en `<optgroup>` séparés (Axes / Tronçons). Chatbot mis à jour. Cf. § 12.5. |
 | **P10.6** | ✅ Terminée (2026-06-28) | **PDF Tableau 16 — téléchargement direct** — endpoint `GET /rapport/zones-congestionnees/pdf` génère PDF natif via **fpdf2** (pure Python, léger). Frontend télécharge via fetch + Blob + `<a download>` — pas de popup, pas d'aperçu. Évite jspdf et ses vulnérabilités critiques dompurify. Cf. § 12.6. |
 | **P10.7** | ✅ Terminée (2026-06-28) | **Import CSV/Excel évolution pluriannuelle** — endpoint `POST /import/evolution-csv` accepte CSV ou Excel à 7 colonnes (`axe, sens, periode, type_jour, temps_min_s, temps_moyen_s, temps_max_s`). Idempotent (UPSERT par clé). Bouton dans `EvolutionPluriannuelle` (mode écriture). Cf. § 12.7. |
 | **P10.8** | ✅ Terminée (2026-06-28) | **Sources scraping incidents configurables** — migration **0014** crée la table `sources_incidents`. CRUD via `/incidents/sources` (GET, POST, PATCH, DELETE). `scraper_toutes_sources()` lit la table en priorité (repli statique). Panneau "⚙ Gérer les sources" sur la page Incidents (mode écriture). Cf. § 12.8. |
@@ -3254,63 +3254,32 @@ apparaissent à côté de Exporter CSV / XLSX :
 
 Nom des fichiers : `mesures_troncon{id}_{AAAA-MM-JJ}.{csv|xlsx}`.
 
-### 12.5 Distinction axes / tronçons — migration 0013
+### 12.5 Axes et tronçons — migration 0013
 
 **Migration** : ajout colonne `troncons.est_axe BOOLEAN NOT NULL DEFAULT TRUE`.
-Initialisation :
-
-```sql
-UPDATE troncons SET est_axe = TRUE  WHERE id <= 6;
-UPDATE troncons SET est_axe = FALSE WHERE id >  6;
-```
 
 **Sémantique** :
-- `est_axe = True` → axe officiel DEESP du cahier des charges (6 initiaux
-  + nouveaux axes créés via l'onglet « Axes principaux » de la page Admin)
-- `est_axe = False` → tronçon supplémentaire ajouté en complément
+- `est_axe = True` → axe (itinéraire de surveillance) créé via l'onglet
+  « Axes principaux » de la page Admin. Les 6 axes initiaux du cahier des
+  charges DEESP sont marqués `True`.
+- `est_axe = False` → (legacy, plus utilisé depuis la refonte post-hackathon)
 
-**Distinction purement cosmétique** : la collecte Google, l'agrégation
-nocturne, le rapport DEESP, la calibration GPX traitent identiquement
-les deux catégories. Seule l'UI les sépare.
+Chaque axe peut être découpé en **tronçons codifiés** (T1A, T1B, T1C…)
+via l'onglet « Tronçons codifiés ». Un tronçon est toujours enfant d'un
+axe parent.
 
-**Modifications UI (état final 2026-07-02)** :
-- **Onglet « Axes principaux »** : crée directement des axes (`est_axe=true`
-  forcé, plus de fieldset radio Catégorie). Tableau en bas avec colonne
-  « Catégorie » (badge AXE / Tronçon) + « Actions » (archiver).
-- **Onglet « Tronçons codifiés »** (anciennement « Sous-tronçons codifiés ») :
-  - Terminologie refondée : « sous-tronçon » → « tronçon », « tronçon parent » → « axe parent »
-  - Sélecteur d'axe parent séparé en `<optgroup>` (axes DEESP / tronçons supplémentaires)
-  - Tableau « Tronçons existants » : affiche **à la fois** les sous-tronçons
-    codifiés de l'axe sélectionné **et** tous les tronçons supplémentaires
-    (est_axe=false), communs à tous les axes. Colonnes : Code, Nom, Distance, État
-    (badge vert « Actif »). Plus de colonne « Type » ni de boutons d'action.
+**Modifications UI** :
+- **Onglet « Axes principaux »** : crée des axes. Tableau en bas avec
+  colonnes ID, Nom, Distance, Couleur, Actions (archiver).
+- **Onglet « Tronçons codifiés »** : sélecteur d'axe parent, formulaire
+  de création (code, nom, coords). Tableau affichant les tronçons codifiés
+  de l'axe sélectionné.
 - `SelecteurTroncon` (Indicateurs, etc.) utilise
-  `<optgroup label="── Axes officiels DEESP ──">` et
-  `<optgroup label="── Tronçons supplémentaires ──">`
+  `<optgroup label="── Axes ──">` et `<optgroup label="── Tronçons ──">`
 - Backend : `est_axe` exposé dans `/carte/etat`, `/troncons`,
   `/troncons/{id}`, `/administration/troncons`
 
-**Chatbot** : `SYSTEM_PROMPT` enrichi d'une section
-« DISTINCTION AXES VS TRONÇONS » et de la description détaillée des
-deux onglets de la page Administration.
-
-**Commande pour supprimer/reclasser les tronçons supplémentaires (>6)** :
-
-```bash
-# Console Railway service backend
-python -c "
-from app.db.session import SessionLocal
-from app.models.models import Troncon, Mesure, ProfilHoraire, SousTroncon
-db = SessionLocal()
-ids = [tid for (tid,) in db.query(Troncon.id).filter(Troncon.id > 6).all()]
-db.query(Mesure).filter(Mesure.troncon_id.in_(ids)).delete(synchronize_session=False)
-db.query(ProfilHoraire).filter(ProfilHoraire.troncon_id.in_(ids)).delete(synchronize_session=False)
-db.query(SousTroncon).filter(SousTroncon.troncon_id.in_(ids)).delete(synchronize_session=False)
-db.query(Troncon).filter(Troncon.id.in_(ids)).delete(synchronize_session=False)
-db.commit()
-db.close()
-"
-```
+**Chatbot** : `SYSTEM_PROMPT` enrichi d'une section « AXES ET TRONÇONS ».
 
 ### 12.6 PDF Tableau 16 — téléchargement direct
 

@@ -28,10 +28,9 @@ export function SelecteurTroncon({
 }) {
   const { t } = useI18n();
   const liste = Array.isArray(troncons) ? troncons : [];
-  // Fallback : si est_axe absent (migration 0013 non appliquée), IDs ≤ 6 = axes officiels.
   const estAxe = (tr: Troncon) => tr.est_axe ?? (tr.id <= 6);
   const axes   = liste.filter(estAxe);
-  const autres = liste.filter((tr) => !estAxe(tr));
+  const troncons_ = liste.filter((tr) => !estAxe(tr));
   return (
     <label className="flex flex-col gap-1">
       <span className="text-fluid-xs font-medium app-text-muted">
@@ -45,15 +44,15 @@ export function SelecteurTroncon({
                    dark:text-paa-blue-100 min-h-[44px]"
       >
         {axes.length > 0 && (
-          <optgroup label="── Axes officiels DEESP ──">
+          <optgroup label="── Axes ──">
             {axes.map((tr) => (
               <option key={tr.id} value={tr.id}>{tr.nom}</option>
             ))}
           </optgroup>
         )}
-        {autres.length > 0 && (
-          <optgroup label="── Tronçons supplémentaires ──">
-            {autres.map((tr) => (
+        {troncons_.length > 0 && (
+          <optgroup label="── Tronçons ──">
+            {troncons_.map((tr) => (
               <option key={tr.id} value={tr.id}>{tr.nom}</option>
             ))}
           </optgroup>

@@ -67,8 +67,8 @@ class TronconCreer(BaseModel):
     est_axe: bool = Field(
         default=True,
         description=(
-            "Si True (défaut), marqué comme axe officiel DEESP. Si False, "
-            "tronçon supplémentaire ajouté en complément des 6 axes initiaux."
+            "Si True (défaut), marqué comme axe. Si False, "
+            "tronçon codifié (enfant d'un axe)."
         ),
     )
 
