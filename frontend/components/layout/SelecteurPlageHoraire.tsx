@@ -114,25 +114,26 @@ export function SelecteurPlageHoraire() {
               </p>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2">
               <button
                 type="button"
                 onClick={appliquer}
                 disabled={dLocal >= fLocal}
-                className="flex-1 rounded-md bg-paa-blue-600 px-3 py-1.5 text-[11px] font-medium
-                           text-white hover:bg-paa-blue-700 disabled:opacity-40 transition-colors"
+                className="w-full rounded-md bg-paa-blue-600 px-3 py-2 text-[12px] font-semibold
+                           text-white hover:bg-paa-blue-700 disabled:opacity-40 transition-colors
+                           shadow-sm"
               >
-                Appliquer
+                ✓ Appliquer
               </button>
               <button
                 type="button"
                 onClick={reinitialiser}
-                className="rounded-md border border-gray-300 dark:border-paa-navy-600
+                className="w-full rounded-md border border-gray-300 dark:border-paa-navy-600
                            px-3 py-1.5 text-[11px] font-medium
                            text-gray-600 dark:text-gray-300
                            hover:bg-gray-50 dark:hover:bg-paa-navy-800 transition-colors"
               >
-                24h/24
+                Réinitialiser 24h/24
               </button>
             </div>
           </div>
