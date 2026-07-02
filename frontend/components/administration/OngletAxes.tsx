@@ -41,7 +41,7 @@ export function OngletAxes({
   const [fin, setFin] = useState<{ lat: number; lon: number } | null>(null);
   const [pointActif, setPointActif] = useState<"debut" | "fin" | null>(null);
   const [couleur, setCouleur] = useState<string>("#9C27B0");
-  const [estAxe, setEstAxe] = useState<boolean>(false); // par défaut tronçon supplémentaire
+  const [estAxe] = useState<boolean>(true);
   const [erreur, setErreur] = useState<string | null>(null);
   const [succes, setSucces] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
@@ -199,25 +199,6 @@ export function OngletAxes({
               )}
             </div>
           </div>
-
-          {/* Catégorie axe / tronçon */}
-          <fieldset className="rounded-md border app-border p-3">
-            <legend className="px-2 text-fluid-xs font-semibold app-text-muted uppercase tracking-wide">
-              Catégorie
-            </legend>
-            <div className="flex flex-wrap gap-3">
-              <label className="flex cursor-pointer items-center gap-2 text-fluid-sm">
-                <input type="radio" name="cat" checked={!estAxe}
-                       onChange={() => setEstAxe(false)} className="accent-paa-blue-600" />
-                <span><strong>Tronçon</strong> — sous-portion du réseau (défaut)</span>
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-fluid-sm">
-                <input type="radio" name="cat" checked={estAxe}
-                       onChange={() => setEstAxe(true)} className="accent-paa-blue-600" />
-                <span><strong>Axe</strong> — axe officiel DEESP (mêmes propriétés que les 6 axes initiaux)</span>
-              </label>
-            </div>
-          </fieldset>
 
           {/* Couleur + bouton */}
           <div className="flex flex-wrap items-end gap-3">
