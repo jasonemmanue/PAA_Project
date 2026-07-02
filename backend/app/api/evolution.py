@@ -94,8 +94,14 @@ def _stats_periode_par_troncon(
     troncon_id: int,
     debut_utc: datetime,
     fin_utc: datetime,
+    heure_debut: int = 0,
+    heure_fin: int = 24,
 ) -> dict[str, Any]:
-    """Stats min/moyen/max sur une fenêtre UTC arbitraire, par type de jour local."""
+    """Stats min/moyen/max sur une fenêtre UTC arbitraire, par type de jour local.
+
+    ``heure_debut`` / ``heure_fin`` filtrent sur l'heure locale (Africa/Abidjan).
+    Par défaut 0-24 = pas de filtre.
+    """
     fuseau = ZoneInfo(get_settings().tz)
 
     rows = list(
@@ -112,6 +118,7 @@ def _stats_periode_par_troncon(
         ).all()
     )
 
+    filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
     par_type: dict[str, list[float]] = {"jour_ouvrable": [], "week_end": []}
     for duree_s, horodatage in rows:
         if duree_s is None:
@@ -121,6 +128,8 @@ def _stats_periode_par_troncon(
             if horodatage.tzinfo
             else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
         )
+        if filtrer_heure and not (heure_debut <= h_local.hour < heure_fin):
+            continue
         tj = "week_end" if h_local.weekday() >= 5 else "jour_ouvrable"
         par_type[tj].append(duree_s / 60.0)
 
@@ -142,7 +151,7 @@ def _stats_periode_par_troncon(
 
 
 def _stats_mois_courant_par_troncon(
-    db: Session, troncon_id: int
+    db: Session, troncon_id: int, heure_debut: int = 0, heure_fin: int = 24,
 ) -> dict[str, Any]:
     """Stats min/moyen/max depuis le 1er du mois courant jusqu'à maintenant."""
     fuseau = ZoneInfo(get_settings().tz)
@@ -153,7 +162,7 @@ def _stats_mois_courant_par_troncon(
     ).astimezone(timezone.utc)
     fin_utc = maintenant_local.astimezone(timezone.utc)
 
-    stats = _stats_periode_par_troncon(db, troncon_id, debut_mois_utc, fin_utc)
+    stats = _stats_periode_par_troncon(db, troncon_id, debut_mois_utc, fin_utc, heure_debut, heure_fin)
     return {
         "debut": debut_mois_date.isoformat(),
         "fin": maintenant_local.date().isoformat(),
@@ -162,7 +171,8 @@ def _stats_mois_courant_par_troncon(
 
 
 def _stats_mois_complet_par_troncon(
-    db: Session, troncon_id: int, annee: int, mois: int
+    db: Session, troncon_id: int, annee: int, mois: int,
+    heure_debut: int = 0, heure_fin: int = 24,
 ) -> dict[str, Any]:
     """Stats min/moyen/max pour un mois calendaire complet passé."""
     fuseau = ZoneInfo(get_settings().tz)
@@ -176,7 +186,7 @@ def _stats_mois_complet_par_troncon(
         fin_date, time(23, 59, 59), tzinfo=fuseau
     ).astimezone(timezone.utc)
 
-    stats = _stats_periode_par_troncon(db, troncon_id, debut_utc, fin_utc)
+    stats = _stats_periode_par_troncon(db, troncon_id, debut_utc, fin_utc, heure_debut, heure_fin)
     return {
         "debut": debut_date.isoformat(),
         "fin": fin_date.isoformat(),
@@ -208,6 +218,8 @@ def _stats_mois_complet_par_troncon(
 )
 async def evolution_par_troncon(
     troncon_id: int,
+    heure_debut: int = Query(0, ge=0, le=23, description="Heure locale de début (0-23)"),
+    heure_fin: int = Query(24, ge=1, le=24, description="Heure locale de fin (1-24)"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     troncon = db.get(Troncon, troncon_id)
@@ -278,7 +290,7 @@ async def evolution_par_troncon(
             continue  # import Excel prioritaire
 
         stats_m = _stats_mois_complet_par_troncon(
-            db, troncon_id, annee_cible, mois_cible
+            db, troncon_id, annee_cible, mois_cible, heure_debut, heure_fin,
         )
         if stats_m["nb_mesures_total"] < _MIN_MESURES_MOIS_COMPLET:
             continue
@@ -303,7 +315,7 @@ async def evolution_par_troncon(
 
     # --- 3. Mois courant (table mesures, temps réel) ---
     code_mois = _code_mois_courant(fuseau)
-    stats_live = _stats_mois_courant_par_troncon(db, troncon_id)
+    stats_live = _stats_mois_courant_par_troncon(db, troncon_id, heure_debut, heure_fin)
 
     campagne_live = {
         "periode": code_mois,

@@ -24,6 +24,7 @@ import {
 } from "recharts";
 
 import { Card } from "@/components/ui/Card";
+import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
 import { useI18n } from "@/lib/i18n";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
@@ -68,6 +69,7 @@ interface Props {
 
 export function EvolutionPluriannuelle({ tronconId }: Props) {
   const { t } = useI18n();
+  const { heureDebut, heureFin } = usePlageHoraire();
 
   const [data, setData] = useState<EvolutionTronconResponse | null>(null);
   const [chargement, setChargement] = useState(false);
@@ -77,7 +79,11 @@ export function EvolutionPluriannuelle({ tronconId }: Props) {
 
   const charger = useCallback(async (id: number) => {
     try {
-      const rep = await fetch(`${API_BASE}/evolution/troncon/${id}`);
+      const p = new URLSearchParams();
+      if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
+      if (heureFin !== 24) p.set("heure_fin", String(heureFin));
+      const qs = p.toString() ? `?${p.toString()}` : "";
+      const rep = await fetch(`${API_BASE}/evolution/troncon/${id}${qs}`);
       if (!rep.ok) throw new Error(`HTTP ${rep.status}`);
       const json: EvolutionTronconResponse = await rep.json();
       setData(json);
@@ -87,7 +93,7 @@ export function EvolutionPluriannuelle({ tronconId }: Props) {
     } finally {
       setChargement(false);
     }
-  }, []);
+  }, [heureDebut, heureFin]);
 
   useEffect(() => {
     if (tronconId === null) {
