@@ -38,10 +38,11 @@ export function OngletSousTroncons({
   const [succes, setSucces] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
 
-  // 1er parent par défaut
+  // 1er axe par défaut (exclut les tronçons supplémentaires)
   useEffect(() => {
     if (parentId === null && troncons.length > 0) {
-      setParentId(troncons[0].id);
+      const premierAxe = troncons.find((t) => t.actif && (t.est_axe ?? (t.id <= 6)));
+      if (premierAxe) setParentId(premierAxe.id);
     }
   }, [parentId, troncons]);
 
@@ -138,21 +139,10 @@ export function OngletSousTroncons({
             className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
                        focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
           >
-            {(() => {
-              const actifs = troncons.filter((t) => t.actif);
-              const axes = actifs.filter((t) => t.est_axe ?? (t.id <= 6));
-              const autres = actifs.filter((t) => !(t.est_axe ?? (t.id <= 6)));
-              return (<>
-                <optgroup label="── Axes officiels DEESP ──">
-                  {axes.map((t) => <option key={t.id} value={t.id}>{t.nom}</option>)}
-                </optgroup>
-                {autres.length > 0 && (
-                  <optgroup label="── Tronçons supplémentaires ──">
-                    {autres.map((t) => <option key={t.id} value={t.id}>{t.nom}</option>)}
-                  </optgroup>
-                )}
-              </>);
-            })()}
+            {troncons
+              .filter((t) => t.actif && (t.est_axe ?? (t.id <= 6)))
+              .map((t) => <option key={t.id} value={t.id}>{t.nom}</option>)
+            }
           </select>
         </label>
       </Card>
