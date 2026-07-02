@@ -244,7 +244,7 @@
     "nbActifs": "active incidents",
     "nbAujourdhui": "incidents recorded",
     "tronconImpacte": "most impacted segment",
-    "carteTitle": "Active geolocated incidents (< 6 h)",
+    "carteTitle": "Active geolocated incidents (last 30 days)",
     "aucunIncidentCarte": "No active geolocated incident at the moment.",
     "aucunIncident": "No incident recorded for this period.",
     "incidentsRecenses": "incident(s) recorded",

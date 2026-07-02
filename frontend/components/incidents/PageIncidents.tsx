@@ -109,7 +109,7 @@ export function PageIncidents() {
     return liste;
   })();
 
-  // Incidents actifs pour la carte (< 6 h, géolocalisés)
+  // Incidents actifs pour la carte (< 30 j, géolocalisés)
   const incidentsActifs = incidents.filter(
     (i) => i.actif && i.lat != null && i.lon != null
   );
