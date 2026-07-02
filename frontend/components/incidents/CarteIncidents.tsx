@@ -105,7 +105,7 @@ export function CarteIncidents({ incidents }: Props) {
         if (inc.lat == null || inc.lon == null) return;
 
         const ageMs = maintenant - new Date(inc.horodatage_publication).getTime();
-        const actif = ageMs < 6 * 3600 * 1000;
+        const actif = ageMs < 30 * 24 * 3600 * 1000;
         const couleur = couleurSeverite(inc.severite);
         const opacite = actif ? 1 : 0.35;
 

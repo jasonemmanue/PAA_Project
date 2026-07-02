@@ -156,7 +156,7 @@ def get_stats(db: Session = Depends(get_db)) -> StatsIncidents:
 
     maintenant = datetime.now(tz=timezone.utc)
 
-    # Incidents actifs : publication < 6 h
+    # Incidents actifs : publication < seuil configurable (défaut 30 j)
     tous = db.execute(
         select(
             Incident.horodatage_publication,
@@ -174,7 +174,7 @@ def get_stats(db: Session = Depends(get_db)) -> StatsIncidents:
     for pub, type_inc, source, collecte in tous:
         # Normalisation UTC
         pub_utc = pub.replace(tzinfo=timezone.utc) if pub.tzinfo is None else pub
-        if (maintenant - pub_utc).total_seconds() < 6 * 3600:
+        if (maintenant - pub_utc).total_seconds() < get_settings().incident_actif_heures * 3600:
             nb_actifs += 1
 
         cle_type = _enum_value(type_inc) or "inconnu"
@@ -209,7 +209,7 @@ def get_stats(db: Session = Depends(get_db)) -> StatsIncidents:
     response_model=IncidentsPage,
 )
 def lister_incidents(
-    actif_seulement: bool = Query(False, description="Si True, retourne uniquement les incidents < 6 h"),
+    actif_seulement: bool = Query(False, description="Si True, retourne uniquement les incidents récents (seuil configurable, défaut 30 j)"),
     troncon_id: int | None = Query(None, description="Filtre sur le tronçon impacté"),
     type_incident: str | None = Query(None, description="Filtre sur le type (accident, embouteillage, …)"),
     limit: int = Query(50, ge=1, le=200, description="Nombre maximum de résultats"),
@@ -334,7 +334,7 @@ def exporter_incidents_csv(
     for inc in incidents:
         pub = inc.horodatage_publication
         pub_utc = pub.replace(tzinfo=timezone.utc) if pub.tzinfo is None else pub
-        actif_val = (maintenant - pub_utc).total_seconds() < 6 * 3600
+        actif_val = (maintenant - pub_utc).total_seconds() < get_settings().incident_actif_heures * 3600
         writer.writerow([
             inc.id,
             inc.titre,

@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     # Clé Anthropic pour le chatbot Claude (optionnelle — chatbot bascule sur Gemini si absente)
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
 
+    # === Incidents — durée de visibilité ===
+    # Nombre d'heures pendant lesquelles un incident reste « actif » (carte,
+    # badge nav, stats). 720 h = 30 jours. Configurable via variable Railway.
+    incident_actif_heures: int = Field(default=720, alias="INCIDENT_ACTIF_HEURES")
+
     # === Sécurité de l'API ===
     api_secret_key: str = Field(..., alias="API_SECRET_KEY")
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")

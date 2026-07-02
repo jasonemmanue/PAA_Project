@@ -254,8 +254,8 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 },
             })
 
-        # 4. Incidents actifs géolocalisés (< 6 h) — max 20 les plus récents
-        seuil_actif = instant_utc - timedelta(hours=6)
+        # 4. Incidents actifs géolocalisés — max 20 les plus récents
+        seuil_actif = instant_utc - timedelta(hours=settings.incident_actif_heures)
         incidents_actifs_db: list[Incident] = list(
             session.execute(
                 select(Incident)

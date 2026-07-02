@@ -270,8 +270,10 @@ def recuperer_heure_optimale(db: Session) -> str:
 
 
 def recuperer_incidents_actifs(db: Session) -> str:
-    """Incidents des 6 dernières heures dans la zone portuaire."""
-    limite_utc = datetime.now(tz=timezone.utc) - timedelta(hours=6)
+    """Incidents récents dans la zone portuaire (seuil configurable, défaut 30 j)."""
+    from app.core.config import get_settings
+    seuil_h = get_settings().incident_actif_heures
+    limite_utc = datetime.now(tz=timezone.utc) - timedelta(hours=seuil_h)
 
     incidents = db.execute(
         select(Incident)
@@ -283,10 +285,10 @@ def recuperer_incidents_actifs(db: Session) -> str:
     if not incidents:
         return (
             "INCIDENTS ACTIFS — aucun incident signalé dans la zone portuaire"
-            " au cours des 6 dernières heures."
+            " au cours des 30 derniers jours."
         )
 
-    lignes = [f"INCIDENTS ACTIFS (< 6h) — {len(incidents)} incident(s) détecté(s)"]
+    lignes = [f"INCIDENTS ACTIFS — {len(incidents)} incident(s) détecté(s)"]
     for inc in incidents:
         age_h = int(
             (datetime.now(tz=timezone.utc) - _horodatage_utc(inc.horodatage_publication))

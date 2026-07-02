@@ -301,7 +301,7 @@ export function CarteLeaflet({
     for (const inc of etat.incidents_actifs ?? []) {
       const couleur = couleurSeveriteIncident(inc.severite);
       const age = Date.now() - new Date(inc.horodatage_publication).getTime();
-      const actif = age < 6 * 60 * 60 * 1000;
+      const actif = age < 30 * 24 * 60 * 60 * 1000;
       const cm = L.circleMarker([inc.lat, inc.lon], {
         radius: 10,
         color: "#fff",

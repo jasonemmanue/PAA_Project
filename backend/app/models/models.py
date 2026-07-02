@@ -696,13 +696,15 @@ class Incident(Base):
 
     @property
     def actif(self) -> bool:
-        """True si l'incident date de moins de 6 heures (recalculé à chaque lecture)."""
+        """True si l'incident est récent (seuil configurable, défaut 30 jours)."""
+        from app.core.config import get_settings
+        seuil_h = get_settings().incident_actif_heures
         age = datetime.now(tz=timezone.utc) - self.horodatage_publication.replace(
             tzinfo=timezone.utc
         ) if self.horodatage_publication.tzinfo is None else (
             datetime.now(tz=timezone.utc) - self.horodatage_publication
         )
-        return age.total_seconds() < 6 * 3600
+        return age.total_seconds() < seuil_h * 3600
 
     def __repr__(self) -> str:
         return (
