@@ -371,10 +371,13 @@ export function PagePrediction() {
 
                   return (
                     <div className="flex items-center gap-4">
-                      <div className="flex-shrink-0 flex items-center justify-center h-12 w-12
-                                      rounded-full bg-paa-navy-100 dark:bg-paa-navy-700">
-                        <span className="text-fluid-lg font-bold text-paa-navy-700 dark:text-paa-blue-200">
-                          {resume.courante.prediction.moyen_mn != null ? `${resume.courante.prediction.moyen_mn} min` : "—"}
+                      <div className="flex-shrink-0 flex items-center justify-center h-14 w-14
+                                      rounded-full bg-paa-blue-100 dark:bg-paa-navy-700
+                                      border-2 border-paa-blue-300 dark:border-paa-blue-500">
+                        <span className="text-fluid-base font-bold text-paa-navy-700 dark:text-paa-blue-100 leading-tight text-center">
+                          {resume.courante.prediction.moyen_mn != null
+                            ? <><span className="text-lg">{resume.courante.prediction.moyen_mn}</span><br /><span className="text-[10px]">min</span></>
+                            : "—"}
                         </span>
                       </div>
                       <div className="flex-1">

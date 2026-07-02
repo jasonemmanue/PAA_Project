@@ -57,7 +57,7 @@ export function SelecteurPlageHoraire() {
       {ouvert && (
         <>
           <div className="fixed inset-0 z-[1200]" onClick={() => setOuvert(false)} />
-          <div className="absolute right-0 top-full mt-2 z-[1201] w-[260px]
+          <div className="fixed sm:absolute right-4 sm:right-0 top-14 sm:top-full sm:mt-2 z-[1201] w-[260px]
                           rounded-lg border border-paa-blue-200 dark:border-paa-navy-700
                           bg-white dark:bg-paa-navy-900 shadow-xl p-4">
             <h3 className="text-[12px] font-semibold text-paa-navy-800 dark:text-paa-blue-100 mb-3">

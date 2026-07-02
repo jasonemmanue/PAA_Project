@@ -261,7 +261,7 @@ export function MatriceCongestion({
                   >
                     {/* Créneau — collant à gauche */}
                     <td
-                      className="sticky left-0 z-10 bg-white dark:bg-paa-navy-950 font-mono
+                      className="sticky left-0 z-10 bg-white dark:bg-slate-900 font-mono
                                  px-3 py-1.5 whitespace-nowrap border-r app-border
                                  text-paa-navy-900 dark:text-paa-blue-100 text-[11px]"
                     >
