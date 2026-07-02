@@ -65,9 +65,9 @@ class TronconCreer(BaseModel):
     vitesse_ref_kmh: float = 50.0
     couleur: str = "#1976D2"
     est_axe: bool = Field(
-        default=False,
+        default=True,
         description=(
-            "Si True, marqué comme axe officiel DEESP. Si False (défaut), "
+            "Si True (défaut), marqué comme axe officiel DEESP. Si False, "
             "tronçon supplémentaire ajouté en complément des 6 axes initiaux."
         ),
     )

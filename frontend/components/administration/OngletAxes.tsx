@@ -244,9 +244,15 @@ export function OngletAxes({
       {/* Carte */}
       <Card
         titre="Carte interactive"
-        description={
-          `Les ${troncons.filter((t) => t.actif).length} tronçons actifs en pointillés. Le nouveau tronçon en violet plein.`
-        }
+        description={(() => {
+          const actifs = troncons.filter((t) => t.actif);
+          const nAxes = actifs.filter((t) => t.est_axe ?? (t.id <= 6)).length;
+          const nTr = actifs.length - nAxes;
+          const parts: string[] = [];
+          if (nAxes > 0) parts.push(`${nAxes} axe${nAxes > 1 ? "s" : ""}`);
+          if (nTr > 0) parts.push(`${nTr} tronçon${nTr > 1 ? "s" : ""}`);
+          return `Les ${parts.join(" et ")} actifs en pointillés. Le nouvel axe en violet plein.`;
+        })()}
       >
         <CarteAdmin
           pointActif={pointActif}
