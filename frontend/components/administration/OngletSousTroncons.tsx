@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Onglet "Sous-tronçons codifiés" — DEESP convention (T1A, T1B, T1C...).
+ * Onglet "Tronçons codifiés" — DEESP convention (T1A, T1B, T1C...).
  *
- * L'agent sélectionne un tronçon parent, place 2 markers (début, fin)
- * du sous-tronçon sur la polyline parent visible en surbrillance, et
+ * L'agent sélectionne un axe parent, place 2 markers (début, fin)
+ * du tronçon sur la polyline parent visible en surbrillance, et
  * saisit le code (T1A...) + un nom court.
  */
 
@@ -100,7 +100,7 @@ export function OngletSousTroncons({
         lat_fin: fin.lat,
         lon_fin: fin.lon,
       });
-      setSucces(`✅ Sous-tronçon créé : ${s.code} (${s.distance_m} m)`);
+      setSucces(`✅ Tronçon créé : ${s.code} (${s.distance_m} m)`);
       reinitialiser();
       void chargerSousTroncons();
     } catch (e) {
@@ -111,7 +111,7 @@ export function OngletSousTroncons({
   };
 
   const archiver = async (s: SousTroncon) => {
-    if (!confirm(`Archiver le sous-tronçon ${s.code} ?`)) return;
+    if (!confirm(`Archiver le tronçon ${s.code} ?`)) return;
     try {
       await api.supprimerSousTroncon(s.id);
       void chargerSousTroncons();
@@ -129,7 +129,7 @@ export function OngletSousTroncons({
   return (
     <div className="flex flex-col gap-fluid-4">
       {/* Sélecteur parent */}
-      <Card titre="Tronçon parent">
+      <Card titre="Axe parent">
         <label className="flex flex-col gap-1 text-fluid-sm font-medium">
           Choisir l'axe parent
           <select
@@ -138,18 +138,28 @@ export function OngletSousTroncons({
             className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
                        focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
           >
-            {troncons.filter((t) => t.actif).map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.nom}
-              </option>
-            ))}
+            {(() => {
+              const actifs = troncons.filter((t) => t.actif);
+              const axes = actifs.filter((t) => t.est_axe ?? (t.id <= 6));
+              const autres = actifs.filter((t) => !(t.est_axe ?? (t.id <= 6)));
+              return (<>
+                <optgroup label="── Axes officiels DEESP ──">
+                  {axes.map((t) => <option key={t.id} value={t.id}>{t.nom}</option>)}
+                </optgroup>
+                {autres.length > 0 && (
+                  <optgroup label="── Tronçons supplémentaires ──">
+                    {autres.map((t) => <option key={t.id} value={t.id}>{t.nom}</option>)}
+                  </optgroup>
+                )}
+              </>);
+            })()}
           </select>
         </label>
       </Card>
 
       {/* Formulaire de création + carte — masqués en mode lecture */}
       {peutEcrire && (<><Card
-        titre={`Ajouter un sous-tronçon à ${parent?.nom ?? "…"}`}
+        titre={`Ajouter un tronçon à ${parent?.nom ?? "…"}`}
         description={`Convention DEESP : T<n>A, T<n>B... (suggéré : ${codeSuggere}). Placez début et fin sur la polyline parent.`}
       >
         <div className="grid gap-3 md:grid-cols-2">
@@ -182,7 +192,7 @@ export function OngletSousTroncons({
           <div className="rounded-md border app-border p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-fluid-xs font-medium app-text-muted">
-                🟢 Début sous-tronçon
+                🟢 Début tronçon
               </span>
               <button
                 type="button"
@@ -208,7 +218,7 @@ export function OngletSousTroncons({
           <div className="rounded-md border app-border p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-fluid-xs font-medium app-text-muted">
-                🔴 Fin sous-tronçon
+                🔴 Fin tronçon
               </span>
               <button
                 type="button"
@@ -240,7 +250,7 @@ export function OngletSousTroncons({
             disabled={enCours || !code || !nomCourt || !debut || !fin || parentId === null}
             className="btn-primary disabled:opacity-50 min-h-[42px]"
           >
-            {enCours ? "Création…" : "✅ Créer le sous-tronçon"}
+            {enCours ? "Création…" : "✅ Créer le tronçon"}
           </button>
           <button
             type="button"
@@ -264,7 +274,7 @@ export function OngletSousTroncons({
       </Card>
 
       {/* Carte */}
-      <Card titre="Polyline parent + sous-tronçon en cours">
+      <Card titre="Polyline parent + tronçon en cours">
         <CarteAdmin
           pointActif={pointActif}
           debut={debut}
@@ -289,7 +299,7 @@ export function OngletSousTroncons({
       </>)}
 
       {/* Liste des sous-tronçons */}
-      <Card titre={`Sous-tronçons existants (${sousTroncons.length})`}>
+      <Card titre={`Tronçons existants (${sousTroncons.length})`}>
         <div className="overflow-x-auto">
           <table className="min-w-full text-fluid-sm">
             <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
@@ -305,7 +315,7 @@ export function OngletSousTroncons({
               {sousTroncons.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-3 py-4 text-center app-text-muted text-fluid-xs">
-                    Aucun sous-tronçon défini pour cet axe.
+                    Aucun tronçon défini pour cet axe.
                   </td>
                 </tr>
               ) : (
