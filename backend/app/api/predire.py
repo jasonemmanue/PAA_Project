@@ -56,6 +56,8 @@ _H_DEBUT, _H_FIN = 0, 24
 )
 async def get_resume(
     troncon_id: int = Query(..., description="ID du tronçon"),
+    heure_debut: int = Query(0, ge=0, le=23, description="Heure locale de début (0-23)"),
+    heure_fin: int = Query(24, ge=1, le=24, description="Heure locale de fin (1-24)"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     fuseau = ZoneInfo(get_settings().tz)
@@ -84,8 +86,8 @@ async def get_resume(
         .astimezone(timezone.utc)
     )
 
-    stats_semaine = _stats_mesures_periode(db, troncon_id, debut_semaine_utc, maintenant_utc)
-    stats_mois = _stats_mesures_periode(db, troncon_id, debut_mois_utc, maintenant_utc)
+    stats_semaine = _stats_mesures_periode(db, troncon_id, debut_semaine_utc, maintenant_utc, heure_debut, heure_fin)
+    stats_mois = _stats_mesures_periode(db, troncon_id, debut_mois_utc, maintenant_utc, heure_debut, heure_fin)
 
     # Bornes 7 j même type de jour — toujours calculées pour informer l'UI
     # (min/max stables même quand le moyen vient de la mesure Google instantanée)

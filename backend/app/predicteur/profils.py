@@ -426,12 +426,17 @@ def _stats_mesures_periode(
     troncon_id: int,
     debut_utc: datetime,
     fin_utc: datetime,
+    heure_debut: int = 0,
+    heure_fin: int = 24,
 ) -> dict:
     """Stats min/moyen/max des mesures Google réelles sur une période, par type_jour.
 
     Retourne un dict avec :
       - ``jour_ouvrable`` / ``week_end`` : dict { min_mn, moyen_mn, max_mn, nb_mesures } ou None
       - ``nb_mesures_total``
+
+    ``heure_debut`` / ``heure_fin`` filtrent sur l'heure locale (Africa/Abidjan).
+    Par défaut 0-24 = pas de filtre.
     """
     from sqlalchemy.sql.expression import and_
 
@@ -453,11 +458,14 @@ def _stats_mesures_periode(
         ).all()
     )
 
+    filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
     par_type: dict[str, list[float]] = {"jour_ouvrable": [], "week_end": []}
     for duree_s, horodatage in rows:
         if duree_s is None:
             continue
         horodatage_local = horodatage.astimezone(fuseau) if horodatage.tzinfo else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+        if filtrer_heure and not (heure_debut <= horodatage_local.hour < heure_fin):
+            continue
         tj = _type_jour(horodatage_local.date())
         par_type[tj].append(duree_s / 60.0)
 

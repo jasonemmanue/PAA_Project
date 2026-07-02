@@ -475,8 +475,15 @@ export const api = {
 // Temps de traversée par période + heure optimale
 // ---------------------------------------------------------------------------
 
-export function getResumePrediction(tronconId: number): Promise<ResumePrediction> {
-  return appel<ResumePrediction>(`/predire/resume?troncon_id=${tronconId}`);
+export function getResumePrediction(
+  tronconId: number,
+  heureDebut = 0,
+  heureFin = 24,
+): Promise<ResumePrediction> {
+  const p = new URLSearchParams({ troncon_id: String(tronconId) });
+  if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
+  if (heureFin !== 24) p.set("heure_fin", String(heureFin));
+  return appel<ResumePrediction>(`/predire/resume?${p.toString()}`);
 }
 
 export function getHeureOptimale(

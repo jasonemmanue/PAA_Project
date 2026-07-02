@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 
 import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type {
@@ -111,6 +112,7 @@ const COULEUR_SOURCE: Record<SourcePrediction, string> = {
 
 export function PagePrediction() {
   const { t, locale } = useI18n();
+  const { heureDebut, heureFin } = usePlageHoraire();
 
   const LIBELLE_SOURCE: Record<SourcePrediction, string> = {
     google_routes: t("prediction.sourceGoogle"),
@@ -142,7 +144,7 @@ export function PagePrediction() {
     setErreur(null);
     setSegments(null);
     Promise.all([
-      api.resumePrediction(tronconId),
+      api.resumePrediction(tronconId, heureDebut, heureFin),
       api.segmentsResumeTroncon(tronconId),
     ])
       .then(([r, s]) => {
@@ -153,7 +155,7 @@ export function PagePrediction() {
       .catch((e) => { if (!annule) setErreur(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!annule) setChargement(false); });
     return () => { annule = true; };
-  }, [tronconId]);
+  }, [tronconId, heureDebut, heureFin]);
 
   // Calculs GPX filtrés par période
   const sessionsTout = segments?.sessions ?? [];
