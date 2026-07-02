@@ -82,11 +82,19 @@ function CarteTop3({ creneaux, refMn }: { creneaux: CreneauHoraire[]; refMn: num
 function GraphiqueCreneaux({
   creneaux,
   refMn,
+  heureDebut = 0,
+  heureFin = 24,
 }: {
   creneaux: CreneauHoraire[];
   refMn: number | null;
+  heureDebut?: number;
+  heureFin?: number;
 }) {
   const { t } = useI18n();
+
+  const plageLabel = heureDebut === 0 && heureFin === 24
+    ? "(24h/24)"
+    : `(${String(heureDebut).padStart(2, "0")}h–${String(heureFin).padStart(2, "0")}h)`;
 
   const data = creneaux.map((c) => ({
     tranche: c.tranche.split("-")[0], // "07h"
@@ -98,7 +106,7 @@ function GraphiqueCreneaux({
 
   return (
     <Card
-      titre={t("heureOptimale.tableauTitre")}
+      titre={`${t("heureOptimale.tableauTitre")} ${plageLabel}`}
       description={`${t("heureOptimale.colMoyen")} en minutes — barres vertes = créneaux optimaux`}
     >
       <div className="h-64 w-full">
@@ -305,6 +313,8 @@ export function PageHeureOptimale() {
           <GraphiqueCreneaux
             creneaux={resultat.creneaux}
             refMn={resultat.temps_ref_50kmh_mn}
+            heureDebut={heureDebut}
+            heureFin={heureFin}
           />
           <TableauCreneaux creneaux={resultat.creneaux} />
         </>

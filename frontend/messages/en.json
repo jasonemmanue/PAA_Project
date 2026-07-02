@@ -287,7 +287,7 @@
     "tous": "All days",
     "top3Titre": "Recommended window (top 3)",
     "top3Desc": "Time slots with the lowest crossing times.",
-    "tableauTitre": "All DEESP slots (7am-6pm)",
+    "tableauTitre": "All DEESP slots",
     "colHeure": "HOUR",
     "colMoyen": "AVG",
     "colMin": "MIN",

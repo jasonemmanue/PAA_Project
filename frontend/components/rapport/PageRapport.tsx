@@ -234,6 +234,8 @@ export function PageRapport() {
         rapport={zones}
         debutRange={debutRange}
         finRange={finRange}
+        heureDebut={heureDebut}
+        heureFin={heureFin}
       />
 
       {/* Tableau 1 */}

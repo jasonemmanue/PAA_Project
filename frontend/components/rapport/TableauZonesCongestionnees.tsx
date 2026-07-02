@@ -11,10 +11,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081"
  * sur les requêtes cross-origin. Le serveur envoie Content-Disposition: attachment,
  * ce qui déclenche le téléchargement sans quitter la page.
  */
-function telechargerPdf(campagne: string, debut?: string, fin?: string): void {
+function telechargerPdf(campagne: string, debut?: string, fin?: string, heureDebut = 0, heureFin = 24): void {
   const params = new URLSearchParams({ campagne });
   if (debut) params.set("debut", debut);
   if (fin) params.set("fin", fin);
+  if (heureDebut !== 0) params.set("heure_debut", String(heureDebut));
+  if (heureFin !== 24) params.set("heure_fin", String(heureFin));
   const url = `${API_BASE}/rapport/zones-congestionnees/pdf?${params.toString()}`;
   const a = document.createElement("a");
   a.href = url;
@@ -28,10 +30,14 @@ export function TableauZonesCongestionnees({
   rapport,
   debutRange,
   finRange,
+  heureDebut = 0,
+  heureFin = 24,
 }: {
   rapport: RapportZonesCongestionnees | null;
   debutRange?: string;
   finRange?: string;
+  heureDebut?: number;
+  heureFin?: number;
 }) {
   return (
     <Card
@@ -58,6 +64,8 @@ export function TableauZonesCongestionnees({
         actif={!!rapport}
         debut={debutRange}
         fin={finRange}
+        heureDebut={heureDebut}
+        heureFin={heureFin}
       />
 
 
@@ -138,18 +146,22 @@ function BoutonExportPdf({
   actif,
   debut,
   fin,
+  heureDebut = 0,
+  heureFin = 24,
 }: {
   campagne: string;
   actif: boolean;
   debut?: string;
   fin?: string;
+  heureDebut?: number;
+  heureFin?: number;
 }) {
   return (
     <div className="mb-3 flex justify-end">
       <button
         type="button"
         disabled={!actif}
-        onClick={() => telechargerPdf(campagne, debut, fin)}
+        onClick={() => telechargerPdf(campagne, debut, fin, heureDebut, heureFin)}
         className="inline-flex items-center gap-2 rounded-md bg-paa-navy-700 px-3 py-1.5
                    text-fluid-xs font-medium text-white shadow-sm transition-colors
                    hover:bg-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
