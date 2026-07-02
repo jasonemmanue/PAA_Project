@@ -274,8 +274,8 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 "lat": inc.lat,
                 "lon": inc.lon,
                 "titre": inc.titre,
-                "type_incident": inc.type_incident.value if inc.type_incident else None,
-                "severite": inc.severite.value if inc.severite else None,
+                "type_incident": (inc.type_incident.value if hasattr(inc.type_incident, "value") else inc.type_incident) if inc.type_incident else None,
+                "severite": (inc.severite.value if hasattr(inc.severite, "value") else inc.severite) if inc.severite else None,
                 "troncon_id": inc.troncon_id,
                 "horodatage_publication": inc.horodatage_publication.isoformat(),
             }
