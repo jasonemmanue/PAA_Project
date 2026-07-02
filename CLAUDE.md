@@ -283,16 +283,19 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P10.14** | ✅ Terminée (2026-06-29) | **Matrice congestion + fix PDF CORS + réordonnancement page DEESP** — Cf. § 13.1 et § 13.2. |
 | **P10.15** | ✅ Terminée (2026-06-30) | **Matrice temps de traversée + fix PDF Unicode + navigation 7 jours + import Excel mesures** — Cf. § 13.3. |
 | **P10.16** | ✅ Terminée (2026-07-01) | **Évolution pluriannuelle — mois passés reconstruits depuis Google** — dès qu'un mois calendaire complet totalise ≥ 50 mesures Google, il apparaît dans le graphique comme campagne historique. Fenêtre glissante 12 mois. Les imports Excel restent prioritaires en cas de doublon de période. Roulement automatique : Fév 2026 / Juin 2026 / Juil 2026 (en cours) dès le 2026-07-01 pour les 6 axes officiels. Cf. § 4.4.1. |
+| **P11.1** | ✅ Terminée (2026-07-01) | **Indicateurs 6 mois / 1 an + suppression heatmap** — 2 nouvelles périodes d'analyse ajoutées (`6mois` = 180 j, `1an` = 365 j). Suppression de la heatmap horaire (composant retiré). Affichage de la valeur minimum sur le graphe courbe journée. Export matrice temps. Cf. § 14.1. |
+| **P11.2** | ✅ Terminée (2026-07-01) | **Filtre créneau horaire global** — `PlageHoraireContext` + `SelecteurPlageHoraire` dans la topbar. Filtre `heure_debut` / `heure_fin` propagé sur toutes les pages (Indicateurs, Temps de traversée, Heure optimale, Rapport DEESP, Évolution pluriannuelle). Persistance `localStorage`. Cf. § 14.2. |
+| **P11.3** | ✅ Terminée (2026-07-02) | **Fix bouton Appliquer invisible en mode clair** — `bg-paa-blue-600` (couleur inexistante dans la palette Tailwind) remplacé par `bg-paa-navy-700` dans `SelecteurPlageHoraire.tsx`. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
-Le backend `GET /troncons/{id}/indicateurs?periode=...` n'accepte **que le format
-`Nj`** (`1j`, `7j`, `30j`, `90j`) — son parseur (`_parse_periode`,
+Le backend `GET /troncons/{id}/indicateurs?periode=...` accepte le format
+`Nj` (`1j`, `7j`, `30j`, `90j`, `180j`, `365j`) — son parseur (`_parse_periode`,
 `backend/app/api/troncons.py`) rejette tout autre format avec un **HTTP 400**.
 
-L'UI conserve l'étiquette « **24 h** » pour la lisibilité, donc
-[`getIndicateursTroncon`](frontend/lib/api.ts) **traduit `"24h" → "1j"`** avant
-d'appeler l'API. Les 4 boutons sont donc fonctionnels :
+L'UI conserve des étiquettes lisibles, donc
+[`getIndicateursTroncon`](frontend/lib/api.ts) **traduit** les codes UI avant
+d'appeler l'API. Les **6 boutons** sont fonctionnels :
 
 | Bouton UI | Envoyé au backend | Fenêtre |
 |-----------|-------------------|---------|
@@ -300,17 +303,15 @@ d'appeler l'API. Les 4 boutons sont donc fonctionnels :
 | `7 jours` | `?periode=7j`     | 7 jours glissants |
 | `30 jours`| `?periode=30j`    | 30 jours glissants |
 | `90 jours`| `?periode=90j`    | 90 jours glissants |
+| `6 mois`  | `?periode=180j`   | 180 jours glissants |
+| `1 an`    | `?periode=365j`   | 365 jours glissants |
 
-**Conséquence attendue les premiers jours après mise en production** : tant que
-la collecte Google n'a pas accumulé plusieurs jours d'historique, les 4
-sélecteurs renvoient le **même contenu** (uniquement les mesures du jour). Les
-2 016 mesures historiques `source='historique_paa_2025'` (P6.1) datent de
-février 2025 et restent donc hors fenêtre même à 90 jours — elles
-n'apparaissent que dans la **heatmap horaire** et le **graphique d'évolution
-pluriannuelle** qui exploitent respectivement `profils_horaires` et
-`evolution_indicateur`, indépendamment du sélecteur. C'est conforme à la
-**règle d'or** du § 2.5 : on ne mélange jamais `historique_paa_2025` avec les
-mesures `google` temps réel.
+Les 2 016 mesures historiques `source='historique_paa_2025'` (P6.1) datent de
+février 2025 et restent donc hors fenêtre même à 365 jours — elles
+n'apparaissent que dans le **graphique d'évolution
+pluriannuelle** qui exploite `evolution_indicateur`, indépendamment du
+sélecteur. C'est conforme à la **règle d'or** du § 2.5 : on ne mélange jamais
+`historique_paa_2025` avec les mesures `google` temps réel.
 
 **Compteur « Nb mesures » du KPI** : porte sur **un seul tronçon** (celui
 sélectionné dans le dropdown). Pour vérifier la collecte globale, comparer avec
@@ -3586,3 +3587,93 @@ print('/incidents/sources :', httpx.get('http://localhost:8000/incidents/sources
 print('/incidents/types   :', httpx.get('http://localhost:8000/incidents/types', timeout=10).status_code)
 "
 ```
+
+---
+
+## 14. Phase P11 — Indicateurs étendus et filtre créneau horaire global (2026-07-01 → 2026-07-02)
+
+### 14.1 Indicateurs 6 mois / 1 an + suppression heatmap (P11.1 — 2026-07-01)
+
+**Modifications :**
+
+- **2 nouvelles périodes** ajoutées au sélecteur (`SelecteurPeriode`) :
+  `6mois` (180 j) et `1an` (365 j). Le backend accepte `?periode=180j` et
+  `?periode=365j` via le parseur `_parse_periode` dans `backend/app/api/troncons.py`.
+- **Suppression de la heatmap horaire** — le composant heatmap a été retiré de la
+  page Indicateurs. L'affichage est désormais entièrement vertical : KPI + courbe
+  journée + évolution pluriannuelle.
+- **Courbe journée enrichie** (`CourbeJournee.tsx`) : la valeur **minimum** est
+  désormais affichée sur le graphe Recharts en plus de la moyenne et du max.
+- **Export matrice temps** : bouton d'export ajouté dans `MatriceTemps.tsx`.
+
+**Clés i18n ajoutées** (`frontend/messages/{fr,en}.json`) :
+- `indicateurs.periode6mois` : « 6 mois » / « 6 months »
+- `indicateurs.periode1an` : « 1 an » / « 1 year »
+
+### 14.2 Filtre créneau horaire global (P11.2 — 2026-07-01)
+
+**Principe** : un sélecteur de plage horaire dans la topbar (`Topbar.tsx`)
+permet de restreindre toutes les analyses à un créneau horaire donné
+(ex. 07h–19h pour la plage DEESP). Par défaut : 24h/24 (pas de filtre).
+
+**Architecture :**
+
+```
+frontend/contexts/PlageHoraireContext.tsx
+  └── PlageHoraireProvider (enveloppe l'app dans ClientLayout.tsx)
+      ├── heureDebut: number (0-23)
+      ├── heureFin: number (1-24)
+      ├── setPlage(debut, fin): void
+      ├── plageLabel: string (ex. "07h – 19h")
+      └── est24h: boolean
+
+frontend/components/layout/SelecteurPlageHoraire.tsx
+  └── Dropdown avec 2 sélecteurs (début + fin) + boutons Appliquer / Réinitialiser
+      Affiché dans la topbar, à côté du sélecteur de langue
+```
+
+**Persistance** : `localStorage` (clés `paa_plage_h_debut` / `paa_plage_h_fin`).
+
+**Propagation backend** : les endpoints suivants acceptent désormais
+`?heure_debut=N&heure_fin=M` (paramètres Query optionnels, défaut 0/24) :
+
+| Endpoint | Fichier backend | Effet |
+|----------|-----------------|-------|
+| `GET /troncons/{id}/indicateurs` | `backend/app/api/troncons.py` | Filtre les mesures sur le créneau horaire local |
+| `GET /indicateurs/{id}` | `backend/app/api/indicateurs.py` | Idem via `indicateurs_par_jour()` |
+| `GET /evolution/troncon/{id}` | `backend/app/api/evolution.py` | Filtre les mois reconstruits et le mois courant |
+| `GET /predire/resume` | `backend/app/api/predire.py` | Filtre les stats mois/semaine |
+| `GET /predire/heure-optimale` | `backend/app/api/predire.py` | Filtre les créneaux analysés |
+| `GET /rapport/zones-congestionnees` | `backend/app/api/rapport.py` | Filtre le Tableau 16 |
+
+**Filtrage côté backend** : le filtre s'applique sur l'**heure locale
+Africa/Abidjan** de chaque mesure (conversion UTC → local via
+`datetime.astimezone(ZoneInfo("Africa/Abidjan"))`), pas sur l'heure UTC.
+Condition : `heure_debut <= heure_locale < heure_fin`.
+
+**Pages frontend impactées** :
+
+| Page | Composant | Hook utilisé |
+|------|-----------|-------------|
+| Indicateurs | `PageIndicateurs.tsx` | `usePlageHoraire()` → passe `heureDebut`, `heureFin` à `getIndicateursTroncon()` |
+| Temps de traversée | `PagePrediction.tsx` | `usePlageHoraire()` → passe aux appels API `predire/resume` |
+| Heure optimale | `PageHeureOptimale.tsx` | `usePlageHoraire()` → filtre les créneaux |
+| Rapport DEESP | `PageRapport.tsx` | `usePlageHoraire()` → passe au Tableau 16 |
+| Évolution pluriannuelle | `EvolutionPluriannuelle.tsx` | `usePlageHoraire()` → passe à `GET /evolution/troncon/{id}` |
+
+**Indicateur visuel** : quand le filtre est actif (≠ 24h/24), le bouton du
+sélecteur dans la topbar passe en **fond ambre** (`bg-amber-500/20
+text-amber-200 border-amber-400/60`) pour signaler que les données sont
+filtrées. Les titres et sous-titres des pages affichent dynamiquement
+le créneau actif (ex. « Créneau : 07h–19h »).
+
+### 14.3 Fix bouton Appliquer invisible en mode clair (P11.3 — 2026-07-02)
+
+**Problème** : dans `SelecteurPlageHoraire.tsx`, le bouton « ✓ Appliquer »
+utilisait `bg-paa-blue-600` — une couleur **inexistante** dans la palette
+Tailwind (`paa.blue` s'arrête à 500). En mode clair, aucun fond ne s'appliquait,
+rendant le texte blanc invisible sur fond blanc.
+
+**Correction** : `bg-paa-blue-600` → `bg-paa-navy-700` et
+`hover:bg-paa-blue-700` → `hover:bg-paa-navy-800`, cohérent avec la classe
+`btn-primary` utilisée partout ailleurs dans l'application.

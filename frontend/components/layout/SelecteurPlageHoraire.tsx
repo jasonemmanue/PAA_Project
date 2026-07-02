@@ -119,8 +119,8 @@ export function SelecteurPlageHoraire() {
                 type="button"
                 onClick={appliquer}
                 disabled={dLocal >= fLocal}
-                className="w-full rounded-md bg-paa-blue-600 px-3 py-2 text-[12px] font-semibold
-                           text-white hover:bg-paa-blue-700 disabled:opacity-40 transition-colors
+                className="w-full rounded-md bg-paa-navy-700 px-3 py-2 text-[12px] font-semibold
+                           text-white hover:bg-paa-navy-800 disabled:opacity-40 transition-colors
                            shadow-sm"
               >
                 ✓ Appliquer
