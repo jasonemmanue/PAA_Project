@@ -131,6 +131,8 @@ def calcul_indicateurs(
     fin_utc: datetime,
     *,
     inclure_aberrantes: bool = False,
+    heure_debut: int = 0,
+    heure_fin: int = 24,
 ) -> IndicateursTroncon:
     """Calcule les indicateurs DEESP pour un tronçon sur [debut, fin].
 
@@ -151,6 +153,15 @@ def calcul_indicateurs(
         Mesure.duree_trafic_s.is_not(None),
     )
     mesures: list[Mesure] = list(db.execute(requete).scalars())
+
+    # Filtre par plage horaire locale si nécessaire
+    filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
+    if filtrer_heure:
+        fuseau = ZoneInfo(get_settings().tz)
+        mesures = [
+            m for m in mesures
+            if heure_debut <= m.horodatage.astimezone(fuseau).hour < heure_fin
+        ]
 
     aberrantes = [m for m in mesures if m.aberrante]
     valides = mesures if inclure_aberrantes else [m for m in mesures if not m.aberrante]
@@ -291,6 +302,8 @@ def serie_temporelle(
     *,
     granularite: Granularite = "hour",
     inclure_aberrantes: bool = False,
+    heure_debut: int = 0,
+    heure_fin: int = 24,
 ) -> dict[str, object]:
     """Renvoie une série temporelle agrégée (heure ou jour) du temps de traversée.
 
@@ -315,6 +328,14 @@ def serie_temporelle(
         requete = requete.where(Mesure.aberrante.is_(False))
 
     mesures: list[Mesure] = list(db.execute(requete).scalars())
+
+    # Filtre par plage horaire locale si nécessaire
+    filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
+    if filtrer_heure:
+        mesures = [
+            m for m in mesures
+            if heure_debut <= m.horodatage.astimezone(fuseau_local).hour < heure_fin
+        ]
 
     buckets: dict[datetime, list[Mesure]] = defaultdict(list)
     for m in mesures:
@@ -377,6 +398,8 @@ def indicateurs_par_jour(
     *,
     nb_jours: int,
     inclure_aberrantes: bool = False,
+    heure_debut: int = 0,
+    heure_fin: int = 24,
 ) -> dict[str, object]:
     """Calcule les indicateurs DEESP jour par jour sur les N derniers jours.
 
@@ -400,6 +423,8 @@ def indicateurs_par_jour(
             debut_local.astimezone(timezone.utc),
             fin_local.astimezone(timezone.utc),
             inclure_aberrantes=inclure_aberrantes,
+            heure_debut=heure_debut,
+            heure_fin=heure_fin,
         )
         jours.append({
             "date_locale": jour_local.isoformat(),

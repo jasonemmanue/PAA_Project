@@ -18,6 +18,7 @@ import {
   SelecteurTroncon,
   type Periode,
 } from "@/components/indicateurs/Selecteurs";
+import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type {
@@ -37,6 +38,7 @@ const FENETRES: Record<Periode, number> = {
 
 export function PageIndicateurs() {
   const { t } = useI18n();
+  const { heureDebut, heureFin } = usePlageHoraire();
 
   const [troncons, setTroncons] = useState<Troncon[]>([]);
   const [tronconId, setTronconId] = useState<number | null>(null);
@@ -88,11 +90,13 @@ export function PageIndicateurs() {
     const fin = finDate.toISOString().slice(0, 10);
 
     Promise.all([
-      api.indicateurs(tronconId, periode),
+      api.indicateurs(tronconId, periode, heureDebut, heureFin),
       api.serieTemporelle(tronconId, {
         debut,
         fin,
         granularite: fenetre <= 1 ? "hour" : "day",
+        heureDebut,
+        heureFin,
       }),
     ])
       .then(([ind, ser]) => {
@@ -108,7 +112,7 @@ export function PageIndicateurs() {
     return () => {
       annule = true;
     };
-  }, [tronconId, periode]);
+  }, [tronconId, periode, heureDebut, heureFin]);
 
   return (
     <div className="flex flex-col gap-fluid-4">

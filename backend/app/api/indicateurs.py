@@ -73,6 +73,8 @@ async def serie_indicateurs(
     fin: date | None = Query(None, description="Date locale de fin (YYYY-MM-DD)."),
     granularite: Granularite = Query("hour", description="`hour` ou `day`."),
     inclure_aberrantes: bool = Query(False),
+    heure_debut: int = Query(0, ge=0, le=23, description="Heure locale de début (0-23)."),
+    heure_fin: int = Query(24, ge=1, le=24, description="Heure locale de fin (1-24)."),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     fuseau_local = ZoneInfo(get_settings().tz)
@@ -86,6 +88,8 @@ async def serie_indicateurs(
             db, troncon_id, debut_utc, fin_utc,
             granularite=granularite,
             inclure_aberrantes=inclure_aberrantes,
+            heure_debut=heure_debut,
+            heure_fin=heure_fin,
         )
     except LookupError as exc:
         raise HTTPException(

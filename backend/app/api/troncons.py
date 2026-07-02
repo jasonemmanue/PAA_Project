@@ -265,6 +265,8 @@ async def indicateurs_troncon(
         "7j",
         description="Fenêtre d'analyse, ex. `1j`, `7j`, `30j`, `90j`, `180j` ou `365j`.",
     ),
+    heure_debut: int = Query(0, ge=0, le=23, description="Heure locale de début (0-23)."),
+    heure_fin: int = Query(24, ge=1, le=24, description="Heure locale de fin (1-24)."),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -290,8 +292,13 @@ async def indicateurs_troncon(
             db, troncon_id,
             debut_local.astimezone(timezone.utc),
             fin_local.astimezone(timezone.utc),
+            heure_debut=heure_debut,
+            heure_fin=heure_fin,
         )
-        detail = indicateurs_par_jour(db, troncon_id, nb_jours=jours)
+        detail = indicateurs_par_jour(
+            db, troncon_id, nb_jours=jours,
+            heure_debut=heure_debut, heure_fin=heure_fin,
+        )
     except LookupError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc),

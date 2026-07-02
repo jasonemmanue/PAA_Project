@@ -133,16 +133,19 @@ export function getMesures(params?: {
 export function getIndicateursTroncon(
   id: number,
   periode: "24h" | "7j" | "30j" | "90j" | "6mois" | "1an" = "7j",
+  heureDebut = 0,
+  heureFin = 24,
 ): Promise<IndicateursPeriode> {
-  // Le backend attend un format `Nj`. L'UI utilise des étiquettes lisibles —
-  // on traduit : "24h"→"1j", "6mois"→"180j", "1an"→"365j".
   const periodeApi =
     periode === "24h" ? "1j"
     : periode === "6mois" ? "180j"
     : periode === "1an" ? "365j"
     : periode;
+  const p = new URLSearchParams({ periode: periodeApi });
+  if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
+  if (heureFin !== 24) p.set("heure_fin", String(heureFin));
   return appel<IndicateursPeriode>(
-    `/troncons/${id}/indicateurs?periode=${periodeApi}`,
+    `/troncons/${id}/indicateurs?${p.toString()}`,
   );
 }
 
@@ -181,6 +184,8 @@ export function getSerieTemporelle(
     fin?: string;
     granularite?: "hour" | "day";
     inclure_aberrantes?: boolean;
+    heureDebut?: number;
+    heureFin?: number;
   },
 ): Promise<SerieTemporelle> {
   const query = new URLSearchParams();
@@ -190,6 +195,10 @@ export function getSerieTemporelle(
   if (params?.inclure_aberrantes !== undefined) {
     query.set("inclure_aberrantes", String(params.inclure_aberrantes));
   }
+  if (params?.heureDebut !== undefined && params.heureDebut !== 0)
+    query.set("heure_debut", String(params.heureDebut));
+  if (params?.heureFin !== undefined && params.heureFin !== 24)
+    query.set("heure_fin", String(params.heureFin));
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return appel<SerieTemporelle>(
     `/indicateurs/troncons/${id}/serie${suffix}`,
