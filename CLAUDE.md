@@ -262,7 +262,7 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P8.1** | ✅ Terminée | **Scraping incidents — fondations** — migration 0011 table `incidents`, scraper RSS multi-source (Fraternité Matin, Abidjan.net, Koaci), job APScheduler 30 min, endpoints `GET /incidents`, `GET /incidents/stats`. |
 | **P8.2** | ✅ Terminée | **NLP légère + géocodage** — extraction lieu/type/sévérité par regex, géocodage Nominatim OSM + fallback Photon, filtre bbox portuaire, attribution `troncon_id` (Haversine 300 m). |
 | **P8.3** | ✅ Terminée | **Frontend page Incidents** — `/incidents/page.tsx`, carte Leaflet markers colorés par sévérité, liste chronologique filtrée, 3 KPI, panneau latéral détail, i18n FR/EN, polling 5 min. |
-| **P8.4** | ✅ Terminée | **Overlay carte principale** — incidents actifs (<6 h) affichés en CircleMarkers sur la carte Accueil, badge rouge compteur dans la nav sidebar + drawer mobile, polling stats 5 min. |
+| **P8.4** | ✅ Terminée | **Overlay carte principale** — incidents actifs (< 30 j) affichés en CircleMarkers sur la carte Accueil, badge rouge compteur dans la nav sidebar + drawer mobile, polling stats 5 min. |
 | **P8.5** | ✅ Terminée | **Qualité & exports** — migration 0012 `fiabilite_source` (0..1) par source, déduplication cross-sources dans `enrichir_incidents()`, `GET /incidents/export` (CSV 12 colonnes), bouton Exporter CSV dans les filtres. |
 | **P9.1** | ✅ Terminée (2026-06-27) | **Chatbot guide — Claude via backend** — endpoint `POST /chatbot/message` + `GET /chatbot/disponibilite`, clé `ANTHROPIC_API_KEY` côté serveur, prompt système professionnel sans markdown. Frontend simplifié : Claude uniquement, plus de sélecteur Gemini. |
 | **P9.2** | ✅ Terminée (2026-06-27) | **Fix bug heure-optimale MIN=MOYEN=MAX** — requête `predire.py` corrigée : `min(ProfilHoraire.min)` / `max(ProfilHoraire.max)` + filtre `fenetre_jours=30` pour éviter le triple-comptage des 3 fenêtres. |
@@ -286,6 +286,7 @@ Trace de chaque relevé terrain hebdomadaire utilisé pour valider les sources A
 | **P11.1** | ✅ Terminée (2026-07-01) | **Indicateurs 6 mois / 1 an + suppression heatmap** — 2 nouvelles périodes d'analyse ajoutées (`6mois` = 180 j, `1an` = 365 j). Suppression de la heatmap horaire (composant retiré). Affichage de la valeur minimum sur le graphe courbe journée. Export matrice temps. Cf. § 14.1. |
 | **P11.2** | ✅ Terminée (2026-07-01) | **Filtre créneau horaire global** — `PlageHoraireContext` + `SelecteurPlageHoraire` dans la topbar. Filtre `heure_debut` / `heure_fin` propagé sur toutes les pages (Indicateurs, Temps de traversée, Heure optimale, Rapport DEESP, Évolution pluriannuelle). Persistance `localStorage`. Cf. § 14.2. |
 | **P11.3** | ✅ Terminée (2026-07-02) | **Fix bouton Appliquer invisible en mode clair** — `bg-paa-blue-600` (couleur inexistante dans la palette Tailwind) remplacé par `bg-paa-navy-700` dans `SelecteurPlageHoraire.tsx`. |
+| **P11.4** | ✅ Terminée (2026-07-02) | **Incidents actifs 30 jours** — seuil passé de 6h à 30 jours (720h). Configurable via `INCIDENT_ACTIF_HEURES`. Modifié dans 8 fichiers (config, modèle, API, carte, RAG, chatbot, 2 composants frontend). Cf. § 14.4. |
 
 ### 4.1 Sélecteur de période de la page Indicateurs — contrat frontend/backend
 
@@ -2364,7 +2365,7 @@ Port d'Abidjan, Grand Bassam road, bd de Marseille…).
 | `troncon_id` | int FK nullable | Tronçon officiel impacté (si détecté par bbox) |
 | `type_incident` | enum | `accident` / `embouteillage` / `route_barree` / `travaux` / `autre` |
 | `severite` | enum | `mineur` / `moyen` / `grave` / `inconnu` |
-| `actif` | bool | `True` si `horodatage_publication` < 6 h — recalculé à chaque lecture |
+| `actif` | bool | `True` si l'incident est récent (seuil configurable via `INCIDENT_ACTIF_HEURES`, défaut 30 jours) — recalculé à chaque lecture |
 | `verifie` | bool | `False` par défaut — validation manuelle optionnelle |
 
 **Index :**
@@ -2416,7 +2417,7 @@ Résultat filtré dans la bounding box portuaire — si hors zone, `lat/lon = NU
 | **P8.1** | ✅ Terminée | **Fondations scraping** — migration 0011, modèle `Incident`, scraper RSS multi-source, job APScheduler 30 min, endpoint `GET /incidents` |
 | **P8.2** | ✅ Terminée | **Extraction NLP légère + géocodage** — regex mots-clés, dictionnaire de lieux, Nominatim + fallback Photon, filtre bbox, attribution `troncon_id` |
 | **P8.3** | ✅ Terminée | **Frontend page Incidents** — `/incidents/page.tsx`, carte Leaflet markers colorés par sévérité, liste chronologique, filtres type/période/tronçon, i18n FR/EN |
-| **P8.4** | ✅ Terminée | **Overlay carte principale** — incidents actifs (<6 h) affichés sur la carte Accueil, popup résumé, badge rouge compteur dans nav sidebar + drawer mobile |
+| **P8.4** | ✅ Terminée | **Overlay carte principale** — incidents actifs (< 30 j) affichés sur la carte Accueil, popup résumé, badge rouge compteur dans nav sidebar + drawer mobile |
 | **P8.5** | ✅ Terminée | **Qualité & exports** — migration 0012 `fiabilite_source`, déduplication cross-sources dans `enrichir_incidents()`, `GET /incidents/export` CSV, bouton Exporter CSV dans les filtres |
 
 ### 10.4bis État final P8 — livré le 2026-06-24
@@ -2525,7 +2526,7 @@ Clé unique : source_url. Index : horodatage, actif+horodatage, troncon_id+horod
 
 ÉTAPE 2 — Modèle SQLAlchemy (ajouter dans backend/app/models/models.py)
 Classe `Incident` avec tous les champs de la migration.
-Propriété calculée `actif` : True si (now_utc - horodatage_publication) < 6 heures.
+Propriété calculée `actif` : True si l'incident est récent (seuil configurable, défaut 30 jours).
 
 ÉTAPE 3 — Scraper RSS (backend/app/sources/parsers/rss_parser.py)
 Fonction async `scraper_rss(url: str, source_nom: str, db: Session) -> int`
@@ -2684,7 +2685,7 @@ STRUCTURE DE LA PAGE (frontend/app/incidents/page.tsx) :
 
 COMPOSANT CarteIncidents (frontend/components/incidents/CarteIncidents.tsx) :
 - Markers couleurs : rouge = grave, orange = moyen, jaune = mineur, gris = inconnu
-- Marker actif = opaque, marker ancien (>6h) = semi-transparent
+- Marker actif = opaque, marker ancien (>30j) = semi-transparent
 - Popup au clic : titre, résumé (150 chars), source, heure de publication,
   tronçon impacté si renseigné
 - Cluster automatique si > 10 markers visibles (leaflet.markercluster)
@@ -2739,7 +2740,7 @@ Badge rouge "ACTIF" clignotant si incident grave actif. Responsive 3 breakpoints
 Contexte : P8.3 terminée — la page /incidents fonctionne.
 Voir CLAUDE.md § 4.8 pour la structure de CarteLeaflet.tsx.
 
-Objectif : afficher les incidents actifs (<6h) en overlay sur la carte principale
+Objectif : afficher les incidents actifs (<30j) en overlay sur la carte principale
 (page Accueil) et ajouter un badge rouge dans la nav si un incident actif existe.
 
 ÉTAPE 1 — Enrichir GET /carte/etat (backend/app/api/carte.py)
@@ -2915,7 +2916,7 @@ Réponse basée sur les vraies valeurs temps réel
 | `etat_trafic` | trafic, congestion, état, actuel, carte, fluide… | Dernière mesure < 2h par tronçon : état DEESP, % rouge/orange/vert, durée vs référence |
 | `temps_traversee` | temps, durée, combien, traversée, minutes… | Dernière mesure < 90 min par tronçon avec écart % vs référence 50 km/h |
 | `heure_optimale` | heure, quand, optimal, livrer, créneau, partir… | Top-3 créneaux les plus rapides (7h-19h) pour le type de jour actuel (ouvrable/week-end), basé sur `profils_horaires` 30 jours |
-| `incidents` | incident, accident, route barrée, travaux… | Incidents < 6h dans la zone portuaire avec sévérité, lieu, source et âge |
+| `incidents` | incident, accident, route barrée, travaux… | Incidents actifs (< 30 j) dans la zone portuaire avec sévérité, lieu, source et âge |
 | `statistiques` | statistique, indicateur, analyse, taux, semaine… | Min/moy/max + taux de congestion de la semaine en cours par tronçon |
 
 **Règle anti-duplication** : si `etat_trafic` est détecté, `temps_traversee`
@@ -2940,7 +2941,7 @@ backend/app/rag/
 | `recuperer_etat_trafic(db)` | État DEESP + couleurs Google + durée de chaque tronçon |
 | `recuperer_temps_traversee(db)` | Durée actuelle + écart vs référence |
 | `recuperer_heure_optimale(db)` | Top-3 créneaux par tronçon pour le type de jour courant |
-| `recuperer_incidents_actifs(db)` | Incidents < 6h avec sévérité et source |
+| `recuperer_incidents_actifs(db)` | Incidents actifs (< 30 j) avec sévérité et source |
 | `recuperer_statistiques_semaine(db)` | Min/moy/max + taux congestion depuis lundi |
 | `construire_contexte_rag(question, db)` | Point d'entrée : détecte + assemble + retourne le bloc texte |
 
@@ -3677,3 +3678,42 @@ rendant le texte blanc invisible sur fond blanc.
 **Correction** : `bg-paa-blue-600` → `bg-paa-navy-700` et
 `hover:bg-paa-blue-700` → `hover:bg-paa-navy-800`, cohérent avec la classe
 `btn-primary` utilisée partout ailleurs dans l'application.
+
+### 14.4 Incidents actifs pendant 30 jours au lieu de 6 heures (P11.4 — 2026-07-02)
+
+**Motivation** : le seuil de 6 heures faisait disparaître les incidents trop vite
+pour une démo ou un suivi opérationnel. Un incident de type « travaux » ou
+« route barrée » peut durer plusieurs semaines.
+
+**Implémentation** : nouveau paramètre `INCIDENT_ACTIF_HEURES` (défaut `720` = 30 jours)
+dans `backend/app/core/config.py`. Le seuil est lu dynamiquement partout où il
+était auparavant codé en dur à `6 * 3600`.
+
+**Fichiers modifiés** :
+
+| Fichier | Modification |
+|---------|-------------|
+| `backend/app/core/config.py` | Ajout `incident_actif_heures: int = 720` (alias `INCIDENT_ACTIF_HEURES`) |
+| `backend/app/models/models.py` | Propriété `Incident.actif` lit `get_settings().incident_actif_heures` |
+| `backend/app/api/incidents.py` | 4 occurrences `6 * 3600` → `get_settings().incident_actif_heures * 3600` |
+| `backend/app/etat/carte.py` | `timedelta(hours=6)` → `timedelta(hours=settings.incident_actif_heures)` |
+| `backend/app/rag/contexte.py` | Fenêtre RAG incidents dynamique + textes « 30 derniers jours » |
+| `backend/app/api/chatbot.py` | Prompt système : « 6 heures » → « dernier mois » + mention du seuil configurable |
+| `frontend/components/incidents/CarteIncidents.tsx` | `6 * 3600 * 1000` → `30 * 24 * 3600 * 1000` |
+| `frontend/components/carte/CarteLeaflet.tsx` | `6 * 60 * 60 * 1000` → `30 * 24 * 60 * 60 * 1000` |
+
+**Variable Railway** (optionnelle — le défaut 720h convient) :
+```bash
+railway variables set INCIDENT_ACTIF_HEURES=720 --service backend
+```
+
+**Scraping automatique des vrais incidents** : le job APScheduler `collecte_incidents`
+tourne toutes les **30 minutes**, 24h/24. Il scrape les flux RSS de Fraternité Matin,
+Abidjan.net et Koaci avec un **double filtre** obligatoire :
+1. **Filtre TYPE** — l'article doit contenir un mot-clé de type (accident, travaux, embouteillage…)
+2. **Filtre ZONE** — l'article doit mentionner un lieu de la zone portuaire (CARENA, Treichville, Palm Beach, pont HB…)
+
+Les deux filtres doivent matcher simultanément — un article hors zone portuaire est
+automatiquement écarté. Chaque incident retenu est géocodé via Nominatim OSM et
+attribué au tronçon le plus proche (Haversine < 300 m). Les incidents réels
+s'accumulent donc automatiquement dans la base au fil du temps.
