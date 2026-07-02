@@ -341,6 +341,55 @@ export function OngletSousTroncons({
           </table>
         </div>
       </Card>
+
+      {/* Récapitulatif de tous les axes et tronçons */}
+      <Card titre={(() => {
+        const actifs = troncons.filter((t) => t.actif);
+        const estAxeReel = (t: { id: number; est_axe?: boolean }) => t.est_axe ?? (t.id <= 6);
+        const nAxes = actifs.filter(estAxeReel).length;
+        const nTr = actifs.length - nAxes;
+        return `Tous les parcours (${nAxes} axe${nAxes > 1 ? "s" : ""}${nTr > 0 ? ` + ${nTr} tronçon${nTr > 1 ? "s" : ""}` : ""})`;
+      })()}>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-fluid-sm">
+            <thead className="bg-paa-blue-50 dark:bg-paa-navy-800">
+              <tr className="text-left">
+                <th className="px-3 py-2 font-medium">ID</th>
+                <th className="px-3 py-2 font-medium">Catégorie</th>
+                <th className="px-3 py-2 font-medium">Nom</th>
+                <th className="px-3 py-2 font-medium text-right">Distance</th>
+                <th className="px-3 py-2 font-medium">Couleur</th>
+              </tr>
+            </thead>
+            <tbody>
+              {troncons.filter((t) => t.actif).map((t) => (
+                <tr key={t.id} className="border-t app-border">
+                  <td className="px-3 py-2 font-mono">{t.id}</td>
+                  <td className="px-3 py-2">
+                    {(t.est_axe ?? (t.id <= 6)) ? (
+                      <span className="inline-block rounded bg-paa-navy-700 px-2 py-0.5 text-fluid-xs font-semibold text-white">
+                        AXE
+                      </span>
+                    ) : (
+                      <span className="inline-block rounded bg-paa-blue-50 px-2 py-0.5 text-fluid-xs font-semibold text-paa-navy-800 dark:bg-paa-navy-800 dark:text-paa-blue-100">
+                        Tronçon
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">{t.nom}</td>
+                  <td className="px-3 py-2 text-right">{t.distance_km} km</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className="inline-block h-4 w-4 rounded border app-border align-middle"
+                      style={{ backgroundColor: t.couleur }}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
