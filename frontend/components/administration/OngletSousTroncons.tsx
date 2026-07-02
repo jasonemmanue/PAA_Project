@@ -311,14 +311,13 @@ export function OngletSousTroncons({
                     <th className="px-3 py-2 font-medium">Code</th>
                     <th className="px-3 py-2 font-medium">Nom</th>
                     <th className="px-3 py-2 font-medium text-right">Distance</th>
-                    <th className="px-3 py-2 font-medium">Type</th>
-                    <th className="px-3 py-2 font-medium">Actions</th>
+                    <th className="px-3 py-2 font-medium">État</th>
                   </tr>
                 </thead>
                 <tbody>
                   {nbTotal === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-3 py-4 text-center app-text-muted text-fluid-xs">
+                      <td colSpan={4} className="px-3 py-4 text-center app-text-muted text-fluid-xs">
                         Aucun tronçon défini pour cet axe.
                       </td>
                     </tr>
@@ -329,15 +328,9 @@ export function OngletSousTroncons({
                         <td className="px-3 py-2">{s.nom_court}</td>
                         <td className="px-3 py-2 text-right">{s.distance_m} m</td>
                         <td className="px-3 py-2">
-                          <span className="inline-block rounded bg-paa-blue-100 px-2 py-0.5 text-fluid-xs font-medium text-paa-navy-800 dark:bg-paa-navy-700 dark:text-paa-blue-100">
-                            Codifié
+                          <span className="inline-block rounded bg-statut-fluide/20 px-2 py-0.5 text-fluid-xs font-medium text-statut-fluide">
+                            Actif
                           </span>
-                        </td>
-                        <td className="px-3 py-2">
-                          <button type="button" onClick={() => archiver(s)}
-                            className="text-fluid-xs text-statut-congestionne hover:underline">
-                            Archiver
-                          </button>
                         </td>
                       </tr>
                     ))}
@@ -347,16 +340,9 @@ export function OngletSousTroncons({
                         <td className="px-3 py-2">{t.nom}</td>
                         <td className="px-3 py-2 text-right">{t.distance_km} km</td>
                         <td className="px-3 py-2">
-                          <span className="inline-block rounded bg-amber-100 px-2 py-0.5 text-fluid-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
-                            Supplémentaire
+                          <span className="inline-block rounded bg-statut-fluide/20 px-2 py-0.5 text-fluid-xs font-medium text-statut-fluide">
+                            Actif
                           </span>
-                        </td>
-                        <td className="px-3 py-2">
-                          <span
-                            className="inline-block h-3 w-3 rounded-full border app-border align-middle mr-1"
-                            style={{ backgroundColor: t.couleur }}
-                          />
-                          <span className="text-fluid-xs app-text-muted">Actif</span>
                         </td>
                       </tr>
                     ))}
