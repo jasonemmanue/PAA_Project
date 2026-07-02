@@ -84,7 +84,7 @@ export function OngletAxes({
       });
       const ad = t.adoption_collecte;
       const lignes = [
-        `✅ Tronçon créé : ${t.nom} (id=${t.id}, ${t.distance_km} km)`,
+        `✅ Axe créé : ${t.nom} (id=${t.id}, ${t.distance_km} km)`,
         "Il est automatiquement inclus au prochain cycle de collecte Google et dans toutes les analyses (carte, indicateurs, profils horaires, temps de traversée par période, rapport, calibration GPX).",
       ];
       if (ad) {
@@ -125,7 +125,7 @@ export function OngletAxes({
         <div className="flex flex-col gap-3">
           {/* Nom */}
           <label className="flex flex-col gap-1 text-fluid-sm font-medium">
-            Nom du tronçon
+            Nom de l&apos;axe
             <input
               type="text"
               value={nom}
@@ -217,7 +217,7 @@ export function OngletAxes({
               disabled={enCours || !nom.trim() || !debut || !fin}
               className="btn-primary disabled:opacity-50 min-h-[42px]"
             >
-              {enCours ? "Création…" : "✅ Créer le tronçon"}
+              {enCours ? "Création…" : "✅ Créer l'axe"}
             </button>
             <button
               type="button"
