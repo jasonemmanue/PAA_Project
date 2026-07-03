@@ -1,5 +1,5 @@
 # ============================================================
-# Dépendances Python du backend PAA-Traverse — build 2026-06-29
+# Dépendances Python du backend FLUIDIS — build 2026-06-29
 # ============================================================
 
 # --- API web ---

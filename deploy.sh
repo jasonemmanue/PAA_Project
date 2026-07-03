@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =========================================================================
-# PAA-Traverse — script de déploiement Railway du service `backend`.
+# FLUIDIS — script de déploiement Railway du service `backend`.
 # -------------------------------------------------------------------------
 # Pré-requis (à faire UNE SEULE FOIS) :
 #   1. Installer la CLI Railway : https://docs.railway.app/cli/installation

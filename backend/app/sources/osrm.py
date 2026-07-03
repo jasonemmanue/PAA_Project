@@ -6,7 +6,7 @@ OSRM est utilisé pour deux usages distincts :
      (endpoint /match — utilisé en P5 pour les relevés terrain).
 
 OSRM ne fournit pas d'info trafic — il sert de **repli déterministe** et de
-**source de polyline officielle** dans le projet PAA-Traverse.
+**source de polyline officielle** dans le projet FLUIDIS.
 """
 
 from dataclasses import dataclass

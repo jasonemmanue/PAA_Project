@@ -282,7 +282,7 @@ export function GestionSources() {
                 ajoutera automatiquement <span className="font-mono">/feed/</span> ou
                 trouvera la bonne adresse RSS si le site est connu (Fraternité Matin,
                 Abidjan.net, Koaci, L'Infodrome, Soir Info, RFI Afrique, Ivoiresoir,
-                Afrik.com…). Sinon, demandez l'adresse RSS à l'<b>Assistant PAA-Traverse</b>
+                Afrik.com…). Sinon, demandez l'adresse RSS à l'<b>Assistant FLUIDIS</b>
                 en bas à droite — il connaît les URLs RSS des journaux ivoiriens.
               </p>
             </div>

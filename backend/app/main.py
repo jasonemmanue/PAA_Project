@@ -1,4 +1,4 @@
-"""Point d'entrée FastAPI du backend PAA-Traverse.
+"""Point d'entrée FastAPI du backend FLUIDIS.
 
 Organisation des routeurs (phase P4) :
 
@@ -239,7 +239,7 @@ _TAGS_METADATA = [
 
 
 app = FastAPI(
-    title="PAA-Traverse — API de suivi des temps de traversée",
+    title="FLUIDIS — API de suivi des temps de traversée",
     description=(
         "API du **Port Autonome d'Abidjan** pour le suivi en temps réel et "
         "l'analyse historique des temps de parcours sur les axes stratégiques "

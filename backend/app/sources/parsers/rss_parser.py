@@ -5,7 +5,7 @@ contenant au moins un mot-clé lié à la circulation dans la zone portuaire,
 et insère les nouvelles entrées dans la table `incidents`.
 
 Règles de courtoisie (CLAUDE.md § 10.1) :
-  - User-Agent identifié PAA-Traverse
+  - User-Agent identifié FLUIDIS
   - Délai 2 s entre appels vers le même domaine
   - Cache 25 min : on ne re-scrape pas si la dernière collecte est < 20 min
   - Aucune clé API requise
@@ -108,7 +108,7 @@ _cache_derniere_collecte: dict[str, float] = {}
 # Durée minimale entre deux collectes de la même source (secondes)
 _CACHE_TTL = 20 * 60  # 20 minutes
 
-_USER_AGENT = "PAA-Traverse/1.0 (hackathon; contact:sakamemmanuel@gmail.com)"
+_USER_AGENT = "FLUIDIS/1.0 (hackathon; contact:sakamemmanuel@gmail.com)"
 
 # ---------------------------------------------------------------------------
 # Helpers

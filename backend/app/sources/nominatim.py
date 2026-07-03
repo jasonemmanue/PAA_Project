@@ -33,7 +33,7 @@ PHOTON_BASE_URL = "https://photon.komoot.io/api"
 # IMPORTANT : Pure ASCII obligatoire — les headers HTTP refusent les
 # caractères Unicode comme l'em dash (—, U+2014). Bug subtil : httpx lève
 # un UnicodeEncodeError silencieux lors de l'envoi du header.
-USER_AGENT = "paa-traverse/1.0 (Hackathon Port Autonome Abidjan - paa.ci)"
+USER_AGENT = "fluidis/1.0 (Hackathon Port Autonome Abidjan - paa.ci)"
 
 
 @dataclass(frozen=True)
@@ -58,7 +58,7 @@ async def _appel_nominatim(
     headers = {
         "User-Agent": USER_AGENT,
         "Accept-Language": "fr",
-        "Referer": "https://paa-traverse.up.railway.app/",
+        "Referer": "https://fluidis.up.railway.app/",
     }
     async with httpx.AsyncClient(timeout=timeout_s) as client:
         try:

@@ -1,4 +1,4 @@
-# Configuration Render pour le service OSRM PAA-Traverse.
+# Configuration Render pour le service OSRM FLUIDIS.
 # À copier à la racine du dépôt sous le nom render.yaml si vous utilisez
 # le déploiement Blueprint Render (sinon configurer manuellement via la UI).
 

@@ -149,7 +149,7 @@ export function PasswordGate({ onAuthentifie }: Props) {
             {/* Titre */}
             <div className="text-center mb-7">
               <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-                PAA-Traverse
+                FLUIDIS
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Accès sécurisé — entrez votre mot de passe

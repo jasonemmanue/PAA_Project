@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 /**
- * Design system PAA-Traverse — palette dérivée de l'identité visuelle du
+ * Design system FLUIDIS — palette dérivée de l'identité visuelle du
  * Port Autonome d'Abidjan (bandeau bleu marine foncé, en-têtes bleu clair).
  *
  * Conventions :

@@ -1,4 +1,4 @@
-"""Script de seed des 6 tronçons officiels PAA-Traverse.
+"""Script de seed des 6 tronçons officiels FLUIDIS.
 
 Insère les 3 axes du cahier des charges en aller ET retour (6 lignes).
 Les coordonnées et les polylines sont laissées à NULL : elles seront

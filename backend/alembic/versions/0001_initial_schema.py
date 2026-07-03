@@ -1,4 +1,4 @@
-"""Schéma initial PAA-Traverse — 4 tables + enum source_mesure + index.
+"""Schéma initial FLUIDIS — 4 tables + enum source_mesure + index.
 
 Révision    : 0001
 Dépend de   : (aucune — migration racine)

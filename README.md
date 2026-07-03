@@ -1,4 +1,4 @@
-# PAA-Traverse
+# FLUIDIS
 
 > Application web qui mesure **combien de temps il faut aujourd'hui** pour relier
 > les trois axes routiers stratégiques du Port Autonome d'Abidjan, et qui en garde
@@ -1481,7 +1481,7 @@ Pour produire le rapport mensuel du PAA :
 ## 10 · Démarrer le projet sur ma machine
 
 > ⚠️ Toutes les commandes ci-dessous se lancent dans **PowerShell sur Windows**,
-> à la racine du projet (`C:\Users\…\paa-traverse`), pas dans un sous-dossier.
+> à la racine du projet (`C:\Users\…\fluidis`), pas dans un sous-dossier.
 
 ### Étape 1 — Installer Docker Desktop
 
@@ -1707,7 +1707,7 @@ message `{type: "maj", donnees: {...}}` apparaît dans la console.
 ## 12 · Comprendre les fichiers du projet
 
 ```
-paa-traverse/
+fluidis/
 ├── README.md              ← ce fichier
 ├── CLAUDE.md              ← le contexte complet du projet (à lire en premier)
 ├── docker-compose.yml     ← définit les 5 services qui doivent tourner ensemble

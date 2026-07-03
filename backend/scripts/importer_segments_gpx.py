@@ -348,7 +348,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--api-url",
         default="http://localhost:8000",
-        help="URL du backend PAA-Traverse (défaut: http://localhost:8000)",
+        help="URL du backend FLUIDIS (défaut: http://localhost:8000)",
     )
     parser.add_argument(
         "--dossier",

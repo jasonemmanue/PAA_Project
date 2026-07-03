@@ -134,7 +134,7 @@ export function ChatbotButton() {
               <div className="space-y-3">
                 <div className="rounded-2xl rounded-bl-sm bg-gray-100 px-3 py-2 text-fluid-xs leading-relaxed dark:bg-paa-navy-800 dark:text-paa-blue-100">
                   <p className="font-medium text-paa-navy-700 dark:text-paa-blue-200 mb-1">
-                    👋 Bonjour ! Je suis le guide de PAA-Traverse.
+                    👋 Bonjour ! Je suis le guide de FLUIDIS.
                   </p>
                   <p>
                     Je peux vous expliquer comment fonctionne l'application, vous aider à trouver la bonne page, ou répondre à vos questions sur les données de trafic portuaire.

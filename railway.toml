@@ -1,5 +1,5 @@
 # =========================================================================
-# PAA-Traverse — configuration Railway du service `backend` (FastAPI).
+# FLUIDIS — configuration Railway du service `backend` (FastAPI).
 # -------------------------------------------------------------------------
 # ⚠️  Setup monorepo : ce fichier suppose que la **Root Directory** du
 #     service Railway est positionnée sur `backend`. À faire une seule fois :

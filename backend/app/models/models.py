@@ -1,4 +1,4 @@
-"""Modèles SQLAlchemy pour les 4 tables du projet PAA-Traverse.
+"""Modèles SQLAlchemy pour les 4 tables du projet FLUIDIS.
 
 Correspondance avec CLAUDE.md § 3 (Modèle de données) :
   - Troncon         → table `troncons`

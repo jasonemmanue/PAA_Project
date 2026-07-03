@@ -21,10 +21,10 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { I18nProvider, type Locale } from "@/lib/i18n";
 
 export const metadata = {
-  title: "PAA-Traverse | Port Autonome d'Abidjan",
+  title: "FLUIDIS | Port Autonome d'Abidjan",
   description:
     "Suivi en temps réel et analyse historique des temps de traversée des axes routiers stratégiques du Port Autonome d'Abidjan. Cartographie dynamique, indicateurs FHWA et recommandations opérationnelles.",
-  applicationName: "PAA-Traverse",
+  applicationName: "FLUIDIS",
   authors: [{ name: "Team HACKATONIA" }],
   keywords: [
     "PAA",
@@ -43,7 +43,7 @@ export const metadata = {
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
   openGraph: {
-    title: "PAA-Traverse | Port Autonome d'Abidjan",
+    title: "FLUIDIS | Port Autonome d'Abidjan",
     description:
       "Cartographie temps réel et analyse des temps de traversée — projet Team HACKATONIA.",
     type: "website",

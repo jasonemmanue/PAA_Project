@@ -1,5 +1,5 @@
 /**
- * Client API typé pour PAA-Traverse.
+ * Client API typé pour FLUIDIS.
  *
  * Lit l'URL de base depuis `NEXT_PUBLIC_API_BASE_URL`. Toutes les fonctions
  * retournent du JSON typé et propagent les erreurs HTTP via une exception

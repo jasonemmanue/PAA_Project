@@ -1,1 +1,1 @@
-# Module RAG — Retrieval-Augmented Generation pour le chatbot PAA-Traverse
+# Module RAG — Retrieval-Augmented Generation pour le chatbot FLUIDIS

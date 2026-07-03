@@ -1,4 +1,4 @@
-"""Configuration de l'environnement Alembic pour PAA-Traverse.
+"""Configuration de l'environnement Alembic pour FLUIDIS.
 
 Ce module est exécuté par Alembic lors de chaque commande de migration.
 Il charge l'URL de la base depuis DATABASE_URL (variable d'environnement)

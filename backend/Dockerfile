@@ -1,5 +1,5 @@
 # ============================================================
-# Backend PAA-Traverse — FastAPI sur Python 3.11
+# Backend FLUIDIS — FastAPI sur Python 3.11
 # ============================================================
 FROM python:3.11-slim
 

@@ -1,5 +1,5 @@
 {
-  "appName": "PAA-Traverse",
+  "appName": "FLUIDIS",
   "appTagline": "Suivi temps réel des temps de traversée — Port Autonome d'Abidjan",
   "common": {
     "loading": "Chargement…",
@@ -301,7 +301,7 @@
   },
   "chatbot": {
     "bouton": "Aide",
-    "titre": "Assistant PAA-Traverse",
+    "titre": "Assistant FLUIDIS",
     "placeholder": "Posez une question sur l'application…",
     "envoyer": "Envoyer",
     "cleGeminiManquante": "Clé API Gemini non configurée.",
@@ -312,6 +312,6 @@
     "fermer": "Fermer le chat"
   },
   "footer": {
-    "tagline": "Port Autonome d'Abidjan — projet hackathon PAA-Traverse"
+    "tagline": "Port Autonome d'Abidjan — projet hackathon FLUIDIS"
   }
 }

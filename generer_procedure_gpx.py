@@ -1,11 +1,11 @@
-"""Génère le document Word de procédure terrain GPX pour PAA-Traverse.
+"""Génère le document Word de procédure terrain GPX pour FLUIDIS.
 
 Lancement :
     py -3.11 generer_procedure_gpx.py
 ou bien :
     "C:\\Users\\hp\\AppData\\Local\\Programs\\Python\\Python311\\python.exe" generer_procedure_gpx.py
 
-Sortie : Procedure_Collecte_GPX_Terrain_PAA-Traverse.docx
+Sortie : Procedure_Collecte_GPX_Terrain_FLUIDIS.docx
 """
 
 from datetime import date
@@ -320,7 +320,7 @@ def generer():
     header = doc.sections[0].header
     header_p = header.paragraphs[0]
     header_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run = header_p.add_run("PAA-Traverse — Procédure GPX terrain")
+    run = header_p.add_run("FLUIDIS — Procédure GPX terrain")
     run.italic = True
     run.font.size = Pt(9)
     run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
@@ -335,7 +335,7 @@ def generer():
     # ----- Page de garde -----
     for _ in range(4):
         doc.add_paragraph()
-    ajouter_paragraphe(doc, "PAA-Traverse", gras=True, taille=36,
+    ajouter_paragraphe(doc, "FLUIDIS", gras=True, taille=36,
                        couleur=COULEUR_BLEU,
                        alignement=WD_ALIGN_PARAGRAPH.CENTER, espace_apres=12)
     ajouter_paragraphe(doc, "Port Autonome d'Abidjan", taille=18,
@@ -364,7 +364,7 @@ def generer():
         doc.add_paragraph()
 
     encadre_info(doc, "À lire avant de partir", [
-        "Cette procédure décrit le protocole exact à suivre pour enregistrer une trace GPX réelle sur chacun des 6 tronçons surveillés par le projet PAA-Traverse.",
+        "Cette procédure décrit le protocole exact à suivre pour enregistrer une trace GPX réelle sur chacun des 6 tronçons surveillés par le projet FLUIDIS.",
         "Les fichiers GPX produits serviront à confronter les durées annoncées par Google Routes API à la réalité terrain (Phase P5 du projet).",
         "Lire la procédure en entier avant de partir. Compter une demi-journée pour l'ensemble des 6 trajets.",
     ])
@@ -374,7 +374,7 @@ def generer():
     # ----- 1. Objectif -----
     ajouter_h1(doc, "1. Objectif de la sortie terrain")
     ajouter_paragraphe(doc,
-        "L'application PAA-Traverse collecte automatiquement, toutes les 20 minutes "
+        "L'application FLUIDIS collecte automatiquement, toutes les 20 minutes "
         "entre 7h et 19h, les temps de parcours annoncés par Google Routes API sur les "
         "6 tronçons du port. Pour garantir la fiabilité de cette source, le cahier des "
         "charges impose une confrontation hebdomadaire avec une mesure terrain réelle."
@@ -513,7 +513,7 @@ def generer():
         doc,
         entetes=["Élément", "Signification"],
         lignes=[
-            ("paa_t", "Préfixe fixe pour identifier les fichiers PAA-Traverse"),
+            ("paa_t", "Préfixe fixe pour identifier les fichiers FLUIDIS"),
             ("XY", "Numéro du tronçon : 1A, 1B, 2A, 2B, 3A, 3B"),
             ("AAAAMMJJ", "Date au format année-mois-jour (ex. 20260619 pour le 19 juin 2026)"),
             ("HHMM", "Heure de départ du trajet (ex. 0814 pour 8h14)"),
@@ -608,7 +608,7 @@ def generer():
     # ----- 8. Transmission -----
     ajouter_h1(doc, "8. Transmission des fichiers")
     ajouter_paragraphe(doc, "Une fois les fichiers vérifiés, les transmettre selon l'une de ces modalités :")
-    ajouter_numerote(doc, "Les envoyer par email au responsable du projet PAA-Traverse.")
+    ajouter_numerote(doc, "Les envoyer par email au responsable du projet FLUIDIS.")
     ajouter_numerote(doc, "Les déposer dans un dossier partagé Google Drive ou OneDrive convenu.")
     ajouter_numerote(doc, "Quand l'endpoint d'import sera prêt (P5) : les uploader directement via la documentation Swagger du backend.")
 
@@ -730,11 +730,11 @@ def generer():
         "1. Rassembler les 6 fichiers GPX dans un dossier.",
         "2. Renommer le dossier au format : paa_releves_terrain_AAAAMMJJ/",
         "3. Joindre une copie scannée ou photographiée de cette procédure remplie.",
-        "4. Transmettre le tout au responsable PAA-Traverse pour import en P5.",
+        "4. Transmettre le tout au responsable FLUIDIS pour import en P5.",
     ])
 
     # Sauvegarde
-    sortie = "Procedure_Collecte_GPX_Terrain_PAA-Traverse.docx"
+    sortie = "Procedure_Collecte_GPX_Terrain_FLUIDIS.docx"
     doc.save(sortie)
     print(f"OK Document genere : {sortie}")
     return sortie

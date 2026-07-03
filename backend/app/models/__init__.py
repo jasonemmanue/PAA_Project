@@ -1,1 +1,1 @@
-"""Modèles SQLAlchemy du projet PAA-Traverse."""
+"""Modèles SQLAlchemy du projet FLUIDIS."""

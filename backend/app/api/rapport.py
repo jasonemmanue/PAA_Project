@@ -378,7 +378,7 @@ async def get_zones_congestionnees_pdf(
     pdf.set_font("Helvetica", "I", 7)
     pdf.set_text_color(107, 114, 128)
     pdf.cell(0, 4,
-             "Genere par PAA-Traverse - Port Autonome d'Abidjan - "
+             "Genere par FLUIDIS - Port Autonome d'Abidjan - "
              f"Methodologie DEESP rapport octobre 2025", ln=True)
 
     # Réponse — bytearray → bytes pour httpx/starlette
@@ -769,7 +769,7 @@ async def export_rapport_word(
     doc.add_paragraph()
     pied = doc.add_paragraph()
     pr = pied.add_run(
-        "Document généré en temps réel par PAA-Traverse — "
+        "Document généré en temps réel par FLUIDIS — "
         "Port Autonome d'Abidjan"
     )
     pr.italic = True

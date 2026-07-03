@@ -1,8 +1,17 @@
-# PAA-Traverse — Contexte permanent du projet
+# FLUIDIS — Contexte permanent du projet
 
 > Ce fichier est le **contrat de contexte** du projet. Tout assistant IA, contributeur ou
 > reviewer doit le lire avant d'écrire la moindre ligne de code. Il définit le besoin,
 > les contraintes techniques, les conventions et la feuille de route.
+
+> **Renommage produit (2026-07-03)** — le produit s'appelait précédemment
+> **PAA-Traverse**, il s'appelle désormais **FLUIDIS**. Le renommage a été
+> propagé à tout le code, l'UI, la doc et le prompt système du chatbot. Le
+> **répertoire de travail local** et le **repository Git** conservent leur nom
+> historique `paa-traverse` (ne pas renommer — cela casserait la config Claude
+> Code, Railway CLI et les scripts existants). Le sigle **PAA** seul continue
+> de désigner le **client** (Port Autonome d'Abidjan) et reste partout dans
+> la doc. Cf. « Phase de renommage » en fin de fichier.
 
 ---
 
@@ -1448,7 +1457,7 @@ plage horaire à envisager).
 ## 6. Arborescence du dépôt
 
 ```
-paa-traverse/
+fluidis/
 ├── CLAUDE.md                  # Ce fichier — contexte permanent
 ├── README.md                  # Documentation utilisateur (FR), grand public
 ├── railwaydeploy.md           # Procédures + pièges Railway (à lire avant railway up)
@@ -2343,7 +2352,7 @@ Port d'Abidjan, Grand Bassam road, bd de Marseille…).
 
 **Règles de courtoisie :**
 - Respecter `robots.txt` de chaque site.
-- `User-Agent` identifié : `PAA-Traverse/1.0 (hackathon; contact:sakamemmanuel@gmail.com)`.
+- `User-Agent` identifié : `FLUIDIS/1.0 (hackathon; contact:sakamemmanuel@gmail.com)`.
 - Délai de 2 s entre les requêtes vers le même domaine.
 - Résultat mis en cache 25 min — ne jamais re-scraper si la dernière collecte
   est < 20 min.
@@ -2494,7 +2503,7 @@ Un point géocodé hors de cette zone → `lat/lon = NULL`, troncon_id non attri
 
 #### Règles de courtoisie scraping
 
-- `User-Agent: PAA-Traverse/1.0 (hackathon; contact:sakamemmanuel@gmail.com)`
+- `User-Agent: FLUIDIS/1.0 (hackathon; contact:sakamemmanuel@gmail.com)`
 - Cache 20 min par source (`_CACHE_TTL = 20 * 60`)
 - Délai 2 s entre requêtes vers le même domaine
 - Délai 1,2 s entre appels Nominatim (respect ToS OSM 1 req/s)
@@ -2512,7 +2521,7 @@ Un point géocodé hors de cette zone → `lat/lon = NULL`, troncon_id non attri
 #### PROMPT P8.1 — Fondations scraping backend
 
 ```
-Contexte : PAA-Traverse, backend FastAPI + SQLAlchemy + APScheduler.
+Contexte : FLUIDIS, backend FastAPI + SQLAlchemy + APScheduler.
 Voir CLAUDE.md § 10 pour le cahier des charges complet.
 
 Objectif : créer la couche de persistance + le scraper RSS multi-source
@@ -2535,7 +2544,7 @@ Fonction async `scraper_rss(url: str, source_nom: str, db: Session) -> int`
 - Pour chaque entrée : titre + résumé (summary[:500]) + lien + date.
 - Filtre : au moins 1 mot-clé de MOTS_CLES_INCIDENTS dans (titre + résumé).
 - Déduplication : `INSERT ... ON CONFLICT (source_url) DO NOTHING`.
-- User-Agent : "PAA-Traverse/1.0 (hackathon; contact:sakamemmanuel@gmail.com)".
+- User-Agent : "FLUIDIS/1.0 (hackathon; contact:sakamemmanuel@gmail.com)".
 - Délai 2 s entre sources du même domaine.
 
 MOTS_CLES_INCIDENTS = [
@@ -3694,3 +3703,54 @@ Les deux filtres doivent matcher simultanément — un article hors zone portuai
 automatiquement écarté. Chaque incident retenu est géocodé via Nominatim OSM et
 attribué au tronçon le plus proche (Haversine < 300 m). Les incidents réels
 s'accumulent donc automatiquement dans la base au fil du temps.
+
+---
+
+## 15. Renommage produit PAA-Traverse → FLUIDIS (2026-07-03)
+
+### 15.1 Décision et périmètre
+
+Le 2026-07-03, le produit a été renommé **PAA-Traverse → FLUIDIS**. Le sigle
+**PAA** seul reste utilisé partout pour désigner le **Port Autonome d'Abidjan**
+(client), la **méthodologie DEESP/PAA**, et le service PAA en général — seul
+le composé « PAA-Traverse » (nom historique de l'application) a été remplacé
+par « FLUIDIS ».
+
+### 15.2 Ce qui a été renommé
+
+| Zone | Détail |
+|------|--------|
+| Code backend | Docstrings, commentaires, `SYSTEM_PROMPT` du chatbot, `User-Agent` scraper RSS + Nominatim, User-Agent client OSRM, seed scripts, générateur GPX, migration 0001 (docstring), `alembic.ini` |
+| Code frontend | `frontend/app/layout.tsx` (title / OG / applicationName), `frontend/messages/{fr,en}.json` (`appName`, tagline, titre chatbot), `PasswordGate.tsx` (titre portail), `ChatbotButton.tsx` (message d'accueil), `GestionSources.tsx` (aide contextuelle), `frontend/lib/api.ts`, `frontend/tailwind.config.ts` (commentaire design-system) |
+| Configs | `docker-compose.yml`, `railway.toml`, `deploy.sh`, `backend/Dockerfile`, `backend/requirements.txt`, `frontend/package.json` (`name: fluidis-frontend`), `frontend/package-lock.json`, `osrm-render/render.yaml`, `frontend/.env.example` |
+| Docs | `CLAUDE.md`, `README.md`, `railwaydeploy.md`, `generer_procedure_gpx.py` (Word template) |
+| Données | Champ `<creator>` des 6 GPX synthétiques (`backend/data/gpx_synth/*.gpx`) |
+| Mémoire assistant | `MEMORY.md` + `user_profile.md` + `project_state.md` + nouveau `renommage_fluidis.md` |
+
+### 15.3 Ce qui n'a PAS été renommé (volontaire)
+
+- **Répertoire local** `C:\Users\hp\StudioProjects\paa-traverse` — renommer casserait Git, la config Claude Code, Railway CLI et les scripts existants.
+- **Repository Git** distant — même raison.
+- **Services Railway** (`backend`, `frontend`) et **URLs Railway** générées (`backend-production-6cbf.up.railway.app`, `frontend-production-599c.up.railway.app`) — indépendants du nom produit.
+- **Containers Docker locaux** (`paa_db`, `paa_redis`, `paa_backend`, `paa_osrm`, `paa_frontend`) — préservent les volumes existants sur les postes de dev.
+- **Sigle PAA seul** — désigne le client (Port Autonome d'Abidjan) partout dans le code, la doc, et le prompt système.
+
+### 15.4 Méthode
+
+Script Python one-shot en 5 substitutions ordonnées :
+
+1. `paa-traverse-frontend` → `fluidis-frontend`
+2. `paa-traverse` → `fluidis`
+3. `paa_traverse` → `fluidis`
+4. `PAA-Traverse` → `FLUIDIS`
+5. `PAA Traverse` → `FLUIDIS`
+
+Le script itère `git ls-files`, filtre par extension texte, applique les
+substitutions et réécrit UTF-8. 43 fichiers modifiés. Vérification finale
+`grep` → **0 occurrence résiduelle** de `PAA-Traverse` ou `paa-traverse`.
+
+### 15.5 Post-renommage
+
+Après ce commit, toute nouvelle chaîne d'interface, prompt système, doc utilisateur
+ou log doit utiliser **FLUIDIS**. Le sigle **PAA** seul continue d'être utilisé
+pour le client et la méthodologie DEESP.

@@ -157,7 +157,7 @@ def construire_gpx(
     ET.register_namespace("", ns_gpx)
     gpx = ET.Element(f"{{{ns_gpx}}}gpx", attrib={
         "version": "1.1",
-        "creator": "PAA-Traverse generer_gpx_synthetiques",
+        "creator": "FLUIDIS generer_gpx_synthetiques",
     })
     metadata = ET.SubElement(gpx, f"{{{ns_gpx}}}metadata")
     ET.SubElement(metadata, f"{{{ns_gpx}}}name").text = nom_trace

@@ -1,1 +1,1 @@
-"""Package racine du backend PAA-Traverse."""
+"""Package racine du backend FLUIDIS."""
