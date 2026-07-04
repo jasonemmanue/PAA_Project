@@ -66,7 +66,7 @@
     "heatmapTitle": "Heatmap horaire — jour × heure",
     "heatmapSubtitle": "Intensité moyenne de congestion par créneau (données historiques + temps réel).",
     "heatmapLegend": "Plus la case est sombre, plus la congestion est forte.",
-    "evolutionTitle": "Évolution pluriannuelle de l'indicateur",
+    "evolutionTitle": "Évolution plurimensuelle de l'indicateur",
     "evolutionSubtitle": "Comparaison entre campagnes officielles (article 4.4 du cahier des charges).",
     "evolutionMin": "Temps min.",
     "evolutionMoyen": "Temps moyen",
