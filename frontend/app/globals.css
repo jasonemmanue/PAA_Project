@@ -86,6 +86,49 @@
 }
 
 /* ========================================================================
+   Chatbot — effet "laser printing" pendant le streaming Claude
+   ====================================================================== */
+
+/* Curseur laser vertical qui suit la fin du texte en cours d'écriture.
+   Le pseudo-élément est INLINE (pas absolute) → il colle exactement après
+   le dernier caractère révélé, quelle que soit la longueur/wrap. */
+.chatbot-laser-typing::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #4cc9f0;
+  box-shadow:
+    0 0 6px #4cc9f0,
+    0 0 12px #4cc9f0,
+    0 0 18px rgba(76, 201, 240, 0.55);
+  animation: chatbot-laser-blink 0.7s steps(2, start) infinite;
+}
+
+@keyframes chatbot-laser-blink {
+  0%, 45%   { opacity: 1; }
+  50%, 100% { opacity: 0.35; }
+}
+
+/* Léger halo bleu ciel sur la dernière ligne du texte en cours d'écriture,
+   pour renforcer la sensation "gravure laser". Très subtil pour rester lisible. */
+.chatbot-laser-typing {
+  text-shadow: 0 0 6px rgba(76, 201, 240, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chatbot-laser-typing::after {
+    animation: none !important;
+    opacity: 1;
+  }
+  .chatbot-laser-typing {
+    text-shadow: none;
+  }
+}
+
+/* ========================================================================
    Variables CSS — palette neutralisée par thème (clair / sombre)
    ====================================================================== */
 @layer base {

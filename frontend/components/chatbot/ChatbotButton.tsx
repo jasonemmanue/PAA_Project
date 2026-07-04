@@ -76,16 +76,37 @@ async function streamerClaude(
   }
 }
 
+// Vitesse de révélation de l'effet "laser printing" (ms entre chaque caractère).
+// Trop lent = agaçant ; trop rapide = perte de l'effet. ~14 ms est un bon
+// compromis (~70 caractères/seconde, cadence de dactylo rapide).
+const LASER_TICK_MS = 14;
+// Nombre de caractères révélés à chaque tick — permet de rattraper si le
+// backend nous envoie une grande rafale d'un coup sans faire attendre l'user.
+const LASER_CHARS_PAR_TICK = 1;
+// Au-delà de ce retard buffer, on accélère pour rattraper.
+const LASER_RATTRAPAGE_SEUIL = 40;
+
 export function ChatbotButton() {
   const { t } = useI18n();
   const [ouvert, setOuvert] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [saisie, setSaisie] = useState("");
   const [envoi, setEnvoi] = useState(false);
+  const [streamActif, setStreamActif] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
   const basRef = useRef<HTMLDivElement>(null);
+
+  // Buffer complet reçu du serveur (indépendant du texte affiché).
+  const bufferRef = useRef<string>("");
+  // Portion déjà révélée à l'écran.
+  const revealeRef = useRef<string>("");
+  // True quand le serveur a fini d'envoyer (le loop peut s'arrêter dès
+  // que revealeRef.current a rattrapé bufferRef.current).
+  const streamTermineRef = useRef<boolean>(false);
+  // ID du setInterval de révélation — pour nettoyage.
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (basRef.current) {
@@ -93,12 +114,59 @@ export function ChatbotButton() {
     }
   }, [messages]);
 
+  // Nettoyage global à l'unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
+
+  function demarrerRevelation() {
+    if (intervalRef.current) return;
+    intervalRef.current = setInterval(() => {
+      const buf = bufferRef.current;
+      const revele = revealeRef.current;
+      if (revele.length >= buf.length) {
+        // Rien de nouveau à révéler pour l'instant
+        if (streamTermineRef.current) {
+          // Fin du stream et tout est affiché → on stoppe
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+          setStreamActif(false);
+        }
+        return;
+      }
+      // Détermine combien de caractères ajouter ce tick — on accélère
+      // si le buffer prend beaucoup d'avance (rafales SSE).
+      const retard = buf.length - revele.length;
+      const pas = retard > LASER_RATTRAPAGE_SEUIL
+        ? Math.max(LASER_CHARS_PAR_TICK, Math.ceil(retard / 20))
+        : LASER_CHARS_PAR_TICK;
+      const suivant = buf.slice(0, revele.length + pas);
+      revealeRef.current = suivant;
+      setMessages((prev) => {
+        const copie = prev.slice();
+        const dernier = copie[copie.length - 1];
+        if (dernier && dernier.role === "assistant") {
+          copie[copie.length - 1] = { ...dernier, texte: suivant };
+        }
+        return copie;
+      });
+    }, LASER_TICK_MS);
+  }
+
   async function envoyer() {
     const question = saisie.trim();
     if (!question || envoi) return;
 
-    // Snapshot de l'historique AVANT ajout du message user courant
     const historiqueAvant = messages;
+
+    // Reset des buffers de streaming
+    bufferRef.current = "";
+    revealeRef.current = "";
+    streamTermineRef.current = false;
 
     setMessages((prev) => [
       ...prev,
@@ -107,22 +175,26 @@ export function ChatbotButton() {
     ]);
     setSaisie("");
     setEnvoi(true);
+    setStreamActif(true);
     setErreur(null);
+
+    demarrerRevelation();
 
     try {
       await streamerClaude(apiBaseUrl, historiqueAvant, question, (chunk) => {
-        setMessages((prev) => {
-          const copie = prev.slice();
-          const dernier = copie[copie.length - 1];
-          if (dernier && dernier.role === "assistant") {
-            copie[copie.length - 1] = { ...dernier, texte: dernier.texte + chunk };
-          }
-          return copie;
-        });
+        // On accumule dans le buffer — le setInterval s'occupe du reveal.
+        bufferRef.current += chunk;
       });
+      streamTermineRef.current = true;
     } catch (e) {
+      streamTermineRef.current = true;
+      // Coupe immédiatement le reveal + retire la bulle vide si rien reçu
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setStreamActif(false);
       setErreur(e instanceof Error ? e.message : t("chatbot.messageErreur"));
-      // Retire la bulle assistant vide en cas d'erreur immédiate
       setMessages((prev) => {
         const dernier = prev[prev.length - 1];
         if (dernier && dernier.role === "assistant" && dernier.texte === "") {
@@ -216,6 +288,14 @@ export function ChatbotButton() {
               // On masque la bulle assistant vide (avant réception du 1er token)
               // — le voyant "…" ci-dessous prend le relais.
               if (msg.role === "assistant" && msg.texte === "") return null;
+
+              // La dernière bulle assistant, tant que le stream est actif,
+              // reçoit la classe chatbot-laser-typing (curseur + halo).
+              const estStreamEnCours =
+                streamActif
+                && msg.role === "assistant"
+                && i === messages.length - 1;
+
               return (
                 <div
                   key={i}
@@ -226,7 +306,7 @@ export function ChatbotButton() {
                       msg.role === "user"
                         ? "bg-paa-navy-700 text-white rounded-br-sm"
                         : "bg-gray-100 text-paa-navy-900 dark:bg-paa-navy-800 dark:text-paa-blue-100 rounded-bl-sm"
-                    }`}
+                    } ${estStreamEnCours ? "chatbot-laser-typing" : ""}`}
                   >
                     {msg.texte}
                   </div>
@@ -234,7 +314,9 @@ export function ChatbotButton() {
               );
             })}
 
-            {envoi && messages[messages.length - 1]?.texte === "" && (
+            {envoi
+              && messages[messages.length - 1]?.role === "assistant"
+              && messages[messages.length - 1]?.texte === "" && (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-sm bg-gray-100 px-3 py-2 text-fluid-xs app-text-muted dark:bg-paa-navy-800">
                   <span className="animate-pulse">…</span>
