@@ -135,6 +135,7 @@ export function getIndicateursTroncon(
   periode: "24h" | "7j" | "30j" | "90j" | "6mois" | "1an" = "7j",
   heureDebut = 0,
   heureFin = 24,
+  sousTronconId: number | null = null,
 ): Promise<IndicateursPeriode> {
   const periodeApi =
     periode === "24h" ? "1j"
@@ -144,6 +145,7 @@ export function getIndicateursTroncon(
   const p = new URLSearchParams({ periode: periodeApi });
   if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
   if (heureFin !== 24) p.set("heure_fin", String(heureFin));
+  if (sousTronconId !== null) p.set("sous_troncon_id", String(sousTronconId));
   return appel<IndicateursPeriode>(
     `/troncons/${id}/indicateurs?${p.toString()}`,
   );
@@ -186,6 +188,7 @@ export function getSerieTemporelle(
     inclure_aberrantes?: boolean;
     heureDebut?: number;
     heureFin?: number;
+    sousTronconId?: number | null;
   },
 ): Promise<SerieTemporelle> {
   const query = new URLSearchParams();
@@ -199,6 +202,8 @@ export function getSerieTemporelle(
     query.set("heure_debut", String(params.heureDebut));
   if (params?.heureFin !== undefined && params.heureFin !== 24)
     query.set("heure_fin", String(params.heureFin));
+  if (params?.sousTronconId != null)
+    query.set("sous_troncon_id", String(params.sousTronconId));
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return appel<SerieTemporelle>(
     `/indicateurs/troncons/${id}/serie${suffix}`,
@@ -488,10 +493,12 @@ export function getResumePrediction(
   tronconId: number,
   heureDebut = 0,
   heureFin = 24,
+  sousTronconId: number | null = null,
 ): Promise<ResumePrediction> {
   const p = new URLSearchParams({ troncon_id: String(tronconId) });
   if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
   if (heureFin !== 24) p.set("heure_fin", String(heureFin));
+  if (sousTronconId !== null) p.set("sous_troncon_id", String(sousTronconId));
   return appel<ResumePrediction>(`/predire/resume?${p.toString()}`);
 }
 
@@ -500,10 +507,12 @@ export function getHeureOptimale(
   typeJour: "jour_ouvrable" | "week_end" | "tous" = "jour_ouvrable",
   heureDebut = 0,
   heureFin = 24,
+  sousTronconId: number | null = null,
 ): Promise<HeureOptimaleResponse> {
   const p = new URLSearchParams({ troncon_id: String(tronconId), type_jour: typeJour });
   if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
   if (heureFin !== 24) p.set("heure_fin", String(heureFin));
+  if (sousTronconId !== null) p.set("sous_troncon_id", String(sousTronconId));
   return appel<HeureOptimaleResponse>(`/predire/heure-optimale?${p}`);
 }
 

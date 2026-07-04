@@ -75,8 +75,9 @@ interface Props {
   debutRange: string;
   finRange: string;
   tronconId: number | null;
+  sousTronconId?: number | null;
   troncons: Troncon[];
-  onTronconChange: (id: number) => void;
+  onTronconChange: (id: number, sousId: number | null) => void;
   heureDebut?: number;
   heureFin?: number;
 }
@@ -86,6 +87,7 @@ export function MatriceCongestion({
   debutRange,
   finRange,
   tronconId,
+  sousTronconId = null,
   troncons,
   onTronconChange,
   heureDebut = 0,
@@ -109,6 +111,7 @@ export function MatriceCongestion({
       });
       if (heureDebut !== 0) params.set("heure_debut", String(heureDebut));
       if (heureFin !== 24) params.set("heure_fin", String(heureFin));
+      if (sousTronconId !== null) params.set("sous_troncon_id", String(sousTronconId));
       const rep = await fetch(`${API_BASE}/rapport/matrice-congestion?${params.toString()}`);
       if (!rep.ok) {
         const txt = await rep.text().catch(() => "");
@@ -120,7 +123,7 @@ export function MatriceCongestion({
     } finally {
       setChargement(false);
     }
-  }, [campagne, debutRange, finRange, tronconId, heureDebut, heureFin]);
+  }, [campagne, debutRange, finRange, tronconId, sousTronconId, heureDebut, heureFin]);
 
   useEffect(() => {
     setFenetre(0); // reset au changement de période
@@ -146,15 +149,32 @@ export function MatriceCongestion({
           Axe / Tronçons par axes :
         </label>
         <select
-          value={tronconId ?? ""}
-          onChange={(e) => onTronconChange(Number(e.target.value))}
+          value={
+            tronconId === null
+              ? ""
+              : sousTronconId !== null
+                ? `sous-${sousTronconId}`
+                : `axe-${tronconId}`
+          }
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v.startsWith("axe-")) {
+              onTronconChange(Number(v.slice(4)), null);
+            } else if (v.startsWith("sous-")) {
+              const sid = Number(v.slice(5));
+              const parent = troncons.find((a) =>
+                (a.sous_troncons ?? []).some((s) => s.id === sid),
+              );
+              if (parent) onTronconChange(parent.id, sid);
+            }
+          }}
           className="rounded-md border app-border app-surface px-3 py-1.5 text-fluid-sm
                      text-paa-navy-900 dark:text-paa-blue-100 focus:outline-none
                      focus:ring-2 focus:ring-paa-blue-400 min-w-[260px]"
         >
           <optgroup label="── Axes ──">
             {troncons.map((t) => (
-              <option key={`axe-${t.id}`} value={t.id}>
+              <option key={`axe-${t.id}`} value={`axe-${t.id}`}>
                 {t.nom}
               </option>
             ))}
@@ -163,7 +183,7 @@ export function MatriceCongestion({
             <optgroup label="── Tronçons par axes ──">
               {troncons.flatMap((a) =>
                 (a.sous_troncons ?? []).map((s) => (
-                  <option key={`sous-${s.id}`} value={a.id}>
+                  <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
                     {a.nom} : {s.nom_court} ({s.code})
                   </option>
                 )),

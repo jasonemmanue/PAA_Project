@@ -403,6 +403,7 @@ def matrice_congestion(
     *,
     heure_debut: int = DEESP_HEURE_DEBUT,
     heure_fin: int = DEESP_HEURE_FIN,
+    sous_troncon_id: int | None = None,
 ) -> dict:
     """Retourne pour chaque (date locale, heure DEESP) l'état congestionné/fluide.
 
@@ -413,6 +414,15 @@ def matrice_congestion(
     """
     fuseau = ZoneInfo(get_settings().tz)
 
+    conds = [
+        Mesure.troncon_id == troncon_id,
+        Mesure.source == SourceMesure.google,
+        Mesure.aberrante.is_(False),
+        Mesure.horodatage >= debut_utc,
+        Mesure.horodatage <= fin_utc,
+    ]
+    if sous_troncon_id is not None:
+        conds.append(Mesure.sous_troncon_id == sous_troncon_id)
     rows = list(
         db.execute(
             select(
@@ -421,13 +431,7 @@ def matrice_congestion(
                 Mesure.pourcentage_rouge,
                 Mesure.pourcentage_orange,
             )
-            .where(
-                Mesure.troncon_id == troncon_id,
-                Mesure.source == SourceMesure.google,
-                Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_utc,
-                Mesure.horodatage <= fin_utc,
-            )
+            .where(*conds)
             .order_by(Mesure.horodatage)
         ).all()
     )
@@ -489,6 +493,7 @@ def matrice_temps(
     *,
     heure_debut: int = DEESP_HEURE_DEBUT,
     heure_fin: int = DEESP_HEURE_FIN,
+    sous_troncon_id: int | None = None,
 ) -> dict:
     """Retourne pour chaque (date locale, heure DEESP) la durée de traversée en secondes.
 
@@ -503,6 +508,15 @@ def matrice_temps(
     """
     fuseau = ZoneInfo(get_settings().tz)
 
+    conds = [
+        Mesure.troncon_id == troncon_id,
+        Mesure.duree_trafic_s.is_not(None),
+        Mesure.aberrante.is_(False),
+        Mesure.horodatage >= debut_utc,
+        Mesure.horodatage <= fin_utc,
+    ]
+    if sous_troncon_id is not None:
+        conds.append(Mesure.sous_troncon_id == sous_troncon_id)
     rows = list(
         db.execute(
             select(
@@ -510,13 +524,7 @@ def matrice_temps(
                 Mesure.duree_trafic_s,
                 Mesure.source,
             )
-            .where(
-                Mesure.troncon_id == troncon_id,
-                Mesure.duree_trafic_s.is_not(None),
-                Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_utc,
-                Mesure.horodatage <= fin_utc,
-            )
+            .where(*conds)
             .order_by(Mesure.horodatage)
         ).all()
     )

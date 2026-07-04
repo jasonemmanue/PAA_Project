@@ -16,6 +16,7 @@ import { KpiCards } from "@/components/indicateurs/KpiCards";
 import {
   SelecteurPeriode,
   SelecteurTroncon,
+  type SelectionTroncon,
   type Periode,
 } from "@/components/indicateurs/Selecteurs";
 import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
@@ -41,7 +42,10 @@ export function PageIndicateurs() {
   const { heureDebut, heureFin } = usePlageHoraire();
 
   const [troncons, setTroncons] = useState<Troncon[]>([]);
-  const [tronconId, setTronconId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<SelectionTroncon | null>(null);
+  const tronconId = selection?.tronconId ?? null;
+  const sousTronconId =
+    selection?.type === "sous" ? selection.sousTronconId : null;
   const [periode, setPeriode] = useState<Periode>("24h");
   const [indicateurs, setIndicateurs] = useState<IndicateursPeriode | null>(null);
   const [serie, setSerie] = useState<SerieTemporelle | null>(null);
@@ -64,7 +68,9 @@ export function PageIndicateurs() {
           Number.isFinite(fromUrl) && fromUrl > 0
             ? fromUrl
             : liste[0]?.id ?? null;
-        setTronconId(idInitial);
+        if (idInitial !== null) {
+          setSelection({ type: "axe", tronconId: idInitial });
+        }
       })
       .catch((e) =>
         !annule &&
@@ -90,13 +96,14 @@ export function PageIndicateurs() {
     const fin = finDate.toISOString().slice(0, 10);
 
     Promise.all([
-      api.indicateurs(tronconId, periode, heureDebut, heureFin),
+      api.indicateurs(tronconId, periode, heureDebut, heureFin, sousTronconId),
       api.serieTemporelle(tronconId, {
         debut,
         fin,
         granularite: fenetre <= 1 ? "hour" : "day",
         heureDebut,
         heureFin,
+        sousTronconId,
       }),
     ])
       .then(([ind, ser]) => {
@@ -112,7 +119,7 @@ export function PageIndicateurs() {
     return () => {
       annule = true;
     };
-  }, [tronconId, periode, heureDebut, heureFin]);
+  }, [tronconId, sousTronconId, periode, heureDebut, heureFin]);
 
   return (
     <div className="flex flex-col gap-fluid-4">
@@ -128,8 +135,8 @@ export function PageIndicateurs() {
       <div className="flex flex-wrap items-end gap-fluid-4">
         <SelecteurTroncon
           troncons={troncons}
-          valeur={tronconId}
-          onChange={setTronconId}
+          selection={selection}
+          onChange={setSelection}
         />
         <SelecteurPeriode valeur={periode} onChange={setPeriode} />
       </div>

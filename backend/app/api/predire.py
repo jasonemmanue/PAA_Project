@@ -58,6 +58,14 @@ async def get_resume(
     troncon_id: int = Query(..., description="ID du tronçon"),
     heure_debut: int = Query(0, ge=0, le=23, description="Heure locale de début (0-23)"),
     heure_fin: int = Query(24, ge=1, le=24, description="Heure locale de fin (1-24)"),
+    sous_troncon_id: int | None = Query(
+        None,
+        description=(
+            "Optionnel : restreint semaine/mois aux mesures fines "
+            "d'un sous-tronçon (T1A, T2A…). Le bloc courante reste "
+            "au niveau axe pour la cascade Google."
+        ),
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     fuseau = ZoneInfo(get_settings().tz)
@@ -86,8 +94,14 @@ async def get_resume(
         .astimezone(timezone.utc)
     )
 
-    stats_semaine = _stats_mesures_periode(db, troncon_id, debut_semaine_utc, maintenant_utc, heure_debut, heure_fin)
-    stats_mois = _stats_mesures_periode(db, troncon_id, debut_mois_utc, maintenant_utc, heure_debut, heure_fin)
+    stats_semaine = _stats_mesures_periode(
+        db, troncon_id, debut_semaine_utc, maintenant_utc,
+        heure_debut, heure_fin, sous_troncon_id=sous_troncon_id,
+    )
+    stats_mois = _stats_mesures_periode(
+        db, troncon_id, debut_mois_utc, maintenant_utc,
+        heure_debut, heure_fin, sous_troncon_id=sous_troncon_id,
+    )
 
     # Bornes 7 j même type de jour — toujours calculées pour informer l'UI
     # (min/max stables même quand le moyen vient de la mesure Google instantanée)
@@ -102,9 +116,16 @@ async def get_resume(
                 "max_mn": pred_n2.max_mn,
             }
 
+    nom_affichage = pred.troncon_nom
+    if sous_troncon_id is not None:
+        from app.models.models import SousTroncon
+        _sous = db.get(SousTroncon, sous_troncon_id)
+        if _sous is not None and _sous.troncon_id == troncon_id:
+            nom_affichage = f"{pred.troncon_nom} : {_sous.nom_court} ({_sous.code})"
+
     return {
         "troncon_id": pred.troncon_id,
-        "troncon_nom": pred.troncon_nom,
+        "troncon_nom": nom_affichage,
         "courante": {
             "instant_local": pred.instant_local,
             "type_jour": pred.type_jour,
@@ -159,11 +180,28 @@ async def get_heure_optimale(
     ),
     heure_debut: int = Query(0, ge=0, le=23, description="Heure de début de la plage (incluse). Défaut 0 = 24h/24."),
     heure_fin: int = Query(24, ge=1, le=24, description="Heure de fin de la plage (exclue). Défaut 24 = 24h/24."),
+    sous_troncon_id: int | None = Query(
+        None,
+        description=(
+            "Optionnel : restreint aux mesures fines d'un sous-tronçon. "
+            "Ignoré si la source retenue est `profils_horaires` (la table "
+            "ne distingue pas les sous-tronçons, cf. § 4.8 CLAUDE.md)."
+        ),
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    from app.models.models import SousTroncon
     troncon = db.get(Troncon, troncon_id)
     if not troncon:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tronçon introuvable.")
+    sous = None
+    if sous_troncon_id is not None:
+        sous = db.get(SousTroncon, sous_troncon_id)
+        if sous is None or sous.troncon_id != troncon_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Sous-tronçon id={sous_troncon_id} introuvable ou hors axe.",
+            )
 
     fuseau = ZoneInfo(get_settings().tz)
 
@@ -225,15 +263,17 @@ async def get_heure_optimale(
         source = "mesures_recentes_30j"
         debut_utc = datetime.now(tz=timezone.utc) - timedelta(days=30)
 
+        conds_m = [
+            Mesure.troncon_id == troncon_id,
+            Mesure.source == SourceMesure.google,
+            Mesure.duree_trafic_s.isnot(None),
+            Mesure.aberrante.is_(False),
+            Mesure.horodatage >= debut_utc,
+        ]
+        if sous_troncon_id is not None:
+            conds_m.append(Mesure.sous_troncon_id == sous_troncon_id)
         mesures_db = db.execute(
-            select(Mesure.horodatage, Mesure.duree_trafic_s)
-            .where(
-                Mesure.troncon_id == troncon_id,
-                Mesure.source == SourceMesure.google,
-                Mesure.duree_trafic_s.isnot(None),
-                Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_utc,
-            )
+            select(Mesure.horodatage, Mesure.duree_trafic_s).where(*conds_m)
         ).all()
 
         buckets: dict[int, list[int]] = defaultdict(list)
@@ -267,12 +307,18 @@ async def get_heure_optimale(
     for c in creneaux:
         c["optimal"] = c["heure"] in top3_heures
 
-    # Temps de référence 50 km/h
-    ref_s = int((troncon.distance_m or 0) / 1000 / 50 * 3600) if troncon.distance_m else None
+    # Temps de référence 50 km/h — basé sur la distance du sous-tronçon si demandé
+    ref_dist = sous.distance_m if sous is not None else (troncon.distance_m or 0)
+    ref_s = int(ref_dist / 1000 / 50 * 3600) if ref_dist else None
+
+    nom_affichage = (
+        f"{troncon.nom} : {sous.nom_court} ({sous.code})"
+        if sous is not None else troncon.nom
+    )
 
     return {
         "troncon_id": troncon_id,
-        "troncon_nom": troncon.nom,
+        "troncon_nom": nom_affichage,
         "type_jour": type_jour,
         "source": source,
         "nb_creneaux": len(creneaux),

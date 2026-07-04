@@ -266,6 +266,13 @@ async def indicateurs_troncon(
     ),
     heure_debut: int = Query(0, ge=0, le=23, description="Heure locale de début (0-23)."),
     heure_fin: int = Query(24, ge=1, le=24, description="Heure locale de fin (1-24)."),
+    sous_troncon_id: int | None = Query(
+        None,
+        description=(
+            "Optionnel. Restreint aux mesures fines portant sur ce sous-tronçon "
+            "codifié (T1A, T2A…). L'axe reste `troncon_id` (parent)."
+        ),
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -293,10 +300,12 @@ async def indicateurs_troncon(
             fin_local.astimezone(timezone.utc),
             heure_debut=heure_debut,
             heure_fin=heure_fin,
+            sous_troncon_id=sous_troncon_id,
         )
         detail = indicateurs_par_jour(
             db, troncon_id, nb_jours=jours,
             heure_debut=heure_debut, heure_fin=heure_fin,
+            sous_troncon_id=sous_troncon_id,
         )
     except LookupError as exc:
         raise HTTPException(

@@ -133,17 +133,34 @@ def calcul_indicateurs(
     inclure_aberrantes: bool = False,
     heure_debut: int = 0,
     heure_fin: int = 24,
+    sous_troncon_id: int | None = None,
 ) -> IndicateursTroncon:
     """Calcule les indicateurs DEESP pour un tronçon sur [debut, fin].
 
     Conserve uniquement les indicateurs publiés par le rapport :
     temps min / moyen / max, taux de congestion (couleur).
+
+    Si `sous_troncon_id` est fourni, on restreint aux mesures fines
+    portant sur ce sous-tronçon codifié (T1A, T2A…) — la référence
+    50 km/h est alors calculée sur SA distance propre.
     """
+    from app.models.models import SousTroncon  # import local pour éviter la boucle
     troncon = db.get(Troncon, troncon_id)
     if troncon is None:
         raise LookupError(f"Tronçon id={troncon_id} introuvable.")
 
-    t_ref_50 = troncon.distance_m / (troncon.vitesse_ref_kmh / 3.6)
+    sous = None
+    if sous_troncon_id is not None:
+        sous = db.get(SousTroncon, sous_troncon_id)
+        if sous is None or sous.troncon_id != troncon_id:
+            raise LookupError(
+                f"Sous-tronçon id={sous_troncon_id} introuvable "
+                f"ou pas rattaché à l'axe {troncon_id}."
+            )
+
+    ref_dist = sous.distance_m if sous is not None else troncon.distance_m
+    ref_vit = 50.0 if sous is not None else troncon.vitesse_ref_kmh
+    t_ref_50 = ref_dist / (ref_vit / 3.6)
 
     # Chargement des mesures de la fenêtre (succès uniquement)
     requete = select(Mesure).where(
@@ -152,6 +169,8 @@ def calcul_indicateurs(
         Mesure.horodatage <= fin_utc,
         Mesure.duree_trafic_s.is_not(None),
     )
+    if sous_troncon_id is not None:
+        requete = requete.where(Mesure.sous_troncon_id == sous_troncon_id)
     mesures: list[Mesure] = list(db.execute(requete).scalars())
 
     # Filtre par plage horaire locale si nécessaire
@@ -169,7 +188,10 @@ def calcul_indicateurs(
     if not valides:
         return IndicateursTroncon(
             troncon_id=troncon.id,
-            troncon_nom=troncon.nom,
+            troncon_nom=(
+                f"{troncon.nom} : {sous.nom_court} ({sous.code})"
+                if sous is not None else troncon.nom
+            ),
             debut_utc=debut_utc.isoformat(),
             fin_utc=fin_utc.isoformat(),
             nb_mesures=0,
@@ -304,6 +326,7 @@ def serie_temporelle(
     inclure_aberrantes: bool = False,
     heure_debut: int = 0,
     heure_fin: int = 24,
+    sous_troncon_id: int | None = None,
 ) -> dict[str, object]:
     """Renvoie une série temporelle agrégée (heure ou jour) du temps de traversée.
 
@@ -311,11 +334,23 @@ def serie_temporelle(
     de congestion DEESP basée sur le taux de mesures congestionnées dans
     le bucket. Pas de TTI : on est aligné sur les Tableaux 3-15 du rapport.
     """
+    from app.models.models import SousTroncon  # import local
     troncon = db.get(Troncon, troncon_id)
     if troncon is None:
         raise LookupError(f"Tronçon id={troncon_id} introuvable.")
 
-    t_ref_50 = troncon.distance_m / (troncon.vitesse_ref_kmh / 3.6)
+    sous = None
+    if sous_troncon_id is not None:
+        sous = db.get(SousTroncon, sous_troncon_id)
+        if sous is None or sous.troncon_id != troncon_id:
+            raise LookupError(
+                f"Sous-tronçon id={sous_troncon_id} introuvable "
+                f"ou pas rattaché à l'axe {troncon_id}."
+            )
+
+    ref_dist = sous.distance_m if sous is not None else troncon.distance_m
+    ref_vit = 50.0 if sous is not None else troncon.vitesse_ref_kmh
+    t_ref_50 = ref_dist / (ref_vit / 3.6)
     fuseau_local = ZoneInfo(get_settings().tz)
 
     requete = select(Mesure).where(
@@ -324,6 +359,8 @@ def serie_temporelle(
         Mesure.horodatage <= fin_utc,
         Mesure.duree_trafic_s.is_not(None),
     )
+    if sous_troncon_id is not None:
+        requete = requete.where(Mesure.sous_troncon_id == sous_troncon_id)
     if not inclure_aberrantes:
         requete = requete.where(Mesure.aberrante.is_(False))
 
@@ -375,9 +412,13 @@ def serie_temporelle(
             "nb_mesures": len(seau),
         })
 
+    nom_affichage = (
+        f"{troncon.nom} : {sous.nom_court} ({sous.code})"
+        if sous is not None else troncon.nom
+    )
     return {
         "troncon_id": troncon.id,
-        "troncon_nom": troncon.nom,
+        "troncon_nom": nom_affichage,
         "granularite": granularite,
         "temps_reference_50kmh_s": round(t_ref_50, 2),
         "debut_utc": debut_utc.isoformat(),
@@ -400,6 +441,7 @@ def indicateurs_par_jour(
     inclure_aberrantes: bool = False,
     heure_debut: int = 0,
     heure_fin: int = 24,
+    sous_troncon_id: int | None = None,
 ) -> dict[str, object]:
     """Calcule les indicateurs DEESP jour par jour sur les N derniers jours.
 
@@ -425,6 +467,7 @@ def indicateurs_par_jour(
             inclure_aberrantes=inclure_aberrantes,
             heure_debut=heure_debut,
             heure_fin=heure_fin,
+            sous_troncon_id=sous_troncon_id,
         )
         jours.append({
             "date_locale": jour_local.isoformat(),

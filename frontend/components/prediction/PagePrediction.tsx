@@ -120,7 +120,12 @@ export function PagePrediction() {
     vitesse_ref_50kmh: t("prediction.sourceRef50"),
   };
   const [troncons, setTroncons] = useState<Troncon[]>([]);
-  const [tronconId, setTronconId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<{
+    tronconId: number;
+    sousTronconId: number | null;
+  } | null>(null);
+  const tronconId = selection?.tronconId ?? null;
+  const sousTronconId = selection?.sousTronconId ?? null;
   const [resume, setResume] = useState<ResumePrediction | null>(null);
   const [segments, setSegments] = useState<ResumeSegments | null>(null);
   const [chargement, setChargement] = useState(false);
@@ -132,7 +137,10 @@ export function PagePrediction() {
       if (annule) return;
       const tr = Array.isArray(liste) ? liste : [];
       setTroncons(tr);
-      setTronconId(tr[0]?.id ?? null);
+      const idInitial = tr[0]?.id ?? null;
+      if (idInitial !== null) {
+        setSelection({ tronconId: idInitial, sousTronconId: null });
+      }
     }).catch(() => {});
     return () => { annule = true; };
   }, []);
@@ -144,7 +152,7 @@ export function PagePrediction() {
     setErreur(null);
     setSegments(null);
     Promise.all([
-      api.resumePrediction(tronconId, heureDebut, heureFin),
+      api.resumePrediction(tronconId, heureDebut, heureFin, sousTronconId),
       api.segmentsResumeTroncon(tronconId),
     ])
       .then(([r, s]) => {
@@ -155,7 +163,7 @@ export function PagePrediction() {
       .catch((e) => { if (!annule) setErreur(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!annule) setChargement(false); });
     return () => { annule = true; };
-  }, [tronconId, heureDebut, heureFin]);
+  }, [tronconId, sousTronconId, heureDebut, heureFin]);
 
   // Calculs GPX filtrés par période
   const sessionsTout = segments?.sessions ?? [];
@@ -187,21 +195,38 @@ export function PagePrediction() {
         <label className="flex flex-col gap-1 text-fluid-sm font-medium max-w-md">
           {t("prediction.selectTroncon")}
           <select
-            value={tronconId ?? ""}
-            onChange={(e) => setTronconId(Number(e.target.value))}
+            value={
+              selection === null
+                ? ""
+                : selection.sousTronconId !== null
+                  ? `sous-${selection.sousTronconId}`
+                  : `axe-${selection.tronconId}`
+            }
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v.startsWith("axe-")) {
+                setSelection({ tronconId: Number(v.slice(4)), sousTronconId: null });
+              } else if (v.startsWith("sous-")) {
+                const sid = Number(v.slice(5));
+                const parent = troncons.find((a) =>
+                  (a.sous_troncons ?? []).some((s) => s.id === sid),
+                );
+                if (parent) setSelection({ tronconId: parent.id, sousTronconId: sid });
+              }
+            }}
             className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
                        focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
           >
             <optgroup label="── Axes ──">
               {troncons.map((tr) => (
-                <option key={`axe-${tr.id}`} value={tr.id}>{tr.nom}</option>
+                <option key={`axe-${tr.id}`} value={`axe-${tr.id}`}>{tr.nom}</option>
               ))}
             </optgroup>
             {troncons.some((t) => (t.sous_troncons?.length ?? 0) > 0) && (
               <optgroup label="── Tronçons par axes ──">
                 {troncons.flatMap((a) =>
                   (a.sous_troncons ?? []).map((s) => (
-                    <option key={`sous-${s.id}`} value={a.id}>
+                    <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
                       {a.nom} : {s.nom_court} ({s.code})
                     </option>
                   )),

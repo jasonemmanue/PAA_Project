@@ -17,28 +17,57 @@ import type { JourSemaine, Troncon } from "@/lib/types";
 // ---------------------------------------------------------------------------
 // Sélecteur de tronçon
 // ---------------------------------------------------------------------------
+/** Sélection typée par le composant : axe seul, ou sous-tronçon + son axe parent. */
+export type SelectionTroncon =
+  | { type: "axe"; tronconId: number }
+  | { type: "sous"; tronconId: number; sousTronconId: number };
+
+/** Encode la sélection en une clé unique pour l'option <select>. */
+export function encoderSelection(s: SelectionTroncon | null): string {
+  if (!s) return "";
+  return s.type === "axe" ? `axe-${s.tronconId}` : `sous-${s.sousTronconId}`;
+}
+
 export function SelecteurTroncon({
   troncons,
-  valeur,
+  selection,
   onChange,
 }: {
   troncons: Troncon[];
-  valeur: number | null;
-  onChange: (id: number) => void;
+  selection: SelectionTroncon | null;
+  onChange: (s: SelectionTroncon) => void;
 }) {
   const { t } = useI18n();
   const liste = Array.isArray(troncons) ? troncons : [];
   const estAxe = (tr: Troncon) => tr.est_axe ?? (tr.id <= 6);
   const axes   = liste.filter(estAxe);
   const orphelins = liste.filter((tr) => !estAxe(tr));
+
+  const surSelect = (cle: string) => {
+    if (cle.startsWith("axe-")) {
+      const id = Number(cle.slice(4));
+      if (Number.isFinite(id)) onChange({ type: "axe", tronconId: id });
+      return;
+    }
+    if (cle.startsWith("sous-")) {
+      const sid = Number(cle.slice(5));
+      const parent = axes.find((a) =>
+        (a.sous_troncons ?? []).some((s) => s.id === sid),
+      );
+      if (parent && Number.isFinite(sid)) {
+        onChange({ type: "sous", tronconId: parent.id, sousTronconId: sid });
+      }
+    }
+  };
+
   return (
     <label className="flex flex-col gap-1">
       <span className="text-fluid-xs font-medium app-text-muted">
         {t("indicateurs.selectTroncon")}
       </span>
       <select
-        value={valeur ?? ""}
-        onChange={(e) => onChange(Number(e.target.value))}
+        value={encoderSelection(selection)}
+        onChange={(e) => surSelect(e.target.value)}
         className="rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
                    text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
                    dark:text-paa-blue-100 min-h-[44px]"
@@ -46,7 +75,7 @@ export function SelecteurTroncon({
         {axes.length > 0 && (
           <optgroup label="── Axes ──">
             {axes.map((tr) => (
-              <option key={`axe-${tr.id}`} value={tr.id}>{tr.nom}</option>
+              <option key={`axe-${tr.id}`} value={`axe-${tr.id}`}>{tr.nom}</option>
             ))}
           </optgroup>
         )}
@@ -54,7 +83,7 @@ export function SelecteurTroncon({
           <optgroup label="── Tronçons par axes ──">
             {axes.flatMap((a) =>
               (a.sous_troncons ?? []).map((s) => (
-                <option key={`sous-${s.id}`} value={a.id}>
+                <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
                   {a.nom} : {s.nom_court} ({s.code})
                 </option>
               )),
@@ -64,7 +93,7 @@ export function SelecteurTroncon({
         {orphelins.length > 0 && (
           <optgroup label="── Tronçons ──">
             {orphelins.map((tr) => (
-              <option key={`orph-${tr.id}`} value={tr.id}>{tr.nom}</option>
+              <option key={`orph-${tr.id}`} value={`axe-${tr.id}`}>{tr.nom}</option>
             ))}
           </optgroup>
         )}

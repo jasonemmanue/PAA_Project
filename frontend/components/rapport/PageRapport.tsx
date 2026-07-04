@@ -60,6 +60,7 @@ export function PageRapport() {
   const [zones, setZones] = useState<RapportZonesCongestionnees | null>(null);
   const [troncons, setTroncons] = useState<Troncon[]>([]);
   const [tronconId, setTronconId] = useState<number | null>(null);
+  const [sousTronconId, setSousTronconId] = useState<number | null>(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -211,8 +212,9 @@ export function PageRapport() {
         debutRange={debutRange}
         finRange={finRange}
         tronconId={tronconId}
+        sousTronconId={sousTronconId}
         troncons={troncons}
-        onTronconChange={setTronconId}
+        onTronconChange={(id, sid) => { setTronconId(id); setSousTronconId(sid); }}
         heureDebut={heureDebut}
         heureFin={heureFin}
       />
@@ -223,8 +225,9 @@ export function PageRapport() {
         debutRange={debutRange}
         finRange={finRange}
         tronconId={tronconId}
+        sousTronconId={sousTronconId}
         troncons={troncons}
-        onTronconChange={setTronconId}
+        onTronconChange={(id, sid) => { setTronconId(id); setSousTronconId(sid); }}
         heureDebut={heureDebut}
         heureFin={heureFin}
       />

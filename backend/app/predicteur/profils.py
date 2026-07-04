@@ -428,6 +428,7 @@ def _stats_mesures_periode(
     fin_utc: datetime,
     heure_debut: int = 0,
     heure_fin: int = 24,
+    sous_troncon_id: int | None = None,
 ) -> dict:
     """Stats min/moyen/max des mesures Google réelles sur une période, par type_jour.
 
@@ -442,19 +443,21 @@ def _stats_mesures_periode(
 
     fuseau = ZoneInfo(get_settings().tz)
 
+    conditions = [
+        Mesure.troncon_id == troncon_id,
+        Mesure.source == SourceMesure.google,
+        Mesure.duree_trafic_s.is_not(None),
+        Mesure.aberrante.is_(False),
+        Mesure.horodatage >= debut_utc,
+        Mesure.horodatage <= fin_utc,
+    ]
+    if sous_troncon_id is not None:
+        conditions.append(Mesure.sous_troncon_id == sous_troncon_id)
+
     rows = list(
         db.execute(
             select(Mesure.duree_trafic_s, Mesure.horodatage)
-            .where(
-                and_(
-                    Mesure.troncon_id == troncon_id,
-                    Mesure.source == SourceMesure.google,
-                    Mesure.duree_trafic_s.is_not(None),
-                    Mesure.aberrante.is_(False),
-                    Mesure.horodatage >= debut_utc,
-                    Mesure.horodatage <= fin_utc,
-                )
-            )
+            .where(and_(*conditions))
         ).all()
     )
 

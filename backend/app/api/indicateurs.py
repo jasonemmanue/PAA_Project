@@ -75,6 +75,10 @@ async def serie_indicateurs(
     inclure_aberrantes: bool = Query(False),
     heure_debut: int = Query(0, ge=0, le=23, description="Heure locale de début (0-23)."),
     heure_fin: int = Query(24, ge=1, le=24, description="Heure locale de fin (1-24)."),
+    sous_troncon_id: int | None = Query(
+        None,
+        description="Optionnel : restreint aux mesures fines d'un sous-tronçon.",
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     fuseau_local = ZoneInfo(get_settings().tz)
@@ -90,6 +94,7 @@ async def serie_indicateurs(
             inclure_aberrantes=inclure_aberrantes,
             heure_debut=heure_debut,
             heure_fin=heure_fin,
+            sous_troncon_id=sous_troncon_id,
         )
     except LookupError as exc:
         raise HTTPException(

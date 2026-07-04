@@ -200,7 +200,12 @@ export function PageHeureOptimale() {
   const { t } = useI18n();
   const { heureDebut, heureFin } = usePlageHoraire();
   const [troncons, setTroncons] = useState<Troncon[]>([]);
-  const [tronconId, setTronconId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<{
+    tronconId: number;
+    sousTronconId: number | null;
+  } | null>(null);
+  const tronconId = selection?.tronconId ?? null;
+  const sousTronconId = selection?.sousTronconId ?? null;
   const [typeJour, setTypeJour] = useState<TypeJour>("jour_ouvrable");
   const [resultat, setResultat] = useState<HeureOptimaleResponse | null>(null);
   const [chargement, setChargement] = useState(false);
@@ -213,7 +218,9 @@ export function PageHeureOptimale() {
         // Accepte tous les tronçons non explicitement désactivés
         const liste = Array.isArray(list) ? list.filter((tr) => tr.actif !== false) : [];
         setTroncons(liste);
-        if (liste.length > 0) setTronconId(liste[0].id);
+        if (liste.length > 0) {
+          setSelection({ tronconId: liste[0].id, sousTronconId: null });
+        }
       })
       .catch(() => setErreur("Impossible de charger les tronçons depuis l'API."));
   }, []);
@@ -223,14 +230,16 @@ export function PageHeureOptimale() {
     setChargement(true);
     setErreur(null);
     try {
-      const res = await api.heureOptimale(tronconId, typeJour, heureDebut, heureFin);
+      const res = await api.heureOptimale(
+        tronconId, typeJour, heureDebut, heureFin, sousTronconId,
+      );
       setResultat(res);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
       setChargement(false);
     }
-  }, [tronconId, typeJour, heureDebut, heureFin]);
+  }, [tronconId, sousTronconId, typeJour, heureDebut, heureFin]);
 
   useEffect(() => {
     charger();
@@ -250,15 +259,32 @@ export function PageHeureOptimale() {
             {t("heureOptimale.selectTroncon")}
           </span>
           <select
-            value={tronconId ?? ""}
-            onChange={(e) => setTronconId(Number(e.target.value))}
+            value={
+              selection === null
+                ? ""
+                : selection.sousTronconId !== null
+                  ? `sous-${selection.sousTronconId}`
+                  : `axe-${selection.tronconId}`
+            }
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v.startsWith("axe-")) {
+                setSelection({ tronconId: Number(v.slice(4)), sousTronconId: null });
+              } else if (v.startsWith("sous-")) {
+                const sid = Number(v.slice(5));
+                const parent = troncons.find((a) =>
+                  (a.sous_troncons ?? []).some((s) => s.id === sid),
+                );
+                if (parent) setSelection({ tronconId: parent.id, sousTronconId: sid });
+              }
+            }}
             className="w-full rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
                        text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
                        dark:text-paa-blue-100 min-h-[40px]"
           >
             <optgroup label="── Axes ──">
               {troncons.map((tr) => (
-                <option key={`axe-${tr.id}`} value={tr.id}>
+                <option key={`axe-${tr.id}`} value={`axe-${tr.id}`}>
                   {tr.nom}
                 </option>
               ))}
@@ -267,7 +293,7 @@ export function PageHeureOptimale() {
               <optgroup label="── Tronçons par axes ──">
                 {troncons.flatMap((a) =>
                   (a.sous_troncons ?? []).map((s) => (
-                    <option key={`sous-${s.id}`} value={a.id}>
+                    <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
                       {a.nom} : {s.nom_court} ({s.code})
                     </option>
                   )),

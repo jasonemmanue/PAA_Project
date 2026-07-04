@@ -419,19 +419,33 @@ async def get_matrice_congestion(
     fin: DateType | None = Query(None),
     heure_debut: int = Query(0, ge=0, le=23),
     heure_fin: int = Query(24, ge=1, le=24),
+    sous_troncon_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    from app.models.models import Troncon
+    from app.models.models import SousTroncon, Troncon
     logger.info(
-        "GET /rapport/matrice-congestion — troncon_id=%d campagne=%r debut=%s fin=%s heure=%d-%d",
-        troncon_id, campagne, debut, fin, heure_debut, heure_fin,
+        "GET /rapport/matrice-congestion — troncon_id=%d sous=%s campagne=%r",
+        troncon_id, sous_troncon_id, campagne,
     )
     troncon = db.get(Troncon, troncon_id)
     if troncon is None:
         raise HTTPException(status_code=404, detail=f"Tronçon {troncon_id} introuvable.")
+    sous = None
+    if sous_troncon_id is not None:
+        sous = db.get(SousTroncon, sous_troncon_id)
+        if sous is None or sous.troncon_id != troncon_id:
+            raise HTTPException(status_code=404, detail="Sous-tronçon introuvable.")
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
-    result = rapport_paa.matrice_congestion(db, troncon_id, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
-    return {"troncon_nom": troncon.nom, **result}
+    result = rapport_paa.matrice_congestion(
+        db, troncon_id, debut_utc, fin_utc,
+        heure_debut=heure_debut, heure_fin=heure_fin,
+        sous_troncon_id=sous_troncon_id,
+    )
+    nom_affichage = (
+        f"{troncon.nom} : {sous.nom_court} ({sous.code})"
+        if sous is not None else troncon.nom
+    )
+    return {"troncon_nom": nom_affichage, **result}
 
 
 # ---------------------------------------------------------------------------
@@ -828,23 +842,39 @@ async def get_matrice_temps(
     fin: DateType | None = Query(None),
     heure_debut: int = Query(0, ge=0, le=23),
     heure_fin: int = Query(24, ge=1, le=24),
+    sous_troncon_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    from app.models.models import Troncon
+    from app.models.models import SousTroncon, Troncon
     logger.info(
-        "GET /rapport/matrice-temps — troncon_id=%d campagne=%r debut=%s fin=%s heure=%d-%d",
-        troncon_id, campagne, debut, fin, heure_debut, heure_fin,
+        "GET /rapport/matrice-temps — troncon_id=%d sous=%s campagne=%r",
+        troncon_id, sous_troncon_id, campagne,
     )
     troncon = db.get(Troncon, troncon_id)
     if troncon is None:
         raise HTTPException(status_code=404, detail=f"Tronçon {troncon_id} introuvable.")
+    sous = None
+    if sous_troncon_id is not None:
+        sous = db.get(SousTroncon, sous_troncon_id)
+        if sous is None or sous.troncon_id != troncon_id:
+            raise HTTPException(status_code=404, detail="Sous-tronçon introuvable.")
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
-    result = rapport_paa.matrice_temps(db, troncon_id, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
+    result = rapport_paa.matrice_temps(
+        db, troncon_id, debut_utc, fin_utc,
+        heure_debut=heure_debut, heure_fin=heure_fin,
+        sous_troncon_id=sous_troncon_id,
+    )
+    ref_dist = sous.distance_m if sous is not None else troncon.distance_m
+    ref_vit = 50.0 if sous is not None else troncon.vitesse_ref_kmh
+    nom_affichage = (
+        f"{troncon.nom} : {sous.nom_court} ({sous.code})"
+        if sous is not None else troncon.nom
+    )
     return {
-        "troncon_nom": troncon.nom,
-        "distance_m": troncon.distance_m,
-        "vitesse_ref_kmh": troncon.vitesse_ref_kmh,
-        "temps_ref_s": round(troncon.distance_m / (troncon.vitesse_ref_kmh * 1000 / 3600)),
+        "troncon_nom": nom_affichage,
+        "distance_m": ref_dist,
+        "vitesse_ref_kmh": ref_vit,
+        "temps_ref_s": round(ref_dist / (ref_vit * 1000 / 3600)),
         **result,
     }
 
