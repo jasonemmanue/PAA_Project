@@ -3754,3 +3754,89 @@ substitutions et réécrit UTF-8. 43 fichiers modifiés. Vérification finale
 Après ce commit, toute nouvelle chaîne d'interface, prompt système, doc utilisateur
 ou log doit utiliser **FLUIDIS**. Le sigle **PAA** seul continue d'être utilisé
 pour le client et la méthodologie DEESP.
+
+---
+
+## 16. Comptage dynamique axes / tronçons et effets de l'archivage (2026-07-04)
+
+### 16.1 Compteur « N axes et M tronçons » sur la carte
+
+Le panneau latéral de la page **Accueil / Carte** affiche un bandeau d'état :
+
+> **État : 6 axes et 2 tronçons (couleurs Google Maps)**
+
+Ce libellé est **entièrement calculé côté frontend** dans
+[PanneauTroncons.tsx](frontend/components/carte/PanneauTroncons.tsx) à partir du
+payload `GET /carte/etat`. Il n'y a aucun compteur figé côté backend :
+
+- `nbAxes` = nombre d'entrées de `etat.troncons` avec `est_axe !== false`
+- `nbTroncons` = somme des `tr.sous_troncons.length` sur ces mêmes axes
+
+**Conséquence concrète — auto-incrémentation garantie :**
+
+| Action opérateur | Effet sur le compteur |
+|------------------|-----------------------|
+| Créer un **axe** via `POST /administration/troncons` (`est_axe=true`) | `nbAxes +1` au **prochain refresh** de la carte (polling 30 s ou push WebSocket) |
+| Créer un **sous-tronçon** via `POST /administration/troncons/{id}/sous-troncons` | `nbTroncons +1` idem |
+| **Archiver** un axe ou sous-tronçon via `DELETE /administration/...` | Compteur **décrémenté** immédiatement au refresh (l'entrée disparaît de `/carte/etat`) |
+
+Aucun redémarrage du scheduler ni de la carte n'est nécessaire. Le compteur
+reflète **exactement** le contenu vivant de la base de données à chaque cycle.
+
+### 16.2 Effets de l'archivage (suppression logique)
+
+`DELETE /administration/troncons/{id}` et `DELETE /administration/sous-troncons/{id}`
+posent `actif = false`. Aucune ligne n'est physiquement supprimée — les mesures
+et l'historique sont préservés (règle d'or § 5.3).
+
+**Ce que bloque l'archivage** — filtres `actif=True` appliqués partout :
+
+| Système | Fichier | Comportement post-archivage |
+|---------|---------|-----------------------------|
+| Carte temps réel (`/carte/etat`) | [backend/app/etat/carte.py:72,95](backend/app/etat/carte.py) | L'axe/tronçon **disparaît** de la carte et du panneau latéral |
+| Compteur bandeau « N axes et M tronçons » | [frontend/components/carte/PanneauTroncons.tsx](frontend/components/carte/PanneauTroncons.tsx) | **Décrémenté** au prochain refresh |
+| Collecte Google Routes | [backend/app/collecte/scheduler.py:324,334](backend/app/collecte/scheduler.py) | **Plus aucun cycle Google** sur cet axe/tronçon |
+| Estimation quota Google | [backend/app/api/administration.py:474](backend/app/api/administration.py) | Recalculée automatiquement à la baisse |
+| Page Indicateurs / dropdowns tronçons | `GET /troncons` | L'entrée archivée **n'apparaît plus** dans les sélecteurs |
+| Rapport DEESP | [backend/app/analyse/rapport_paa.py](backend/app/analyse/rapport_paa.py) | Exclu des Tableaux 3-16 |
+| Overlay incidents | [backend/app/etat/carte.py](backend/app/etat/carte.py) | Les incidents rattachés restent en base mais ne s'affichent plus sur l'axe archivé |
+
+**Ce qui n'est pas bloqué** (volontaire) :
+
+- L'**historique des mesures** de l'axe/tronçon archivé reste consultable via
+  `GET /troncons/{id}/mesures` (utile pour analyse rétrospective).
+- Les **relevés terrain GPX** déjà associés restent en base.
+- Un axe archivé peut être **réactivé** en base (`UPDATE troncons SET actif = true`).
+  Il n'y a pas encore d'endpoint dédié — à faire depuis la Console Railway.
+
+### 16.3 Migration 2026-07-04 des orphelins vers `sous_troncons`
+
+Le refactor du 2026-06-30 (commit `2458aff`) a supprimé la notion de
+« tronçon supplémentaire ». Deux entrées historiques étaient restées avec
+`est_axe=false` dans la table `troncons` :
+
+| id | Nom | Distance | Nouveau statut |
+|----|-----|----------|----------------|
+| 8 | AGL-Grand Moulin | 1466 m | Sous-tronçon **T1A** de l'axe 1 (CARENA → Palm Beach) |
+| 9 | Palmbeach - Outillage Port | 6523 m | Sous-tronçon **T2A** de l'axe 2 (Palm Beach → CARENA) |
+
+**Script utilitaire** : [`backend/scripts/migrer_orphelins_vers_sous_troncons.py`](backend/scripts/migrer_orphelins_vers_sous_troncons.py).
+Idempotent (relançable sans effet secondaire), lancé une fois depuis la Console
+Railway du service backend :
+
+```bash
+python -m scripts.migrer_orphelins_vers_sous_troncons
+```
+
+Il :
+1. Récupère tous les tronçons `est_axe=false AND actif=true`.
+2. Pour chacun figurant dans le mapping `MAPPING_ORPHELINS`, crée un
+   `SousTroncon` sur l'axe parent (avec code DEESP, ordre auto, copie
+   polyline + distance).
+3. Archive l'entrée d'origine (`actif=false`).
+
+**Après cette migration** :
+- Le bandeau carte affiche « 6 axes et 2 tronçons ».
+- Chaque nouveau sous-tronçon créé via l'onglet Administration → « Tronçons
+  codifiés » s'ajoute à la suite (ordre incrémenté), incrémente le compteur
+  et rejoint la collecte au prochain cycle Google.

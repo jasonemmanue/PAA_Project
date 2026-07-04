@@ -53,18 +53,45 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
     );
   }
 
-  // KPI counts (3 classes DEESP)
+  // Un axe = entrée dans `troncons` (les 6 axes DEESP principaux).
+  // Un tronçon = sous_tronçon codifié enfant d'un axe (table `sous_troncons`).
+  // On ignore volontairement les entrées est_axe=false — orphelins archivés
+  // dans le cadre du refactor 2026-07-04 (migration vers sous_troncons).
+  const troncsAxes = etat.troncons.filter((tr) => tr.est_axe !== false);
+  const nbAxes = troncsAxes.length;
+  const nbTroncons = troncsAxes.reduce(
+    (n, tr) => n + (tr.sous_troncons?.length ?? 0),
+    0,
+  );
+
+  // KPI counts (3 classes DEESP) — comptés sur les axes uniquement.
   const compteurs: Record<ClasseCongestion, number> = {
     fluide: 0,
     congestionne: 0,
     indetermine: 0,
   };
-  for (const tr of etat.troncons) compteurs[tr.classe_congestion]++;
+  for (const tr of troncsAxes) compteurs[tr.classe_congestion]++;
 
-  const nbAxes = etat.troncons.length;
+  const composerLibelle = (locale: "fr" | "en"): string => {
+    const partAxes =
+      locale === "fr"
+        ? `${nbAxes} axe${nbAxes > 1 ? "s" : ""}`
+        : `${nbAxes} ax${nbAxes > 1 ? "es" : "is"}`;
+    const partTroncons =
+      locale === "fr"
+        ? `${nbTroncons} tronçon${nbTroncons > 1 ? "s" : ""}`
+        : `${nbTroncons} segment${nbTroncons > 1 ? "s" : ""}`;
+    if (nbTroncons === 0) return partAxes;
+    if (nbAxes === 0) return partTroncons;
+    return locale === "fr"
+      ? `${partAxes} et ${partTroncons}`
+      : `${partAxes} and ${partTroncons}`;
+  };
 
-  // Tri par gravité décroissante : congestionnés (worst rouge%) en tête
-  const tronconsTries = etat.troncons.slice().sort((a, b) => {
+  // Tri par gravité décroissante : congestionnés (worst rouge%) en tête.
+  // On n'affiche que les axes — les orphelins est_axe=false n'ont plus vocation
+  // à figurer dans la liste (soit sous-tronçons, soit à archiver).
+  const tronconsTries = troncsAxes.slice().sort((a, b) => {
     const ga = ORDRE_GRAVITE[a.classe_congestion];
     const gb = ORDRE_GRAVITE[b.classe_congestion];
     if (ga !== gb) return gb - ga;
@@ -85,8 +112,8 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
       <div className="paa-card p-3">
         <p className="mb-2 text-fluid-xs font-medium app-text-muted">
           {locale === "fr"
-            ? `État : ${nbAxes} axe${nbAxes > 1 ? "s" : ""} (couleurs Google Maps)`
-            : `Status: ${nbAxes} ax${nbAxes > 1 ? "es" : "is"} (Google Maps colours)`}
+            ? `État : ${composerLibelle("fr")} (couleurs Google Maps)`
+            : `Status: ${composerLibelle("en")} (Google Maps colours)`}
         </p>
         <div className="grid grid-cols-3 gap-2">
           <KpiCompteur
@@ -150,8 +177,8 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
         <div className="border-b app-border bg-paa-blue-100 px-4 py-2 text-fluid-sm font-semibold
                         text-paa-navy-900 dark:bg-paa-navy-700 dark:text-paa-blue-100">
           {locale === "fr"
-            ? `${nbAxes} axe${nbAxes > 1 ? "s" : ""} surveillé${nbAxes > 1 ? "s" : ""}`
-            : `${nbAxes} ax${nbAxes > 1 ? "es" : "is"} monitored`}
+            ? `${composerLibelle("fr")} surveillés`
+            : `${composerLibelle("en")} monitored`}
         </div>
         <ul className="divide-y divide-[rgb(var(--app-border))]">
           {tronconsTries.map((tr) => {
