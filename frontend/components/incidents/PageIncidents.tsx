@@ -37,6 +37,7 @@ function filtrerParPeriode(incidents: Incident[], periode: FiltresEtat["periode"
     "aujourd'hui": new Date().setHours(0, 0, 0, 0),
     "24h": maintenant - 24 * 3600 * 1000,
     "7j":  maintenant - 7  * 24 * 3600 * 1000,
+    "mois": maintenant - 30 * 24 * 3600 * 1000,
   };
   const limite = limites[periode];
   return incidents.filter(
@@ -56,7 +57,7 @@ export function PageIncidents() {
 
   const [filtres, setFiltres] = useState<FiltresEtat>({
     type: "",
-    periode: "24h",
+    periode: "mois",
     troncon_id: null,
   });
 

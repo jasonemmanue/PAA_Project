@@ -266,6 +266,7 @@
     "periodAujourd": "Today",
     "period24h": "24 h",
     "period7j": "7 days",
+    "periodMois": "Month",
     "exporterCsv": "Export CSV",
     "exporterCsvTitle": "Download the incidents list as a CSV file"
   },

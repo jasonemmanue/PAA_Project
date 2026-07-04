@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/lib/i18n";
 import type { Troncon } from "@/lib/types";
 
-export type FiltresPeriode = "aujourd'hui" | "24h" | "7j";
+export type FiltresPeriode = "aujourd'hui" | "24h" | "7j" | "mois";
 
 export interface FiltresEtat {
   type: string;       // "" = tous
@@ -31,6 +31,7 @@ interface Props {
 // Correspond les valeurs de période UI vers les valeurs de la query string backend
 function _periodeVersBackend(p: FiltresPeriode): string {
   if (p === "aujourd'hui") return "1j";
+  if (p === "mois") return "30j";
   return p;
 }
 
@@ -44,6 +45,7 @@ export function FiltresIncidents({ filtres, onChange, troncons, apiBaseUrl, type
     { value: "aujourd'hui", label: t("incidents.periodAujourd") },
     { value: "24h",         label: t("incidents.period24h") },
     { value: "7j",          label: t("incidents.period7j") },
+    { value: "mois",        label: t("incidents.periodMois") },
   ];
 
   function construireUrlExport(): string {
