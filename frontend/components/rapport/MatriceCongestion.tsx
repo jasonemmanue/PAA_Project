@@ -143,7 +143,7 @@ export function MatriceCongestion({
       {/* Sélecteur de tronçon */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <label className="text-fluid-sm font-medium app-text-muted whitespace-nowrap">
-          Tronçon analysé :
+          Axe / Tronçons par axes :
         </label>
         <select
           value={tronconId ?? ""}
@@ -152,11 +152,24 @@ export function MatriceCongestion({
                      text-paa-navy-900 dark:text-paa-blue-100 focus:outline-none
                      focus:ring-2 focus:ring-paa-blue-400 min-w-[260px]"
         >
-          {troncons.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.nom}
-            </option>
-          ))}
+          <optgroup label="── Axes ──">
+            {troncons.map((t) => (
+              <option key={`axe-${t.id}`} value={t.id}>
+                {t.nom}
+              </option>
+            ))}
+          </optgroup>
+          {troncons.some((t) => (t.sous_troncons?.length ?? 0) > 0) && (
+            <optgroup label="── Tronçons par axes ──">
+              {troncons.flatMap((a) =>
+                (a.sous_troncons ?? []).map((s) => (
+                  <option key={`sous-${s.id}`} value={a.id}>
+                    {a.nom} : {s.nom_court} ({s.code})
+                  </option>
+                )),
+              )}
+            </optgroup>
+          )}
         </select>
         {data && !chargement && (
           <span className="text-fluid-xs app-text-muted">

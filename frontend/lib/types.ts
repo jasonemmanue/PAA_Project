@@ -40,6 +40,16 @@ export interface Troncon {
   actif: boolean;
   /** True = axe. False = tronçon codifié (enfant d'un axe). */
   est_axe?: boolean;
+  /** Sous-tronçons codifiés (T1A, T1B…) enfants de cet axe — renvoyés par /troncons. */
+  sous_troncons?: TronconSousResume[];
+}
+
+/** Résumé d'un sous-tronçon exposé dans /troncons (sous chaque axe parent). */
+export interface TronconSousResume {
+  id: number;
+  code: string;
+  nom_court: string;
+  ordre?: number;
 }
 
 /**

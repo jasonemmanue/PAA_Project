@@ -30,7 +30,7 @@ export function SelecteurTroncon({
   const liste = Array.isArray(troncons) ? troncons : [];
   const estAxe = (tr: Troncon) => tr.est_axe ?? (tr.id <= 6);
   const axes   = liste.filter(estAxe);
-  const troncons_ = liste.filter((tr) => !estAxe(tr));
+  const orphelins = liste.filter((tr) => !estAxe(tr));
   return (
     <label className="flex flex-col gap-1">
       <span className="text-fluid-xs font-medium app-text-muted">
@@ -46,14 +46,25 @@ export function SelecteurTroncon({
         {axes.length > 0 && (
           <optgroup label="── Axes ──">
             {axes.map((tr) => (
-              <option key={tr.id} value={tr.id}>{tr.nom}</option>
+              <option key={`axe-${tr.id}`} value={tr.id}>{tr.nom}</option>
             ))}
           </optgroup>
         )}
-        {troncons_.length > 0 && (
+        {axes.some((a) => (a.sous_troncons?.length ?? 0) > 0) && (
+          <optgroup label="── Tronçons par axes ──">
+            {axes.flatMap((a) =>
+              (a.sous_troncons ?? []).map((s) => (
+                <option key={`sous-${s.id}`} value={a.id}>
+                  {a.nom} : {s.nom_court} ({s.code})
+                </option>
+              )),
+            )}
+          </optgroup>
+        )}
+        {orphelins.length > 0 && (
           <optgroup label="── Tronçons ──">
-            {troncons_.map((tr) => (
-              <option key={tr.id} value={tr.id}>{tr.nom}</option>
+            {orphelins.map((tr) => (
+              <option key={`orph-${tr.id}`} value={tr.id}>{tr.nom}</option>
             ))}
           </optgroup>
         )}

@@ -39,7 +39,7 @@
     "title": "Indicateurs de performance",
     "subtitle": "Temps min / moyen / max et taux de congestion — méthodologie DEESP (couleur Google Maps).",
     "placeholder": "Les graphiques Recharts seront ajoutés ici.",
-    "selectTroncon": "Tronçon",
+    "selectTroncon": "Axe / Tronçons par axes",
     "selectPeriode": "Période",
     "periode24h": "24 h",
     "periode7j": "7 jours",
@@ -192,7 +192,7 @@
   "prediction": {
     "title": "Temps de traversée par période",
     "subtitle": "Temps réel basé sur Google Maps — confrontation avec les temps terrain GPX en bas de page.",
-    "selectTroncon": "Tronçon",
+    "selectTroncon": "Axe / Tronçons par axes",
     "chargement": "Chargement…",
     "erreur": "Erreur :",
     "tempsReel": "Temps réel (Google Maps)",
@@ -280,7 +280,7 @@
   "heureOptimale": {
     "titre": "Heure optimale de départ",
     "sousTitre": "Créneaux recommandés pour minimiser le temps de traversée, basés sur l'historique des mesures.",
-    "selectTroncon": "Tronçon",
+    "selectTroncon": "Axe / Tronçons par axes",
     "selectTypeJour": "Type de jour",
     "joursOuvrables": "Jours ouvrables",
     "weekEnds": "Week-ends",
