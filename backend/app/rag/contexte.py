@@ -295,7 +295,10 @@ def recuperer_incidents_actifs(db: Session) -> str:
             .total_seconds()
             / 3600
         )
-        sev = (inc.severite.value.upper() if hasattr(inc.severite, 'value') else str(inc.severite or "inconnu").upper())
+        try:
+            sev = (inc.severite.value if hasattr(inc.severite, "value") else str(inc.severite or "inconnu")).upper()
+        except Exception:
+            sev = "INCONNU"
         lieu = inc.lieu_extrait or "zone portuaire"
         titre_court = inc.titre[:80] + ("…" if len(inc.titre) > 80 else "")
         lignes.append(
