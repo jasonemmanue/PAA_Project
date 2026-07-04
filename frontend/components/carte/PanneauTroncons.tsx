@@ -72,13 +72,22 @@ export function PanneauTroncons({
     0,
   );
 
-  // KPI counts (3 classes DEESP) — comptés sur les axes uniquement.
+  // KPI counts (3 classes DEESP) — un axe avec sous-tronçons est remplacé
+  // par la granularité fine (cf. règle scheduler § 4.8 : on ne mesure pas
+  // l'axe parent quand il a des sous-tronçons actifs).
   const compteurs: Record<ClasseCongestion, number> = {
     fluide: 0,
     congestionne: 0,
     indetermine: 0,
   };
-  for (const tr of troncsAxes) compteurs[tr.classe_congestion]++;
+  for (const tr of troncsAxes) {
+    const sous = tr.sous_troncons ?? [];
+    if (sous.length > 0) {
+      for (const s of sous) compteurs[s.classe_congestion]++;
+    } else {
+      compteurs[tr.classe_congestion]++;
+    }
+  }
 
   const composerLibelle = (locale: "fr" | "en"): string => {
     const partAxes =
