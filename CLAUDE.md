@@ -3840,3 +3840,79 @@ Il :
 - Chaque nouveau sous-tronçon créé via l'onglet Administration → « Tronçons
   codifiés » s'ajoute à la suite (ordre incrémenté), incrémente le compteur
   et rejoint la collecte au prochain cycle Google.
+
+### 16.4 Rendu des polylines mixtes axe / sous-tronçon (2026-07-04)
+
+Avant le fix du 2026-07-04, [CarteLeaflet.tsx](frontend/components/carte/CarteLeaflet.tsx)
+appliquait la règle suivante : dès qu'un axe portait au moins un sous-tronçon,
+le tracé du parent basculait en pointillé `weight 3, opacity 0.35, dashArray "6 8"`.
+Cette règle vient de l'hypothèse que l'axe est **entièrement décomposé** en
+sous-tronçons couvrant toute sa polyline (cf. § 4.8) — dans ce cas le pointillé
+sert juste à situer l'axe, tandis que les enfants opaques occupent tout l'espace.
+
+Le cas réel post-migration 2026-07-04 est différent : l'axe 1 (11,9 km) possède
+un unique sous-tronçon T1A (1,5 km). En pointillé opacity 0,35, les 10,4 km
+restants (dont toute la portion allant vers CARENA) devenaient invisibles.
+
+**Fix appliqué** — le parent reste **toujours tracé en trait plein** sur toute
+sa longueur :
+
+| Cas | Style parent | Style sous-tronçon |
+|-----|--------------|--------------------|
+| Axe sans sous-tronçon | `weight 5, opacity 0.85`  | — |
+| Axe avec sous-tronçon(s) | `weight 4, opacity 0.6` (adouci mais visible) | `weight 6, opacity 0.95` par-dessus |
+
+L'effet visuel : le parcours complet reste lisible, et la portion couverte par
+un sous-tronçon apparaît légèrement plus épaisse et opaque pour signaler la
+granularité fine. Convient aux deux cas d'usage — décomposition partielle
+(T1A seul) et décomposition complète (T1A + T1B + T1C…).
+
+### 16.5 Sous-tronçons cliquables + zoom fin (2026-07-04)
+
+Le panneau latéral de la page **Accueil / Carte**
+([PanneauTroncons.tsx](frontend/components/carte/PanneauTroncons.tsx))
+affiche désormais chaque sous-tronçon codifié comme une entrée cliquable
+sous son axe parent, avec :
+
+- **Badge coloré** portant le code DEESP (T1A, T2A…) — la couleur reflète la
+  classe DEESP live du sous-tronçon
+- **Nom court** (`sous.nom_court`, ex. « AGL-Grand Moulin »)
+- **Distance** en km avec 2 décimales
+- **Temps actuel** de la dernière mesure du sous-tronçon (mm:ss)
+
+**Contrat de sélection** — [PageCarte.tsx](frontend/components/carte/PageCarte.tsx)
+gère deux états parallèles :
+
+| État | Signification |
+|------|---------------|
+| `selectionId: number \| null` | ID de l'axe surligné dans le panneau |
+| `selectionSousId: number \| null` | ID du sous-tronçon activé pour le zoom fin |
+
+- **Clic sur un axe** → `handleSelectionner(id)` : `selectionSousId` remis à
+  `null`, `selectionId` mis à jour, zoom sur la polyline complète de l'axe.
+- **Clic sur un sous-tronçon** → `handleSelectionnerSous(sousId, parentId)` :
+  `selectionId` = parent (pour la surbrillance visuelle de l'axe parent),
+  `selectionSousId` = sous. Le zoom passe en **priorité au sous-tronçon**.
+
+**Effet zoom** (`CarteLeaflet.tsx` effet 4) — nouvelle prop
+`sousTronconSelectionneId?: number | null` :
+
+1. Si `sousTronconSelectionneId !== null` → le code cherche le sous-tronçon
+   correspondant dans `etat.troncons[].sous_troncons[]`. Il utilise les coords
+   `sous.geometrie.{lat_debut, lon_debut, lat_fin, lon_fin}` pour :
+   - Calculer les bounds et appeler `map.flyToBounds({ padding: [60,60],
+     maxZoom: 17 })` — zoom **plus rapproché** que sur un axe complet
+     (`maxZoom: 16`).
+   - Poser deux `CircleMarker` : disque vert « 🟢 Début T1A : AGL-Grand Moulin »
+     au point de départ, disque rouge « 🔴 Fin T1A : … » au point d'arrivée.
+   - Ouvrir la popup du sous-tronçon (`lignesSousRef.current.get(cle)`).
+2. Sinon si `tronconSelectionneId !== null` → comportement historique (zoom
+   sur la polyline complète du parent).
+
+L'effet dépend de `[tronconSelectionneId, sousTronconSelectionneId, etat]` —
+il rejoue automatiquement dès qu'une des trois valeurs change.
+
+**Compatibilité rétroactive** — la prop `sousTronconSelectionneId` est
+optionnelle avec défaut `null`. Tout code qui utilisait `CarteLeaflet`
+sans passer cette prop conserve le comportement historique (zoom uniquement
+sur axes parents).

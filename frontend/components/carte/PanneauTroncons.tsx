@@ -39,10 +39,18 @@ const ORDRE_GRAVITE: Record<ClasseCongestion, number> = {
 type Props = {
   etat: CarteEtat | null;
   selectionId: number | null;
+  selectionSousId?: number | null;
   onSelectionner: (id: number) => void;
+  onSelectionnerSous?: (sousId: number, parentId: number) => void;
 };
 
-export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
+export function PanneauTroncons({
+  etat,
+  selectionId,
+  selectionSousId = null,
+  onSelectionner,
+  onSelectionnerSous,
+}: Props) {
   const { t, locale } = useI18n();
 
   if (!etat) {
@@ -260,6 +268,67 @@ export function PanneauTroncons({ etat, selectionId, onSelectionner }: Props) {
                     </div>
                   </div>
                 </button>
+
+                {/* Sous-tronçons codifiés (T1A, T2A…) — cliquables pour zoomer
+                    sur leur portion précise de l'axe parent. */}
+                {(tr.sous_troncons ?? []).length > 0 && (
+                  <ul className="ml-6 border-l-2 border-paa-blue-100 dark:border-paa-navy-700">
+                    {(tr.sous_troncons ?? []).map((sous) => {
+                      const couleurSous = couleurClasseCongestion(
+                        sous.classe_congestion,
+                      );
+                      const actifSous = selectionSousId === sous.id;
+                      const dureeSous = formaterDuree(
+                        sous.derniere_mesure?.duree_trafic_s,
+                      );
+                      return (
+                        <li key={`sous-${sous.id}`}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onSelectionnerSous?.(sous.id, tr.id)
+                            }
+                            aria-pressed={actifSous}
+                            className={clsx(
+                              "flex w-full items-center gap-3 px-4 py-2 text-left text-fluid-xs transition-colors",
+                              actifSous
+                                ? "bg-paa-blue-50 dark:bg-paa-navy-700"
+                                : "hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800",
+                            )}
+                            style={
+                              actifSous
+                                ? { borderLeft: `3px solid ${couleurSous}` }
+                                : undefined
+                            }
+                          >
+                            <span
+                              className="inline-flex h-6 min-w-[2rem] shrink-0 items-center justify-center rounded px-1.5 text-[0.65rem] font-bold text-white"
+                              style={{ backgroundColor: couleurSous }}
+                            >
+                              {sous.code}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-paa-navy-900 dark:text-paa-blue-100">
+                              {sous.nom_court}
+                            </span>
+                            {sous.distance_km !== undefined && (
+                              <span className="shrink-0 app-text-muted">
+                                {sous.distance_km.toFixed(2)} km
+                              </span>
+                            )}
+                            {sous.derniere_mesure?.duree_trafic_s != null && (
+                              <span
+                                className="shrink-0 font-semibold"
+                                style={{ color: couleurSous }}
+                              >
+                                {dureeSous}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}

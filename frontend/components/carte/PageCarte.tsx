@@ -33,17 +33,45 @@ export function PageCarte() {
   const { t, locale } = useI18n();
   const [etat, setEtat] = useState<CarteEtat | null>(null);
   const [selectionId, setSelectionId] = useState<number | null>(null);
+  // Sélection d'un sous-tronçon (T1A, T2A…) — cliquable dans le panneau
+  // pour zoomer sur sa portion précise de l'axe parent.
+  const [selectionSousId, setSelectionSousId] = useState<number | null>(null);
 
   const handleEtat = useCallback((e: CarteEtat) => setEtat(e), []);
-  const handleSelectionner = useCallback((id: number) => setSelectionId(id), []);
+  const handleSelectionner = useCallback((id: number) => {
+    setSelectionSousId(null);
+    setSelectionId(id);
+  }, []);
+  const handleSelectionnerSous = useCallback(
+    (sousId: number, parentId: number) => {
+      // On garde la sélection axe pour la surbrillance, mais la priorité
+      // de zoom bascule sur le sous-tronçon.
+      setSelectionId(parentId);
+      setSelectionSousId(sousId);
+    },
+    [],
+  );
 
   const sousTitre = (() => {
     if (!etat) return t("carte.subtitle");
-    const nb = etat.troncons.length;
+    const axes = etat.troncons.filter((tr) => tr.est_axe !== false);
+    const nbAxes = axes.length;
+    const nbTroncons = axes.reduce(
+      (n, tr) => n + (tr.sous_troncons?.length ?? 0),
+      0,
+    );
     if (locale === "fr") {
-      return `État instantané des ${nb} axe${nb > 1 ? "s" : ""} surveillés.`;
+      const partAxes = `${nbAxes} axe${nbAxes > 1 ? "s" : ""}`;
+      const partTroncons = `${nbTroncons} tronçon${nbTroncons > 1 ? "s" : ""}`;
+      const libelle =
+        nbTroncons === 0 ? partAxes : `${partAxes} et ${partTroncons}`;
+      return `État instantané des ${libelle} surveillés.`;
     }
-    return `Real-time snapshot of ${nb} ax${nb > 1 ? "es" : "is"} monitored.`;
+    const partAxes = `${nbAxes} ax${nbAxes > 1 ? "es" : "is"}`;
+    const partTroncons = `${nbTroncons} segment${nbTroncons > 1 ? "s" : ""}`;
+    const libelle =
+      nbTroncons === 0 ? partAxes : `${partAxes} and ${partTroncons}`;
+    return `Real-time snapshot of ${libelle} monitored.`;
   })();
 
   // Bloquer le scroll de la page — seul le panneau latéral défile
@@ -67,6 +95,7 @@ export function PageCarte() {
         <div className="paa-card relative h-[55vh] min-h-[360px] overflow-hidden lg:col-span-2 lg:h-[70vh]">
           <CarteLeaflet
             tronconSelectionneId={selectionId}
+            sousTronconSelectionneId={selectionSousId}
             onEtatChange={handleEtat}
             onSelectionner={handleSelectionner}
           />
@@ -78,7 +107,9 @@ export function PageCarte() {
           <PanneauTroncons
             etat={etat}
             selectionId={selectionId}
+            selectionSousId={selectionSousId}
             onSelectionner={handleSelectionner}
+            onSelectionnerSous={handleSelectionnerSous}
           />
         </div>
       </div>

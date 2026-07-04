@@ -66,8 +66,11 @@ const POI_INFO: Record<string, { code: string; libelleCourt: string; couleur: st
 };
 
 type Props = {
-  /** Tronçon à mettre en surbrillance et vers lequel zoomer. */
+  /** Tronçon (axe) à mettre en surbrillance et vers lequel zoomer. */
   tronconSelectionneId: number | null;
+  /** Sous-tronçon (T1A, T2A…) à mettre en surbrillance et vers lequel zoomer.
+   *  Prioritaire sur `tronconSelectionneId` pour le zoom quand défini. */
+  sousTronconSelectionneId?: number | null;
   /** Callback déclenché lorsque l'état de la carte change (chargement initial ou màj WS). */
   onEtatChange?: (etat: CarteEtat) => void;
   /** Callback de sélection (popup ou clic). */
@@ -76,6 +79,7 @@ type Props = {
 
 export function CarteLeaflet({
   tronconSelectionneId,
+  sousTronconSelectionneId = null,
   onEtatChange,
   onSelectionner,
 }: Props) {
@@ -429,7 +433,73 @@ export function CarteLeaflet({
     markerFinSelRef.current?.remove();
     markerFinSelRef.current = null;
 
-    if (!L || !map || !etat || tronconSelectionneId === null) return;
+    if (!L || !map || !etat) return;
+
+    // Cas 1 — sous-tronçon sélectionné : priorité au zoom fin sur sa portion.
+    if (sousTronconSelectionneId !== null) {
+      let sousTrouve: EtatSousTronconCarte | null = null;
+      let parentTrouve: EtatTronconCarte | null = null;
+      for (const parent of etat.troncons) {
+        const found = (parent.sous_troncons ?? []).find(
+          (s) => s.id === sousTronconSelectionneId,
+        );
+        if (found) {
+          sousTrouve = found;
+          parentTrouve = parent;
+          break;
+        }
+      }
+      if (!sousTrouve || !parentTrouve) return;
+
+      const latD = sousTrouve.geometrie?.lat_debut;
+      const lonD = sousTrouve.geometrie?.lon_debut;
+      const latF = sousTrouve.geometrie?.lat_fin;
+      const lonF = sousTrouve.geometrie?.lon_fin;
+      if (
+        latD != null && lonD != null && latF != null && lonF != null
+        && Number.isFinite(latD) && Number.isFinite(lonD)
+        && Number.isFinite(latF) && Number.isFinite(lonF)
+      ) {
+        const bounds = L.latLngBounds([
+          [latD, lonD] as [number, number],
+          [latF, lonF] as [number, number],
+        ]);
+        map.flyToBounds(bounds, { padding: [60, 60], duration: 0.8, maxZoom: 17 });
+
+        markerDebutSelRef.current = L.circleMarker([latD, lonD], {
+          radius: 10,
+          color: "#ffffff",
+          fillColor: "#16a34a",
+          fillOpacity: 1,
+          weight: 3,
+          pane: "markerPane",
+        })
+          .bindTooltip(
+            `🟢 Début ${sousTrouve.code} : ${sousTrouve.nom_court}`,
+            { direction: "top", permanent: false },
+          )
+          .addTo(map);
+        markerFinSelRef.current = L.circleMarker([latF, lonF], {
+          radius: 10,
+          color: "#ffffff",
+          fillColor: "#dc2626",
+          fillOpacity: 1,
+          weight: 3,
+          pane: "markerPane",
+        })
+          .bindTooltip(
+            `🔴 Fin ${sousTrouve.code} : ${sousTrouve.nom_court}`,
+            { direction: "top", permanent: false },
+          )
+          .addTo(map);
+      }
+      const cle = `p${parentTrouve.id}_s${sousTronconSelectionneId}`;
+      lignesSousRef.current.get(cle)?.openPopup();
+      return;
+    }
+
+    // Cas 2 — axe (tronçon parent) sélectionné : comportement historique.
+    if (tronconSelectionneId === null) return;
 
     const troncon = etat.troncons.find((t) => t.id === tronconSelectionneId);
     if (!troncon) return;
@@ -476,7 +546,7 @@ export function CarteLeaflet({
 
     const ligne = lignesRef.current.get(tronconSelectionneId);
     ligne?.openPopup();
-  }, [tronconSelectionneId, etat]);
+  }, [tronconSelectionneId, sousTronconSelectionneId, etat]);
 
   // ---- Indicateur d'état WebSocket
   const libelleEtatWs = useMemo(() => {
