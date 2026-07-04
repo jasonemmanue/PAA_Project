@@ -194,11 +194,12 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
 
             sous_serialises = [_carte_sous_troncon(s) for s in sous_du_parent]
 
-            # Si le parent n'a pas de mesure directe mais a des sous-tronçons,
-            # on agrège leur classe DEESP : congestionné si AU MOINS UN sous
-            # est congestionné, sinon fluide si AU MOINS UN est fluide, sinon
-            # indéterminé. Pas d'invention de pourcentages couleur.
-            if derniere is None and sous_serialises:
+            # Si l'axe a des sous-tronçons actifs, on dérive TOUJOURS sa classe
+            # de ceux-ci (le scheduler ne mesure plus l'axe parent dans ce cas
+            # — cf. § 4.8 — donc sa dernière mesure directe est stale).
+            # Règle : congestionné si AU MOINS UN sous l'est, sinon fluide si
+            # AU MOINS UN est fluide, sinon indéterminé.
+            if sous_serialises:
                 classes_sous = [s["classe_congestion"] for s in sous_serialises]
                 if "congestionne" in classes_sous:
                     verdict = classer_congestion(1.0, 0.0, 99.0)  # force congestionne
