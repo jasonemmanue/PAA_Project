@@ -269,7 +269,7 @@ export function EvolutionPluriannuelle({ tronconId }: Props) {
                     return labels[v] ?? v;
                   }}
                 />
-                <Bar dataKey="min" fill="#2ECC71" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="min" fill="#16a34a" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="moyen" fill="#F39C12" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="max" fill="#E74C3C" radius={[4, 4, 0, 0]} />
               </BarChart>

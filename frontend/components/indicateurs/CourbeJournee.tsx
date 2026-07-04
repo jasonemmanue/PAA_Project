@@ -27,7 +27,7 @@ import { Card } from "@/components/ui/Card";
 import { useI18n } from "@/lib/i18n";
 import type { PointSerie, SerieTemporelle } from "@/lib/types";
 
-const COULEUR_MIN = "#2ECC71";       // temps minimal observé
+const COULEUR_MIN = "#16a34a";       // temps minimal observé
 const COULEUR_MOYENNE = "#E74C3C";   // temps moyen avec trafic
 const COULEUR_MAX = "#F39C12";       // temps maximal observé
 const COULEUR_REFERENCE = "#4CC9F0"; // référence 50 km/h

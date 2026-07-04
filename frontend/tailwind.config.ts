@@ -62,7 +62,7 @@ const config: Config = {
           // fluide / congestionné selon la couleur Google Maps. `dense` est
           // conservé comme alias couleur pour les usages non-congestion
           // (warnings, jauges de calibration).
-          fluide: "#2ECC71",        // vert — vert + orange court
+          fluide: "#16a34a",        // vert — vert + orange court
           dense: "#F39C12",         // orange — usage warnings uniquement
           congestionne: "#E74C3C",  // rouge — ROUGE ou ORANGE long
           indetermine: "#95A5A6",   // gris — pas de couleur Google Maps

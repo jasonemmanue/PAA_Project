@@ -669,7 +669,7 @@ function construirePopup(t: EtatTronconCarte, locale: "fr" | "en"): string {
         <tr><td style="padding: 2px 0; color: #6B7280;">${labelMesure}</td><td style="text-align: right; font-weight: 600;">${dureeTrafic}</td></tr>
         <tr><td style="padding: 2px 0; color: #6B7280;">${labelRouge}</td><td style="text-align: right; font-weight: 600; color: #E74C3C;">${fmtPct(pctR)}</td></tr>
         <tr><td style="padding: 2px 0; color: #6B7280;">${labelOrange}</td><td style="text-align: right; font-weight: 600; color: #F39C12;">${fmtPct(pctO)}</td></tr>
-        <tr><td style="padding: 2px 0; color: #6B7280;">${labelVert}</td><td style="text-align: right; font-weight: 600; color: #2ECC71;">${fmtPct(pctV)}</td></tr>
+        <tr><td style="padding: 2px 0; color: #6B7280;">${labelVert}</td><td style="text-align: right; font-weight: 600; color: #16a34a;">${fmtPct(pctV)}</td></tr>
         <tr><td style="padding: 2px 0; color: #6B7280;">${labelHeure}</td><td style="text-align: right;">${heure}</td></tr>
         <tr><td style="padding: 2px 0; color: #6B7280;">${labelSource}</td><td style="text-align: right;">${escapeHtml(sourceLib)}</td></tr>
       </table>

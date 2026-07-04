@@ -18,7 +18,7 @@ const CLASSES: Array<{
   cle: string;
   couleur: string;
 }> = [
-  { cle: "carte.legendFluide", couleur: "#2ECC71" },
+  { cle: "carte.legendFluide", couleur: "#16a34a" },
   { cle: "carte.legendCongestionne", couleur: "#E74C3C" },
   { cle: "carte.legendIndetermine", couleur: "#95A5A6" },
 ];

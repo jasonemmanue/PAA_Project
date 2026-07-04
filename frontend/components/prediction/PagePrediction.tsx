@@ -101,7 +101,7 @@ function calculerEcart(
 }
 
 const COULEUR_SOURCE: Record<SourcePrediction, string> = {
-  google_routes: "#2ECC71",
+  google_routes: "#16a34a",
   mesures_jour_type_7j: "#3498DB",
   vitesse_ref_50kmh: "#95A5A6",
 };

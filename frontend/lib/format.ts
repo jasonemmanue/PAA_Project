@@ -62,7 +62,7 @@ export function libelleClasseCongestion(
 export function couleurClasseCongestion(c: ClasseCongestion): string {
   switch (c) {
     case "fluide":
-      return "#2ECC71";
+      return "#16a34a";
     case "congestionne":
       return "#E74C3C";
     default:

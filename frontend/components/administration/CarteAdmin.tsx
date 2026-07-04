@@ -198,7 +198,7 @@ export function CarteAdmin({
       markerDebutRef.current = L.circleMarker([debut.lat, debut.lon], {
         radius: 10,
         color: "#ffffff",
-        fillColor: "#2ECC71",
+        fillColor: "#16a34a",
         fillOpacity: 0.95,
         weight: 3,
       })

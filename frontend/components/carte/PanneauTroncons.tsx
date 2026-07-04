@@ -127,7 +127,7 @@ export function PanneauTroncons({
           <KpiCompteur
             valeur={compteurs.fluide}
             libelle={libelleClasseCongestion("fluide", locale)}
-            couleur="#2ECC71"
+            couleur="#16a34a"
           />
           <KpiCompteur
             valeur={compteurs.congestionne}
@@ -246,7 +246,7 @@ export function PanneauTroncons({
                             style={{ width: `${pctO ?? 0}%`, backgroundColor: "#F39C12" }}
                           />
                           <div
-                            style={{ width: `${pctV ?? 0}%`, backgroundColor: "#2ECC71" }}
+                            style={{ width: `${pctV ?? 0}%`, backgroundColor: "#16a34a" }}
                           />
                         </div>
                         <div className="mt-1 flex gap-2 text-fluid-xs app-text-muted">
@@ -257,7 +257,7 @@ export function PanneauTroncons({
                             <span style={{ color: "#F39C12" }}>🟠 {pctO.toFixed(1)}%</span>
                           )}
                           {pctV !== null && pctV !== undefined && (
-                            <span style={{ color: "#2ECC71" }}>🟢 {pctV.toFixed(1)}%</span>
+                            <span style={{ color: "#16a34a" }}>🟢 {pctV.toFixed(1)}%</span>
                           )}
                         </div>
                       </>

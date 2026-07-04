@@ -58,7 +58,7 @@ const PALETTE_TRACES = [
   "#3949AB", // indigo
   "#F4511E", // orange profond
 ];
-const COULEUR_MARQUEUR_DEBUT = "#2ECC71";
+const COULEUR_MARQUEUR_DEBUT = "#16a34a";
 const COULEUR_MARQUEUR_FIN = "#E74C3C";
 
 type Props = {

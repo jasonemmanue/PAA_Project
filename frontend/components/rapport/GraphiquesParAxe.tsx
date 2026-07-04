@@ -27,7 +27,7 @@ import { Card } from "@/components/ui/Card";
 import { api } from "@/lib/api";
 import type { RapportGraphique, Troncon } from "@/lib/types";
 
-const COULEUR_BAR_MIN = "#2ECC71";
+const COULEUR_BAR_MIN = "#16a34a";
 const COULEUR_BAR_MAX = "#E74C3C";
 
 interface Props {

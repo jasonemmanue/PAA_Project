@@ -55,7 +55,7 @@ router_ws = APIRouter(tags=["temps réel (WebSocket)"])
                 "horodatage_utc": "2026-06-18T19:35:00+00:00",
                 "fuseau_affichage": "Africa/Abidjan",
                 "couleurs": {
-                    "fluide": "#2ECC71",
+                    "fluide": "#16a34a",
                     "congestionne": "#E74C3C",
                     "indetermine": "#95A5A6",
                 },

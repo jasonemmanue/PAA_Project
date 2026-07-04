@@ -129,7 +129,7 @@ def classer_congestion(
 # Code couleur métier pour le frontend (Leaflet, KPI, popups). Seules
 # 3 valeurs — pas de "dense" intermédiaire, conformément au rapport.
 COULEURS_DEESP: dict[ClasseCongestionDEESP, str] = {
-    "fluide":       "#2ECC71",  # vert clair
+    "fluide":       "#16a34a",  # vert foncé
     "congestionne": "#E74C3C",  # rouge vif
     "indetermine":  "#95A5A6",  # gris (pas de donnée couleur)
 }

@@ -688,7 +688,7 @@ async def export_rapport_word(
     for agregat, titre_g in (("min", "Graphiques 1-6 — Temps MIN observé par jour"),
                               ("max", "Graphiques 7-12 — Temps MAX observé par jour")):
         ajouter_titre(titre_g, niveau=2)
-        couleur = "#2ECC71" if agregat == "min" else "#E74C3C"
+        couleur = "#16a34a" if agregat == "min" else "#E74C3C"
         for t in troncons:
             serie = rapport_paa.serie_graphique(
                 db, t.id, debut_utc, fin_utc, agregat=agregat,
