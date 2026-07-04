@@ -191,9 +191,11 @@ export function CarteLeaflet({
     const map = mapRef.current;
     if (!L || !map || !etat) return;
 
-    // -- Polylines : on dessine chaque tronçon parent. Si le parent a des
-    // sous-tronçons, on trace ces derniers avec leur propre couleur DEESP
-    // et on dessine le parent en pointillé léger pour la lisibilité de l'axe.
+    // -- Polylines : on dessine chaque tronçon parent en trait plein visible.
+    // Si le parent a des sous-tronçons, ils se superposent au-dessus en plus
+    // épais (rendu couche par couche). Le parent reste tracé sur toute sa
+    // longueur — c'est important quand les sous-tronçons ne couvrent qu'une
+    // fraction de l'axe (cf. T1A = 1.5 km sur 11.9 km).
     for (const troncon of etat.troncons) {
       const points = pointsTroncon(troncon);
       if (points.length < 2) continue;
@@ -202,8 +204,10 @@ export function CarteLeaflet({
       const couleur = couleurClasseCongestion(troncon.classe_congestion);
 
       const existante = lignesRef.current.get(troncon.id);
+      // Un axe avec sous-tronçons est légèrement adouci (opacity 0.6) pour
+      // laisser respirer les tracés enfants qui viennent par-dessus.
       const style = aDesSous
-        ? { color: couleur, weight: 3, opacity: 0.35, dashArray: "6 8" }
+        ? { color: couleur, weight: 4, opacity: 0.6 }
         : { color: couleur, weight: 5, opacity: 0.85 };
       if (existante) {
         existante.setLatLngs(points);
