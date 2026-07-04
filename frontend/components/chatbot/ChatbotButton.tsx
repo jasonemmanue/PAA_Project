@@ -16,12 +16,17 @@ interface Message {
   texte: string;
 }
 
-async function appelClaude(
+/**
+ * Appelle l'endpoint SSE /chatbot/stream et pousse chaque delta reçu via
+ * `onDelta` — permet un affichage lettre-par-lettre côté UI.
+ */
+async function streamerClaude(
   apiBaseUrl: string,
   historique: Message[],
   question: string,
-): Promise<string> {
-  const res = await fetch(`${apiBaseUrl}/chatbot/message`, {
+  onDelta: (chunk: string) => void,
+): Promise<void> {
+  const res = await fetch(`${apiBaseUrl}/chatbot/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -30,20 +35,45 @@ async function appelClaude(
     }),
   });
 
-  if (!res.ok) {
-    const corps = await res.text();
+  if (!res.ok || !res.body) {
+    const corps = await res.text().catch(() => "");
     let detail = corps.slice(0, 300);
-    try {
-      const json = JSON.parse(corps);
-      detail = json?.detail ?? detail;
-    } catch {
-      // corps non-JSON
-    }
-    throw new Error(detail);
+    try { detail = JSON.parse(corps)?.detail ?? detail; } catch { /* non-JSON */ }
+    throw new Error(detail || `HTTP ${res.status}`);
   }
 
-  const json = await res.json();
-  return json?.reponse ?? "Réponse vide.";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let tampon = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    tampon += decoder.decode(value, { stream: true });
+
+    // Consomme le tampon événement par événement (séparés par \n\n)
+    let idx: number;
+    while ((idx = tampon.indexOf("\n\n")) !== -1) {
+      const evt = tampon.slice(0, idx);
+      tampon = tampon.slice(idx + 2);
+      for (const ligne of evt.split("\n")) {
+        if (!ligne.startsWith("data:")) continue;
+        const charge = ligne.slice(5).trim();
+        if (!charge || charge === "[DONE]") continue;
+        try {
+          const obj = JSON.parse(charge);
+          if (obj.erreur) throw new Error(obj.erreur);
+          if (typeof obj.delta === "string" && obj.delta.length > 0) {
+            onDelta(obj.delta);
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
+            throw e;
+          }
+        }
+      }
+    }
+  }
 }
 
 export function ChatbotButton() {
@@ -67,16 +97,39 @@ export function ChatbotButton() {
     const question = saisie.trim();
     if (!question || envoi) return;
 
-    setMessages((prev) => [...prev, { role: "user", texte: question }]);
+    // Snapshot de l'historique AVANT ajout du message user courant
+    const historiqueAvant = messages;
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", texte: question },
+      { role: "assistant", texte: "" },
+    ]);
     setSaisie("");
     setEnvoi(true);
     setErreur(null);
 
     try {
-      const reponse = await appelClaude(apiBaseUrl, messages, question);
-      setMessages((prev) => [...prev, { role: "assistant", texte: reponse }]);
+      await streamerClaude(apiBaseUrl, historiqueAvant, question, (chunk) => {
+        setMessages((prev) => {
+          const copie = prev.slice();
+          const dernier = copie[copie.length - 1];
+          if (dernier && dernier.role === "assistant") {
+            copie[copie.length - 1] = { ...dernier, texte: dernier.texte + chunk };
+          }
+          return copie;
+        });
+      });
     } catch (e) {
       setErreur(e instanceof Error ? e.message : t("chatbot.messageErreur"));
+      // Retire la bulle assistant vide en cas d'erreur immédiate
+      setMessages((prev) => {
+        const dernier = prev[prev.length - 1];
+        if (dernier && dernier.role === "assistant" && dernier.texte === "") {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
     } finally {
       setEnvoi(false);
     }
@@ -159,24 +212,29 @@ export function ChatbotButton() {
               </div>
             )}
 
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
+            {messages.map((msg, i) => {
+              // On masque la bulle assistant vide (avant réception du 1er token)
+              // — le voyant "…" ci-dessous prend le relais.
+              if (msg.role === "assistant" && msg.texte === "") return null;
+              return (
                 <div
-                  className={`max-w-[85%] rounded-2xl px-3 py-2 text-fluid-xs leading-relaxed whitespace-pre-wrap ${
-                    msg.role === "user"
-                      ? "bg-paa-navy-700 text-white rounded-br-sm"
-                      : "bg-gray-100 text-paa-navy-900 dark:bg-paa-navy-800 dark:text-paa-blue-100 rounded-bl-sm"
-                  }`}
+                  key={i}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {msg.texte}
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-fluid-xs leading-relaxed whitespace-pre-wrap ${
+                      msg.role === "user"
+                        ? "bg-paa-navy-700 text-white rounded-br-sm"
+                        : "bg-gray-100 text-paa-navy-900 dark:bg-paa-navy-800 dark:text-paa-blue-100 rounded-bl-sm"
+                    }`}
+                  >
+                    {msg.texte}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
-            {envoi && (
+            {envoi && messages[messages.length - 1]?.texte === "" && (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-sm bg-gray-100 px-3 py-2 text-fluid-xs app-text-muted dark:bg-paa-navy-800">
                   <span className="animate-pulse">…</span>

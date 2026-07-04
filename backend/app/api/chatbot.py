@@ -10,10 +10,12 @@ données réelles de la base (état trafic, temps de traversée, heures optimale
 incidents actifs, statistiques semaine) directement dans le message utilisateur.
 """
 
+import json
 import logging
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -31,8 +33,11 @@ CLAUDE_MODEL = "claude-sonnet-4-6"
 # Prompt système — style professionnel sans markdown
 SYSTEM_PROMPT = """Tu es le Guide officiel de FLUIDIS, l'application de suivi du trafic portuaire du Port Autonome d'Abidjan.
 
-RÈGLES DE MISE EN FORME ABSOLUES — à respecter dans chaque réponse sans exception :
-N'utilise jamais de symboles markdown : pas de #, ##, ###, pas de *, **, ***, pas de tirets de liste, pas de backticks, pas de chevrons de citation. N'utilise jamais de listes à puces ni de listes numérotées. Écris uniquement en prose fluide avec des paragraphes séparés par une ligne vide. Pour structurer une réponse longue, commence chaque paragraphe par une phrase introductive courte en MAJUSCULES suivie d'un point, exemple : "HEURE OPTIMALE. Cette page répond à la question...". Sois concis (3 paragraphes maximum), précis et professionnel. Réponds en français par défaut, en anglais si la question est posée en anglais. Ne devine jamais des chiffres que tu ne connais pas avec certitude.
+RÈGLES DE RÉPONSE ABSOLUES — à respecter sans exception :
+BRIÈVETÉ MAXIMALE. Réponds en 2 à 4 phrases courtes, 60 mots maximum. Va droit au but dès la première phrase avec l'élément clé de la réponse. Pas de rappel du contexte, pas de reformulation de la question, pas de conclusion polie. Une seule idée par phrase. Ne développe QUE si la question demande explicitement un guide pas-à-pas.
+FORMAT. Prose fluide uniquement. Pas de markdown : pas de #, *, -, backticks, listes à puces ou numérotées. Pas de paragraphes multiples sauf si strictement nécessaire.
+LANGUE. Français par défaut, anglais si la question est en anglais. Ton professionnel et direct.
+HONNÊTETÉ. Ne devine jamais un chiffre. Si tu ne sais pas, dis-le en une phrase.
 
 Tu accompagnes les utilisateurs de FLUIDIS — gestionnaires du port, agents terrain, décideurs — pour qu'ils maîtrisent rapidement chaque fonctionnalité. Tu expliques comme un expert qui connaît l'outil par cœur, avec des exemples concrets tirés du quotidien du Port Autonome d'Abidjan.
 
@@ -132,9 +137,9 @@ Pour analyser les performances d'un axe sur la durée : page Indicateurs, choisi
 Pour valider la fiabilité des données Google : importez régulièrement des traces GPX via la page Fiabilité. L'écart moyen entre terrain et API s'affiche dans le tableau de calibration avec un code couleur : vert si l'écart est inférieur à 10 %, orange jusqu'à 25 %, rouge au-delà.
 
 ══════════════════════════════════════
-RÈGLES DE COMMUNICATION
+RÈGLES DE COMMUNICATION (RAPPEL)
 ══════════════════════════════════════
-Réponds en français par défaut, en anglais si la question est posée en anglais. Sois pratique, concis (3 paragraphes maximum), avec des exemples concrets tirés du contexte portuaire. Si tu ne sais pas avec certitude, dis-le clairement sans inventer. Oriente toujours vers la page exacte de l'application pour répondre à un besoin opérationnel concret."""
+2 à 4 phrases, 60 mots maximum. Élément clé en première phrase. Oriente vers la page exacte quand pertinent. Si tu ne sais pas, dis-le en une phrase."""
 
 
 class MessageEntrant(BaseModel):
@@ -205,7 +210,7 @@ async def relais_claude(
                     "model": CLAUDE_MODEL,
                     "system": SYSTEM_PROMPT,
                     "messages": messages,
-                    "max_tokens": 1024,
+                    "max_tokens": 220,
                 },
             )
             res.raise_for_status()
@@ -224,6 +229,97 @@ async def relais_claude(
     texte = donnees.get("content", [{}])[0].get("text", "Réponse vide de Claude.")
 
     return ReponseChatbot(reponse=texte, modele=CLAUDE_MODEL)
+
+
+@router.post("/stream", summary="Relais streaming (SSE) vers Claude avec RAG")
+async def stream_claude(
+    requete: RequeteChatbot,
+    db: Session = Depends(get_db),
+):
+    """Version streaming du chatbot — retourne les tokens au fil de l'eau (SSE).
+
+    Chaque événement SSE contient un chunk de texte à concaténer côté client.
+    Format des lignes : `data: {"delta": "..."}\\n\\n` puis `data: [DONE]\\n\\n`.
+    """
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="ANTHROPIC_API_KEY non configurée sur le serveur.",
+        )
+
+    contexte_rag = await construire_contexte_rag(requete.question, db)
+    question_enrichie = (
+        f"{contexte_rag}\n\nQuestion de l'utilisateur : {requete.question}"
+        if contexte_rag else requete.question
+    )
+
+    messages = [
+        {"role": ("user" if m.role == "user" else "assistant"), "content": m.texte}
+        for m in requete.historique
+    ]
+    messages.append({"role": "user", "content": question_enrichie})
+
+    async def generer():
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                async with client.stream(
+                    "POST",
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": settings.anthropic_api_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": CLAUDE_MODEL,
+                        "system": SYSTEM_PROMPT,
+                        "messages": messages,
+                        "max_tokens": 220,
+                        "stream": True,
+                    },
+                ) as res:
+                    if res.status_code != 200:
+                        corps = (await res.aread()).decode("utf-8", errors="ignore")[:300]
+                        logger.error("Erreur stream Claude %s : %s", res.status_code, corps)
+                        yield f"data: {json.dumps({'erreur': corps})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+
+                    async for ligne in res.aiter_lines():
+                        # Anthropic SSE : 'event: X' puis 'data: {...json...}'
+                        if not ligne or not ligne.startswith("data:"):
+                            continue
+                        charge = ligne[len("data:"):].strip()
+                        if not charge:
+                            continue
+                        try:
+                            evt = json.loads(charge)
+                        except json.JSONDecodeError:
+                            continue
+                        if evt.get("type") == "content_block_delta":
+                            delta = evt.get("delta", {})
+                            if delta.get("type") == "text_delta":
+                                texte_delta = delta.get("text", "")
+                                if texte_delta:
+                                    yield f"data: {json.dumps({'delta': texte_delta})}\n\n"
+                        elif evt.get("type") == "message_stop":
+                            break
+                    yield "data: [DONE]\n\n"
+        except httpx.RequestError as exc:
+            logger.error("Erreur réseau stream Claude : %s", exc)
+            yield f"data: {json.dumps({'erreur': 'Impossible de joindre Claude.'})}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generer(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/disponibilite", summary="Vérifie si Claude est configuré")
