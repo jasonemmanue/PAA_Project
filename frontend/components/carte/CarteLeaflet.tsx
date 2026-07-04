@@ -219,7 +219,13 @@ export function CarteLeaflet({
         const ligne = L.polyline(points, {
           ...style, lineCap: "round", lineJoin: "round",
         });
-        ligne.on("click", () => onSelectionnerRef.current?.(troncon.id));
+        ligne.on("click", (e: L.LeafletMouseEvent) => {
+          // En cas de superposition (axe + sous-tronçon), on remonte la
+          // polyline cliquée au-dessus pour que SA couleur soit visible.
+          L.DomEvent.stopPropagation(e);
+          ligne.bringToFront();
+          onSelectionnerRef.current?.(troncon.id);
+        });
         ligne.bindPopup(() => construirePopup(troncon, locale), {
           maxWidth: 300, className: "paa-popup",
         });
@@ -242,7 +248,13 @@ export function CarteLeaflet({
           const ligneS = L.polyline(ptsSous, {
             ...styleSous, lineCap: "round", lineJoin: "round",
           });
-          ligneS.on("click", () => onSelectionnerRef.current?.(troncon.id));
+          ligneS.on("click", (e: L.LeafletMouseEvent) => {
+            // Superposition axe + sous-tronçon : la polyline cliquée passe
+            // au-dessus pour que SA couleur DEESP s'affiche.
+            L.DomEvent.stopPropagation(e);
+            ligneS.bringToFront();
+            onSelectionnerRef.current?.(troncon.id);
+          });
           ligneS.bindPopup(
             () => construirePopupSousTroncon(troncon.nom, sous, locale),
             { maxWidth: 300, className: "paa-popup" },
@@ -495,7 +507,11 @@ export function CarteLeaflet({
           .addTo(map);
       }
       const cle = `p${parentTrouve.id}_s${sousTronconSelectionneId}`;
-      lignesSousRef.current.get(cle)?.openPopup();
+      const ligneSous = lignesSousRef.current.get(cle);
+      // Superposition axe + sous-tronçon : on remonte le sous-tronçon
+      // sélectionné au premier plan pour que SA couleur DEESP s'affiche.
+      ligneSous?.bringToFront();
+      ligneSous?.openPopup();
       return;
     }
 
@@ -510,6 +526,10 @@ export function CarteLeaflet({
       const bounds = L.latLngBounds(points);
       map.flyToBounds(bounds, { padding: [40, 40], duration: 0.8, maxZoom: 16 });
     }
+
+    // Superposition : polyline axe passe au-dessus des sous-tronçons pour
+    // que SA couleur DEESP soit celle affichée quand l'axe est sélectionné.
+    lignesRef.current.get(tronconSelectionneId)?.bringToFront();
 
     // Marqueur DÉBUT (vert foncé) sur le point d'origine du tronçon
     const latO = troncon.lat_origine ?? troncon.geometrie?.lat_origine;
