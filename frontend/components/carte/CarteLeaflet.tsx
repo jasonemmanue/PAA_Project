@@ -205,14 +205,13 @@ export function CarteLeaflet({
       if (points.length < 2) continue;
 
       const aDesSous = (troncon.sous_troncons?.length ?? 0) > 0;
+      // La couleur du tronçon suit STRICTEMENT la légende (fluide vert
+      // #16a34a, congestionné rouge #E74C3C, indéterminé gris #95A5A6).
+      // Cf. `couleurClasseCongestion` (lib/format.ts) et LegendeCarte.tsx.
       const couleur = couleurClasseCongestion(troncon.classe_congestion);
 
       const existante = lignesRef.current.get(troncon.id);
-      // Un axe avec sous-tronçons est légèrement adouci (opacity 0.6) pour
-      // laisser respirer les tracés enfants qui viennent par-dessus.
-      const style = aDesSous
-        ? { color: couleur, weight: 6, opacity: 0.95 }
-        : { color: couleur, weight: 6, opacity: 0.95 };
+      const style = { color: couleur, weight: 6, opacity: 0.95 };
       if (existante) {
         existante.setLatLngs(points);
         existante.setStyle(style);
@@ -299,7 +298,9 @@ export function CarteLeaflet({
         radius: 28,
         blur: 22,
         maxZoom: 17,
-        gradient: { 0.3: "#F39C12", 0.7: "#E67E22", 1.0: "#E74C3C" },
+        // Nappe strictement dans la famille rouge de la légende
+        // (congestionné = #E74C3C) — pas d'orange qui polluerait la lecture.
+        gradient: { 0.3: "#FCA5A5", 0.7: "#E74C3C", 1.0: "#B71C1C" },
       }).addTo(map);
     }
 
