@@ -211,8 +211,8 @@ export function CarteLeaflet({
       // Un axe avec sous-tronçons est légèrement adouci (opacity 0.6) pour
       // laisser respirer les tracés enfants qui viennent par-dessus.
       const style = aDesSous
-        ? { color: couleur, weight: 4, opacity: 0.6 }
-        : { color: couleur, weight: 5, opacity: 0.85 };
+        ? { color: couleur, weight: 6, opacity: 0.95 }
+        : { color: couleur, weight: 6, opacity: 0.95 };
       if (existante) {
         existante.setLatLngs(points);
         existante.setStyle(style);
