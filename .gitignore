@@ -76,6 +76,8 @@ yarn-error.log*
 Thumbs.db
 desktop.ini
 CLAUDE.md
+RAPPORT_ACTIVITE_PAA_TRAVERSE.docx
+~$*.docx
 mes_prompts_finaux.md
 .claude/
 
