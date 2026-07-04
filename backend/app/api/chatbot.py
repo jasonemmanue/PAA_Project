@@ -198,7 +198,11 @@ async def relais_claude(
         )
 
     # RAG : enrichir la question avec les données réelles de la DB
-    contexte_rag = await construire_contexte_rag(requete.question, db)
+    try:
+        contexte_rag = await construire_contexte_rag(requete.question, db)
+    except Exception:
+        logger.exception("RAG échoué — le chatbot répond sans contexte temps réel")
+        contexte_rag = ""
     if contexte_rag:
         question_enrichie = f"{contexte_rag}\n\nQuestion de l'utilisateur : {requete.question}"
         logger.info("RAG activé pour la question (intentions détectées, contexte injecté)")
@@ -266,7 +270,11 @@ async def stream_claude(
             detail="ANTHROPIC_API_KEY non configurée sur le serveur.",
         )
 
-    contexte_rag = await construire_contexte_rag(requete.question, db)
+    try:
+        contexte_rag = await construire_contexte_rag(requete.question, db)
+    except Exception:
+        logger.exception("RAG échoué — le chatbot répond sans contexte temps réel")
+        contexte_rag = ""
     question_enrichie = (
         f"{contexte_rag}\n\nQuestion de l'utilisateur : {requete.question}"
         if contexte_rag else requete.question

@@ -295,7 +295,7 @@ def recuperer_incidents_actifs(db: Session) -> str:
             .total_seconds()
             / 3600
         )
-        sev = inc.severite.value.upper() if inc.severite else "INCONNU"
+        sev = (inc.severite.value.upper() if hasattr(inc.severite, 'value') else str(inc.severite or "inconnu").upper())
         lieu = inc.lieu_extrait or "zone portuaire"
         titre_court = inc.titre[:80] + ("…" if len(inc.titre) > 80 else "")
         lignes.append(
@@ -373,23 +373,26 @@ async def construire_contexte_rag(question: str, db: Session) -> str:
         return ""
 
     blocs: list[str] = []
+    logger = __import__("logging").getLogger("paa.rag")
 
     # Ordre : état global → temps → heure → incidents → stats
-    if "etat_trafic" in intentions:
-        blocs.append(recuperer_etat_trafic(db))
+    _RECUPERATEURS: list[tuple[str, object]] = [
+        ("etat_trafic", recuperer_etat_trafic),
+        ("temps_traversee", recuperer_temps_traversee),
+        ("heure_optimale", recuperer_heure_optimale),
+        ("incidents", recuperer_incidents_actifs),
+        ("statistiques", recuperer_statistiques_semaine),
+    ]
 
-    if "temps_traversee" in intentions and "etat_trafic" not in intentions:
-        # Évite la duplication si état_trafic inclut déjà les durées
-        blocs.append(recuperer_temps_traversee(db))
-
-    if "heure_optimale" in intentions:
-        blocs.append(recuperer_heure_optimale(db))
-
-    if "incidents" in intentions:
-        blocs.append(recuperer_incidents_actifs(db))
-
-    if "statistiques" in intentions:
-        blocs.append(recuperer_statistiques_semaine(db))
+    for intention, fn in _RECUPERATEURS:
+        if intention not in intentions:
+            continue
+        if intention == "temps_traversee" and "etat_trafic" in intentions:
+            continue
+        try:
+            blocs.append(fn(db))  # type: ignore[operator]
+        except Exception:
+            logger.exception("RAG : échec du récupérateur %s", intention)
 
     if not blocs:
         return ""
