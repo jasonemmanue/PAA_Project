@@ -17,12 +17,18 @@ en mètres via Haversine cumulée. Sans dépendance OSRM.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("paa.administration")
 
 from app.collecte.scheduler import (
     QUOTA_GOOGLE_JOUR_MAX,
@@ -30,7 +36,7 @@ from app.collecte.scheduler import (
 )
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.models.models import SousTroncon, Troncon
+from app.models.models import SousTroncon, Troncon, axe_sous_troncons
 from app.sources.polyline import (
     distance_cumulee_m,
     distance_haversine_m,
@@ -93,12 +99,29 @@ class SousTronconCreer(BaseModel):
         None,
         description="Si omis, place à la fin (max(ordre) + 1)",
     )
+    axe_ids: list[int] | None = Field(
+        default=None,
+        description=(
+            "Multi-parent (migration 0016) : liste d'ids d'axes auxquels "
+            "rattacher ce sous-tronçon en plus du parent principal (dans "
+            "l'URL). Utile pour un pont partagé — évite la duplication. "
+            "Le parent principal est TOUJOURS ajouté même s'il est omis. "
+            "Si None, seul le parent principal est rattaché."
+        ),
+    )
 
 
 class SousTronconMaj(BaseModel):
     """Payload pour PATCH /administration/sous-troncons/{id}."""
     code: str | None = Field(None, min_length=2, max_length=10)
     nom_court: str | None = Field(None, min_length=3, max_length=120)
+    axe_ids: list[int] | None = Field(
+        default=None,
+        description=(
+            "Remplace la liste des axes parents rattachés (multi-parent). "
+            "Le parent principal (troncon_id) est TOUJOURS ajouté à la liste."
+        ),
+    )
 
 
 # ===========================================================================
@@ -276,11 +299,25 @@ def lister_sous_troncons(
         requete = requete.where(SousTroncon.actif.is_(True))
 
     sous_troncons = list(db.execute(requete).scalars())
+    # Charger les axes parents de chaque sous-tronçon en un seul SELECT
+    liens = db.execute(
+        select(axe_sous_troncons.c.sous_troncon_id, axe_sous_troncons.c.axe_id)
+        .where(axe_sous_troncons.c.sous_troncon_id.in_([s.id for s in sous_troncons]))
+    ).all() if sous_troncons else []
+    axes_par_sous: dict[int, list[int]] = {}
+    for sous_id, axe_id in liens:
+        axes_par_sous.setdefault(sous_id, []).append(axe_id)
+
     return {
         "troncon_id": troncon_id,
         "troncon_nom": parent.nom,
         "nb_sous_troncons": len(sous_troncons),
-        "sous_troncons": [_serializer_sous_troncon(s) for s in sous_troncons],
+        "sous_troncons": [
+            _serializer_sous_troncon(
+                s,
+                axes_ids=axes_par_sous.get(s.id, [s.troncon_id]),
+            ) for s in sous_troncons
+        ],
     }
 
 
@@ -386,9 +423,42 @@ async def creer_sous_troncon(
         actif=True,
     )
     db.add(sous)
+    db.flush()  # obtient sous.id sans commit
+
+    # Multi-parent : construit la liste finale des axes parents.
+    axes_finaux: set[int] = {troncon_id}
+    if payload.axe_ids:
+        # Vérifie que tous les axes existent, sont actifs et sont bien des axes
+        # principaux (est_axe=True). Un tronçon codifié (est_axe=False) ne peut
+        # pas être parent d'un autre tronçon codifié.
+        cibles = list(db.execute(
+            select(Troncon).where(
+                Troncon.id.in_(payload.axe_ids),
+                Troncon.actif.is_(True),
+            )
+        ).scalars())
+        ids_valides = {t.id for t in cibles if getattr(t, "est_axe", True)}
+        manquants = set(payload.axe_ids) - ids_valides
+        if manquants:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Axes parents invalides ou archivés : {sorted(manquants)}. "
+                    "Seuls des axes principaux actifs peuvent être parents."
+                ),
+            )
+        axes_finaux.update(ids_valides)
+
+    # Insertion dans la table de jonction — ordre = celui calculé sur le
+    # parent principal, réutilisé partout (simplification acceptable, ordre
+    # spécifique par parent = amélioration future).
+    for axe_id in axes_finaux:
+        db.execute(insert(axe_sous_troncons).values(
+            axe_id=axe_id, sous_troncon_id=sous.id, ordre=ordre,
+        ))
     db.commit()
     db.refresh(sous)
-    return _serializer_sous_troncon(sous)
+    return _serializer_sous_troncon(sous, axes_ids=list(axes_finaux))
 
 
 @router.patch(
@@ -424,9 +494,42 @@ def maj_sous_troncon(
         sous.code = payload.code.upper()
     if payload.nom_court is not None:
         sous.nom_court = payload.nom_court
+
+    if payload.axe_ids is not None:
+        cibles = list(db.execute(
+            select(Troncon).where(
+                Troncon.id.in_(payload.axe_ids),
+                Troncon.actif.is_(True),
+            )
+        ).scalars())
+        ids_valides = {t.id for t in cibles if getattr(t, "est_axe", True)}
+        manquants = set(payload.axe_ids) - ids_valides
+        if manquants:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Axes parents invalides ou archivés : {sorted(manquants)}."
+                ),
+            )
+        axes_finaux = ids_valides | {sous.troncon_id}
+        # Remplacement complet des liens M2M
+        db.execute(delete(axe_sous_troncons).where(
+            axe_sous_troncons.c.sous_troncon_id == sous.id
+        ))
+        for axe_id in axes_finaux:
+            db.execute(insert(axe_sous_troncons).values(
+                axe_id=axe_id, sous_troncon_id=sous.id, ordre=sous.ordre,
+            ))
+
     db.commit()
     db.refresh(sous)
-    return _serializer_sous_troncon(sous)
+    # Lecture des axes parents actuels pour la réponse
+    axes_actuels = [row[0] for row in db.execute(
+        select(axe_sous_troncons.c.axe_id).where(
+            axe_sous_troncons.c.sous_troncon_id == sous.id
+        )
+    ).all()]
+    return _serializer_sous_troncon(sous, axes_ids=axes_actuels)
 
 
 @router.delete(
@@ -517,7 +620,113 @@ def _resume_adoption_collecte(db: Session) -> dict[str, Any]:
     }
 
 
-def _serializer_sous_troncon(s: SousTroncon) -> dict[str, Any]:
+# ===========================================================================
+# Géocodage — proxy Nominatim pour l'autocomplétion des lieux (P12.3)
+# ===========================================================================
+
+
+# Cache mémoire process — évite de re-taper Nominatim pour la même requête.
+_CACHE_GEOCODE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_CACHE_TTL_SEC = 3600
+# Anti-flood — délai minimal entre 2 appels sortants vers Nominatim (ToS OSM).
+_DERNIER_APPEL_NOMINATIM: dict[str, float] = {"t": 0.0}
+_DELAI_NOMINATIM_SEC = 1.1
+
+# Bounding box élargie sur l'agglomération d'Abidjan pour biaiser les
+# résultats. Nominatim n'exclut PAS les résultats hors bbox par défaut ;
+# `viewbox` ne fait que prioriser.
+_VIEWBOX_ABIDJAN = "-4.15,5.10,-3.85,5.55"  # left,top,right,bottom (lon,lat)
+
+
+@router.get(
+    "/geocoder",
+    summary="Autocomplétion de lieux — proxy Nominatim OSM",
+    description=(
+        "Renvoie jusqu'à `limit` suggestions pour la chaîne `q` en biaisant "
+        "sur la région Abidjan (Côte d'Ivoire). La réponse contient pour "
+        "chaque suggestion : `nom_affiche`, `lat`, `lon`, `type` (`landmark`, "
+        "`street`, `city`...). Cache mémoire 1 h par requête. Respecte le "
+        "ToS Nominatim (1 req/s max sortant, User-Agent FLUIDIS)."
+    ),
+)
+async def geocoder_lieu(
+    q: str = Query(..., min_length=2, max_length=200,
+                   description="Texte partiel de lieu (ex. 'palm beach')"),
+    limit: int = Query(5, ge=1, le=10),
+) -> dict[str, Any]:
+    """Autocomplétion via Nominatim OSM avec cache et rate limiting."""
+    cle = f"{q.strip().lower()}::{limit}"
+    maintenant = time.time()
+
+    # 1. Cache ?
+    if cle in _CACHE_GEOCODE:
+        t_cache, resultats = _CACHE_GEOCODE[cle]
+        if maintenant - t_cache < _CACHE_TTL_SEC:
+            return {"q": q, "resultats": resultats, "cache": True}
+
+    # 2. Rate limiting sortant (ToS Nominatim = max 1 req/s)
+    depuis_dernier = maintenant - _DERNIER_APPEL_NOMINATIM["t"]
+    if depuis_dernier < _DELAI_NOMINATIM_SEC:
+        await asyncio.sleep(_DELAI_NOMINATIM_SEC - depuis_dernier)
+    _DERNIER_APPEL_NOMINATIM["t"] = time.time()
+
+    # 3. Appel Nominatim
+    parametres = {
+        "q": q,
+        "format": "jsonv2",
+        "addressdetails": 1,
+        "limit": limit,
+        "countrycodes": "ci",
+        "viewbox": _VIEWBOX_ABIDJAN,
+        "bounded": 0,
+        "accept-language": "fr",
+    }
+    entetes = {
+        "User-Agent": "FLUIDIS/1.0 (hackathon; contact:sakamemmanuel@gmail.com)",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            rep = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params=parametres,
+                headers=entetes,
+            )
+            rep.raise_for_status()
+            donnees = rep.json()
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.warning("Nominatim indisponible pour q=%r : %s", q, exc)
+        return {"q": q, "resultats": [], "cache": False, "erreur": "Service Nominatim temporairement indisponible."}
+
+    # 4. Formatage court
+    resultats: list[dict[str, Any]] = []
+    for r in donnees[:limit]:
+        try:
+            lat = float(r["lat"])
+            lon = float(r["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        resultats.append({
+            "nom_affiche": r.get("display_name", ""),
+            "lat": lat,
+            "lon": lon,
+            "type": r.get("category", r.get("type", "lieu")),
+            "importance": r.get("importance", 0.0),
+        })
+
+    # 5. Cache et réponse
+    _CACHE_GEOCODE[cle] = (maintenant, resultats)
+    return {"q": q, "resultats": resultats, "cache": False}
+
+
+# ===========================================================================
+# Sérialiseurs — suite
+# ===========================================================================
+
+
+def _serializer_sous_troncon(
+    s: SousTroncon,
+    axes_ids: list[int] | None = None,
+) -> dict[str, Any]:
     return {
         "id": s.id,
         "troncon_id": s.troncon_id,
@@ -531,4 +740,7 @@ def _serializer_sous_troncon(s: SousTroncon) -> dict[str, Any]:
         "polyline": s.polyline,
         "distance_m": s.distance_m,
         "actif": s.actif,
+        # Multi-parent (migration 0016). Liste des axes parents rattachés.
+        # Contient TOUJOURS `troncon_id` (parent principal).
+        "axe_ids": axes_ids if axes_ids is not None else [s.troncon_id],
     }

@@ -9,8 +9,9 @@
  */
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { AutocompleteLieu } from "@/components/administration/AutocompleteLieu";
 import { Card } from "@/components/ui/Card";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
@@ -37,6 +38,9 @@ export function OngletSousTroncons({
   const [erreur, setErreur] = useState<string | null>(null);
   const [succes, setSucces] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
+  const [modeAvance, setModeAvance] = useState<boolean>(false);
+  // Multi-parent (P12.2) : axes secondaires cochés en plus du parent principal
+  const [axesSecondaires, setAxesSecondaires] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (parentId === null && troncons.length > 0) {
@@ -67,7 +71,22 @@ export function OngletSousTroncons({
     setFin(null);
     setPointActif(null);
     setErreur(null);
+    setAxesSecondaires(new Set());
   };
+
+  const basculerAxeSecondaire = (id: number) => {
+    setAxesSecondaires((prec) => {
+      const nouv = new Set(prec);
+      if (nouv.has(id)) nouv.delete(id);
+      else nouv.add(id);
+      return nouv;
+    });
+  };
+
+  const axesDispo = useMemo(
+    () => troncons.filter((t) => t.actif && (t.est_axe ?? (t.id <= 6))),
+    [troncons],
+  );
 
   const handleClickCarte = (lat: number, lon: number) => {
     if (pointActif === "debut") {
@@ -92,6 +111,7 @@ export function OngletSousTroncons({
     setErreur(null);
     setSucces(null);
     try {
+      const secondairesTries = Array.from(axesSecondaires).filter((id) => id !== parentId);
       const s = await api.creerSousTroncon(parentId, {
         code: code.trim().toUpperCase(),
         nom_court: nomCourt.trim(),
@@ -99,8 +119,13 @@ export function OngletSousTroncons({
         lon_debut: debut.lon,
         lat_fin: fin.lat,
         lon_fin: fin.lon,
+        ...(secondairesTries.length > 0 ? { axe_ids: [parentId, ...secondairesTries] } : {}),
       });
-      setSucces(`✅ Tronçon créé : ${s.code} (${s.distance_m} m)`);
+      const nbParents = 1 + secondairesTries.length;
+      setSucces(
+        `✅ Tronçon créé : ${s.code} (${s.distance_m} m)`
+        + (nbParents > 1 ? ` — rattaché à ${nbParents} axes parents.` : "")
+      );
       reinitialiser();
       void chargerSousTroncons();
     } catch (e) {
@@ -177,11 +202,102 @@ export function OngletSousTroncons({
           </label>
         </div>
 
+        {/* Autocomplétion des lieux */}
+        <div className="mt-3 rounded-lg border app-border bg-paa-blue-50/40 dark:bg-paa-navy-800/40 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-fluid-sm font-semibold text-paa-navy-700 dark:text-paa-blue-200">
+              📍 Saisie par nom d&apos;endroit
+            </h3>
+            <button
+              type="button"
+              onClick={() => setModeAvance((v) => !v)}
+              className="text-fluid-xs text-paa-navy-700 dark:text-paa-blue-200 hover:underline"
+            >
+              {modeAvance ? "▲ Masquer mode avancé" : "▼ Mode avancé (clic carte)"}
+            </button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <AutocompleteLieu
+              label="Début du tronçon"
+              couleurBadge="#16a34a"
+              placeholder="ex. Sim Ivoire, Boulevard de Marseille"
+              onSelect={(_nom, lat, lon) => setDebut({ lat, lon })}
+              onEffacer={() => setDebut(null)}
+            />
+            <AutocompleteLieu
+              label="Fin du tronçon"
+              couleurBadge="#dc2626"
+              placeholder="ex. Carrefour Seamen's Club"
+              onSelect={(_nom, lat, lon) => setFin({ lat, lon })}
+              onEffacer={() => setFin(null)}
+            />
+          </div>
+          {(debut || fin) && (
+            <div className="mt-3 grid gap-2 md:grid-cols-2 text-fluid-xs">
+              {debut && (
+                <div className="rounded bg-white dark:bg-paa-navy-900 border app-border px-3 py-2 font-mono">
+                  🟢 Début : lat {debut.lat.toFixed(6)}, lon {debut.lon.toFixed(6)}
+                </div>
+              )}
+              {fin && (
+                <div className="rounded bg-white dark:bg-paa-navy-900 border app-border px-3 py-2 font-mono">
+                  🔴 Fin : lat {fin.lat.toFixed(6)}, lon {fin.lon.toFixed(6)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Multi-parent : sélectionner d'autres axes qui contiennent ce même tronçon */}
+        <div className="mt-3 rounded-lg border app-border bg-amber-50/60 dark:bg-amber-900/20 p-4">
+          <h3 className="text-fluid-sm font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-1">
+            🔗 Axes parents supplémentaires (optionnel)
+          </h3>
+          <p className="text-fluid-xs app-text-muted mb-3">
+            Cochez d&apos;autres axes qui partagent ce même tronçon (par exemple un pont commun).
+            Le tronçon apparaîtra sous chacun sans être dupliqué ni doublement mesuré.
+            <br />
+            Parent principal :{" "}
+            <span className="font-medium">
+              {axesDispo.find((t) => t.id === parentId)?.nom ?? "…"}
+            </span>{" "}
+            (toujours inclus)
+          </p>
+          <div className="grid gap-2 md:grid-cols-2">
+            {axesDispo
+              .filter((t) => t.id !== parentId)
+              .map((t) => (
+                <label
+                  key={`ax-sec-${t.id}`}
+                  className="flex items-center gap-2 rounded-md border app-border bg-white
+                             dark:bg-paa-navy-900 px-3 py-2 text-fluid-xs cursor-pointer
+                             hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800"
+                >
+                  <input
+                    type="checkbox"
+                    checked={axesSecondaires.has(t.id)}
+                    onChange={() => basculerAxeSecondaire(t.id)}
+                    className="h-4 w-4 accent-paa-navy-700"
+                  />
+                  <span className="flex-1 truncate">{t.nom}</span>
+                </label>
+              ))}
+          </div>
+          {axesSecondaires.size > 0 && (
+            <p className="mt-2 text-fluid-xs text-paa-navy-700 dark:text-paa-blue-200">
+              ✓ Ce tronçon sera rattaché à {1 + axesSecondaires.size} axes
+              parents au total.
+            </p>
+          )}
+        </div>
+
+        {/* Mode avancé — placement par clic sur la carte */}
+        {modeAvance && (
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <div className="rounded-md border app-border p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-fluid-xs font-medium app-text-muted">
-                🟢 Début tronçon
+                🟢 Début (clic carte)
               </span>
               <button
                 type="button"
@@ -207,7 +323,7 @@ export function OngletSousTroncons({
           <div className="rounded-md border app-border p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-fluid-xs font-medium app-text-muted">
-                🔴 Fin tronçon
+                🔴 Fin (clic carte)
               </span>
               <button
                 type="button"
@@ -231,6 +347,7 @@ export function OngletSousTroncons({
             )}
           </div>
         </div>
+        )}
 
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -262,8 +379,9 @@ export function OngletSousTroncons({
         )}
       </Card>
 
-      {/* Carte */}
-      <Card titre="Polyline parent + tronçon en cours">
+      {/* Carte — uniquement en mode avancé */}
+      {modeAvance && (
+      <Card titre="Polyline parent + tronçon en cours (mode avancé)">
         <CarteAdmin
           pointActif={pointActif}
           debut={debut}
@@ -285,6 +403,7 @@ export function OngletSousTroncons({
           onClick={handleClickCarte}
         />
       </Card>
+      )}
       </>)}
 
       {/* Liste des tronçons codifiés de l'axe sélectionné */}

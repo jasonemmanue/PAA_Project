@@ -31,7 +31,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.analyse.congestion import (
     COULEURS_DEESP,
@@ -88,13 +88,14 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
         )
         dernieres_par_troncon: dict[int, Mesure] = {m.troncon_id: m for m in dernieres}
 
-        # 2b. Sous-tronçons actifs des tronçons listés, avec leur dernière mesure
+        # 2b. Sous-tronçons actifs — chargement avec eager-load des axes M2M
+        # pour supporter le multi-parent (migration 0016).
         sous_troncons: list[SousTroncon] = list(
             session.execute(
-                select(SousTroncon).where(
-                    SousTroncon.actif.is_(True),
-                    SousTroncon.troncon_id.in_([t.id for t in troncons]),
-                ).order_by(SousTroncon.troncon_id, SousTroncon.ordre)
+                select(SousTroncon)
+                .options(selectinload(SousTroncon.axes))
+                .where(SousTroncon.actif.is_(True))
+                .order_by(SousTroncon.ordre)
             ).scalars()
         )
         dernieres_par_sous: dict[int, Mesure] = {}
@@ -109,10 +110,19 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
             )
             dernieres_par_sous = {m.sous_troncon_id: m for m in ms_sous if m.sous_troncon_id is not None}
 
-        # Index des sous-tronçons par parent pour insertion dans la réponse
+        # Index des sous-tronçons par parent — un même sous peut apparaître
+        # sous plusieurs axes s'il est partagé (multi-parent M2M).
+        ids_troncons_visibles = {t.id for t in troncons}
         sous_par_parent: dict[int, list[SousTroncon]] = {}
         for s in sous_troncons:
-            sous_par_parent.setdefault(s.troncon_id, []).append(s)
+            parents_axes = [a for a in s.axes if a.id in ids_troncons_visibles and a.actif]
+            # Repli : si la M2M est vide (données antérieures à la 0016 ou
+            # backfill incomplet), on utilise le parent principal historique.
+            if not parents_axes:
+                parents_axes = [next((t for t in troncons if t.id == s.troncon_id), None)]
+                parents_axes = [p for p in parents_axes if p is not None]
+            for axe in parents_axes:
+                sous_par_parent.setdefault(axe.id, []).append(s)
 
         def _serialiser_mesure(m: Mesure | None) -> dict[str, Any] | None:
             if m is None:

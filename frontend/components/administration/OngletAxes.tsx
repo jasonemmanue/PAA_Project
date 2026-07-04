@@ -18,6 +18,7 @@
 import dynamic from "next/dynamic";
 import { useState } from "react";
 
+import { AutocompleteLieu } from "@/components/administration/AutocompleteLieu";
 import { Card } from "@/components/ui/Card";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
@@ -45,6 +46,8 @@ export function OngletAxes({
   const [erreur, setErreur] = useState<string | null>(null);
   const [succes, setSucces] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
+  // Mode avancé (repli sur clic-carte + saisie manuelle des coords)
+  const [modeAvance, setModeAvance] = useState<boolean>(false);
 
   const reinitialiser = () => {
     setNom("");
@@ -120,7 +123,7 @@ export function OngletAxes({
       {peutEcrire && (
       <><Card
         titre="Créer un nouvel axe"
-        description="Donnez un nom au tronçon, puis placez les markers Début et Fin en cliquant sur la carte (ou en saisissant les coordonnées)."
+        description="Saisissez le nom des endroits de départ et d'arrivée : l'application propose des suggestions OpenStreetMap et remplit automatiquement les coordonnées GPS."
       >
         <div className="flex flex-col gap-3">
           {/* Nom */}
@@ -136,12 +139,62 @@ export function OngletAxes({
             />
           </label>
 
-          {/* Coords manuelles */}
+          {/* Autocomplétion des lieux (nouveau) */}
+          <div className="rounded-lg border app-border bg-paa-blue-50/40 dark:bg-paa-navy-800/40 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-fluid-sm font-semibold text-paa-navy-700 dark:text-paa-blue-200">
+                📍 Saisie par nom d&apos;endroit (recommandé)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setModeAvance((v) => !v)}
+                className="text-fluid-xs text-paa-navy-700 dark:text-paa-blue-200 hover:underline"
+              >
+                {modeAvance ? "▲ Masquer le mode avancé" : "▼ Mode avancé (clic carte)"}
+              </button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <AutocompleteLieu
+                label="Point de début"
+                couleurBadge="#16a34a"
+                placeholder="ex. CARENA, Plateau, Abidjan"
+                onSelect={(_nom, lat, lon) => setDebut({ lat, lon })}
+                onEffacer={() => setDebut(null)}
+              />
+              <AutocompleteLieu
+                label="Point de fin"
+                couleurBadge="#dc2626"
+                placeholder="ex. Pharmacie Palm Beach"
+                onSelect={(_nom, lat, lon) => setFin({ lat, lon })}
+                onEffacer={() => setFin(null)}
+              />
+            </div>
+            {(debut || fin) && (
+              <div className="mt-3 grid gap-2 md:grid-cols-2 text-fluid-xs">
+                {debut && (
+                  <div className="rounded bg-white dark:bg-paa-navy-900 border app-border px-3 py-2 font-mono">
+                    🟢 Début : lat {debut.lat.toFixed(6)}, lon {debut.lon.toFixed(6)}
+                  </div>
+                )}
+                {fin && (
+                  <div className="rounded bg-white dark:bg-paa-navy-900 border app-border px-3 py-2 font-mono">
+                    🔴 Fin : lat {fin.lat.toFixed(6)}, lon {fin.lon.toFixed(6)}
+                  </div>
+                )}
+              </div>
+            )}
+            <p className="mt-2 text-fluid-xs app-text-muted">
+              Vous pouvez aussi demander les coordonnées d&apos;un lieu au chatbot en bas à droite (bouton « Aide »).
+            </p>
+          </div>
+
+          {/* Mode avancé — clic carte + saisie manuelle */}
+          {modeAvance && (
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border app-border p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-fluid-xs font-medium app-text-muted">
-                  🟢 Point DÉBUT
+                  🟢 Point DÉBUT (clic carte)
                 </span>
                 <button
                   type="button"
@@ -171,7 +224,7 @@ export function OngletAxes({
             <div className="rounded-md border app-border p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-fluid-xs font-medium app-text-muted">
-                  🔴 Point FIN
+                  🔴 Point FIN (clic carte)
                 </span>
                 <button
                   type="button"
@@ -199,6 +252,7 @@ export function OngletAxes({
               )}
             </div>
           </div>
+          )}
 
           {/* Couleur + bouton */}
           <div className="flex flex-wrap items-end gap-3">
@@ -241,9 +295,10 @@ export function OngletAxes({
         </div>
       </Card>
 
-      {/* Carte */}
+      {/* Carte — uniquement en mode avancé */}
+      {modeAvance && (
       <Card
-        titre="Carte interactive"
+        titre="Carte interactive (mode avancé)"
         description={`Les ${troncons.filter((t) => t.actif).length} axes actifs en pointillés. Le nouvel axe en violet plein.`}
       >
         <CarteAdmin
@@ -256,6 +311,7 @@ export function OngletAxes({
           onClick={handleClickCarte}
         />
       </Card>
+      )}
       </>)}
 
       <Card titre={`${troncons.filter((t) => t.actif).length} axe${troncons.filter((t) => t.actif).length > 1 ? "s" : ""} actif${troncons.filter((t) => t.actif).length > 1 ? "s" : ""}`}>

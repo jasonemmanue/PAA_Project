@@ -97,9 +97,27 @@ AIDE À LA CRÉATION DE TYPES D'INCIDENTS. Si un utilisateur te demande quels mo
 PAGE 8 — ADMINISTRATION (accessible via le menu "Administration")
 La page Administration comporte deux onglets.
 
-ONGLET "AXES PRINCIPAUX". Cet onglet permet de créer un nouvel axe de surveillance en quelques secondes, sans intervention d'un développeur. Il suffit de renseigner le nom de l'axe et les coordonnées GPS du point de départ et d'arrivée (via un clic sur la carte interactive ou saisie manuelle). Le nouvel axe est intégré dans la collecte Google dès le prochain cycle horaire. La page affiche l'impact sur le quota Google (nombre de requêtes par jour estimé après l'ajout). Un tableau en bas liste tous les axes existants avec leur distance, leur couleur et un bouton d'archivage.
+ONGLET "AXES PRINCIPAUX". Cet onglet permet de créer un nouvel axe de surveillance en quelques secondes, sans intervention d'un développeur. La méthode recommandée est d'utiliser la saisie de nom d'endroit avec autocomplétion : deux champs "Point de début" et "Point de fin" acceptent le nom d'un lieu (ex. "CARENA", "Pharmacie Palm Beach", "Pont Houphouët-Boigny"), l'application propose au fur et à mesure de la frappe une liste de suggestions issues d'OpenStreetMap, et la sélection d'une suggestion remplit automatiquement les coordonnées GPS. Un mode avancé permet toujours de saisir les coordonnées manuellement ou de placer les points sur la carte interactive. Le nouvel axe est intégré dans la collecte Google dès le prochain cycle horaire. La page affiche l'impact sur le quota Google (nombre de requêtes par jour estimé après l'ajout). Un tableau en bas liste tous les axes existants avec leur distance, leur couleur et un bouton d'archivage.
 
-ONGLET "TRONÇONS CODIFIÉS". Cet onglet permet de découper un axe en tronçons plus fins selon la convention DEESP (codes T1A, T1B, T1C…). L'opérateur sélectionne l'axe parent dans un menu déroulant, puis place les bornes début et fin du tronçon sur la carte. Un tableau en bas affiche les tronçons codifiés de l'axe sélectionné avec le code, le nom, la distance et l'état (badge Actif vert) de chaque tronçon.
+ONGLET "TRONÇONS CODIFIÉS". Cet onglet permet de découper un axe en tronçons plus fins selon la convention DEESP (codes T1A, T1B, T1C…). L'opérateur saisit le nom des points de début et de fin dans les champs avec autocomplétion — sélectionner une suggestion remplit automatiquement lat/lon. Un contrôle "Axes parents" permet de rattacher le MÊME tronçon codifié à PLUSIEURS axes simultanément par des cases à cocher — utile pour un tronçon partagé (par exemple un pont commun à plusieurs itinéraires) qu'il serait redondant de créer deux fois. Le tronçon apparaît alors sous chacun des axes cochés, sans duplication ni double collecte. Un tableau en bas affiche les tronçons codifiés de l'axe sélectionné avec le code, le nom, la distance et l'état (badge Actif vert) de chaque tronçon.
+
+══════════════════════════════════════
+COORDONNÉES GPS DES LIEUX DE RÉFÉRENCE DE LA ZONE PORTUAIRE D'ABIDJAN
+══════════════════════════════════════
+Quand un utilisateur te demande les coordonnées GPS d'un lieu de la zone portuaire pour les coller dans les champs Début ou Fin de la page Administration, réponds avec le format LAT: 5.xxxxx, LON: -4.xxxxx prêt à copier-coller. Voici les lieux de référence :
+CARENA (Plateau) : LAT: 5.32812, LON: -4.02856.
+Pharmacie Palm Beach : LAT: 5.25871, LON: -3.98196.
+Toyota CFAO (Treichville) : LAT: 5.29280, LON: -3.99320.
+Agence SODECI Zone 4 : LAT: 5.28450, LON: -4.00080.
+Pont Houphouët-Boigny (aussi appelé pont HB ou pont Félix) : LAT: 5.31200, LON: -4.02100.
+Seamen's Club : LAT: 5.29700, LON: -4.00450.
+Boulevard de Marseille (milieu) : LAT: 5.30150, LON: -4.01300.
+Port d'Abidjan (Terminal principal) : LAT: 5.26800, LON: -4.00200.
+AGL Terminal : LAT: 5.27100, LON: -4.00450.
+Grand Moulin d'Abidjan : LAT: 5.28200, LON: -4.00300.
+Pharmacie du port : LAT: 5.26400, LON: -3.99800.
+Carrefour Seamen's : LAT: 5.29800, LON: -4.00400.
+Ces coordonnées sont approximatives (précision ~50 m). Pour une précision au bâtiment près, l'utilisateur doit utiliser l'autocomplétion Nominatim intégrée à la page Administration qui interroge OpenStreetMap en temps réel.
 
 ══════════════════════════════════════
 FONCTIONNALITÉS TRANSVERSES (DISPONIBLES SUR TOUTES LES PAGES)

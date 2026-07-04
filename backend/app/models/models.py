@@ -19,14 +19,17 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    Column,
     Date,
     Float,
     ForeignKey,
     Index,
     Integer,
     LargeBinary,
+    PrimaryKeyConstraint,
     SmallInteger,
     String,
+    Table,
     Text,
     UniqueConstraint,
     func,
@@ -108,7 +111,18 @@ class Troncon(Base):
     sous_troncons: Mapped[list["SousTroncon"]] = relationship(
         "SousTroncon", back_populates="troncon",
         cascade="all, delete-orphan",
+        foreign_keys="SousTroncon.troncon_id",
         order_by="SousTroncon.ordre",
+    )
+    # Multi-parent (migration 0016) : un axe peut contenir des sous-tronçons
+    # dont le parent principal est un AUTRE axe (partage d'un pont commun, etc.).
+    # Cette relation liste TOUS les sous-tronçons rattachés à cet axe via
+    # la table de jonction, y compris ceux dont il est le parent principal.
+    sous_troncons_partages: Mapped[list["SousTroncon"]] = relationship(
+        "SousTroncon",
+        secondary="axe_sous_troncons",
+        back_populates="axes",
+        viewonly=True,
     )
 
     def temps_reference_s(self) -> float:
@@ -481,8 +495,22 @@ class SousTroncon(Base):
     )
 
     # Relations
+    # `troncon` = parent principal (rétro-compat + routing URL). Le champ
+    # troncon_id reste NOT NULL en base, et cet axe est TOUJOURS présent
+    # dans la table de jonction `axe_sous_troncons` (garanti par les
+    # endpoints POST/PATCH). Pour lire l'ensemble des parents, utiliser
+    # `axes` ci-dessous.
     troncon: Mapped["Troncon"] = relationship(
         "Troncon", back_populates="sous_troncons",
+        foreign_keys="SousTroncon.troncon_id",
+    )
+    # Multi-parent (migration 0016). Un même sous-tronçon codifié peut être
+    # rattaché à plusieurs axes simultanément — ex. un pont partagé par 2
+    # itinéraires. La liste `axes` inclut TOUJOURS le parent principal.
+    axes: Mapped[list["Troncon"]] = relationship(
+        "Troncon",
+        secondary="axe_sous_troncons",
+        back_populates="sous_troncons_partages",
     )
     mesures: Mapped[list["Mesure"]] = relationship(
         "Mesure", back_populates="sous_troncon",
@@ -497,6 +525,34 @@ class SousTroncon(Base):
             f"<SousTroncon id={self.id} troncon_id={self.troncon_id} "
             f"code={self.code!r} ordre={self.ordre}>"
         )
+
+
+# ---------------------------------------------------------------------------
+# Table de jonction : axe_sous_troncons  (migration 0016 — multi-parent)
+# ---------------------------------------------------------------------------
+
+
+# Table de jonction pure : SQLAlchemy Core Table pour permettre le
+# `secondary=` sur les relations M2M sans besoin d'une classe métier.
+axe_sous_troncons = Table(
+    "axe_sous_troncons",
+    Base.metadata,
+    Column(
+        "axe_id",
+        Integer,
+        ForeignKey("troncons.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "sous_troncon_id",
+        Integer,
+        ForeignKey("sous_troncons.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("ordre", Integer, nullable=False, server_default="1"),
+    PrimaryKeyConstraint("axe_id", "sous_troncon_id", name="pk_axe_sous_troncons"),
+    Index("ix_axe_sous_troncons_axe", "axe_id", "ordre"),
+)
 
 
 # ---------------------------------------------------------------------------

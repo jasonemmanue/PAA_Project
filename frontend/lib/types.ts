@@ -553,6 +553,11 @@ export interface SousTroncon {
   polyline: string | null;
   distance_m: number;
   actif: boolean;
+  /**
+   * Multi-parent (migration 0016) : liste des axes auxquels ce sous-tronçon
+   * est rattaché. Contient toujours au moins `troncon_id`.
+   */
+  axe_ids?: number[];
 }
 
 export interface SousTronconsResponse {
@@ -584,6 +589,31 @@ export interface SousTronconCreer {
   lat_fin: number;
   lon_fin: number;
   ordre?: number;
+  /**
+   * Multi-parent (migration 0016). Ids d'axes secondaires à rattacher
+   * en plus du parent principal (dans l'URL). Le parent principal est
+   * toujours ajouté même s'il est omis. Utile pour un pont partagé.
+   */
+  axe_ids?: number[];
+}
+
+// ---------------------------------------------------------------------------
+// Géocodage — autocomplétion de lieux (Nominatim OSM proxy) — P12.3
+// ---------------------------------------------------------------------------
+
+export interface SuggestionLieu {
+  nom_affiche: string;
+  lat: number;
+  lon: number;
+  type: string;
+  importance: number;
+}
+
+export interface ReponseGeocoder {
+  q: string;
+  resultats: SuggestionLieu[];
+  cache?: boolean;
+  erreur?: string;
 }
 
 // ---------------------------------------------------------------------------

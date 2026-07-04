@@ -35,6 +35,7 @@ import type {
   RapportTempsTraversee,
   RapportZonesCongestionnees,
   ReleveTerrainResponse,
+  ReponseGeocoder,
   SerieTemporelle,
   Troncon,
 } from "./types";
@@ -478,6 +479,7 @@ export const api = {
   sousTroncons: getSousTroncons,
   creerSousTroncon: postCreerSousTroncon,
   supprimerSousTroncon: deleteSousTroncon,
+  geocoderLieu: getGeocoderLieu,
   urlExportMesures,
   urlExportProfils,
   getIncidents,
@@ -556,6 +558,22 @@ export function deleteSousTroncon(id: number): Promise<unknown> {
   return appel<unknown>(`/administration/sous-troncons/${id}`, {
     method: "DELETE",
   });
+}
+
+// ---------------------------------------------------------------------------
+// Géocodage — autocomplétion Nominatim OSM (P12.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Recherche des suggestions de lieux via le proxy backend Nominatim.
+ * Biais géographique sur Abidjan. Retourne au plus `limit` résultats.
+ */
+export function getGeocoderLieu(
+  q: string,
+  limit = 5,
+): Promise<ReponseGeocoder> {
+  const p = new URLSearchParams({ q, limit: String(limit) });
+  return appel<ReponseGeocoder>(`/administration/geocoder?${p}`);
 }
 
 // ---------------------------------------------------------------------------
