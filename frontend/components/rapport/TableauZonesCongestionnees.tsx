@@ -1,7 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ui/Card";
-import type { RapportZonesCongestionnees } from "@/lib/types";
+import type { RapportZonesCongestionnees, EntreeCongestion } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
@@ -26,6 +26,32 @@ function telechargerPdf(campagne: string, debut?: string, fin?: string, heureDeb
   document.body.removeChild(a);
 }
 
+function exporterCsv(entrees: EntreeCongestion[], nomFichier: string, typeLabel: string): void {
+  const headers = [typeLabel, "TRANCHE HORAIRE", "NB / SEMAINE", "RÈGLE DÉCLENCHÉE", "RÉPARTITION PAR JOUR"];
+  const lignes = entrees.map((e) => {
+    const nom = e.sous_troncon_code
+      ? `${e.sous_troncon_code} - ${e.sous_troncon_nom ?? ""}`
+      : e.troncon_nom;
+    const regles: string[] = [];
+    if (e.regle_jour_indicatif) regles.push("≥ 3 / jour");
+    if (e.regle_semaine) regles.push("≥ 4 / semaine");
+    const repartition = Object.entries(e.nb_par_jour_semaine)
+      .map(([jour, nb]) => `${jour}: ${nb}`)
+      .join(", ");
+    return [nom, e.tranche, String(e.nb_total_semaine), regles.join(" | "), repartition];
+  });
+
+  const csv = [headers, ...lignes].map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nomFichier;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
 export function TableauZonesCongestionnees({
   rapport,
   debutRange,
@@ -39,6 +65,10 @@ export function TableauZonesCongestionnees({
   heureDebut?: number;
   heureFin?: number;
 }) {
+  const toutes = rapport?.entrees ?? [];
+  const entreesAxes = toutes.filter((e) => e.sous_troncon_id === null);
+  const entreesTroncons = toutes.filter((e) => e.sous_troncon_id !== null);
+
   return (
     <Card
       titre="Tableau 16 — Tronçons congestionnés (règles DEESP)"
@@ -68,13 +98,15 @@ export function TableauZonesCongestionnees({
         heureFin={heureFin}
       />
 
-
+      {/* ──── Tableau 1 : AXES ──── */}
+      <h3 className="mt-2 mb-2 text-fluid-base font-semibold text-paa-navy-800 dark:text-paa-blue-200">
+        Congestion par axe
+      </h3>
       <div className="overflow-x-auto">
         <table className="min-w-full text-fluid-sm">
           <thead className="bg-paa-navy-700 text-white dark:bg-paa-navy-800">
             <tr>
               <Th>AXE</Th>
-              <Th>SOUS-TRONÇON</Th>
               <Th>TRANCHE HORAIRE</Th>
               <Th className="text-right">NB / SEMAINE</Th>
               <Th>RÈGLE DÉCLENCHÉE</Th>
@@ -82,53 +114,15 @@ export function TableauZonesCongestionnees({
             </tr>
           </thead>
           <tbody>
-            {(rapport?.entrees ?? []).map((e) => (
-              <tr key={`${e.troncon_id}-${e.sous_troncon_id ?? "p"}-${e.heure}`} className="border-t app-border">
-                <Td>{e.troncon_nom}</Td>
-                <Td>
-                  {e.sous_troncon_code ? (
-                    <div className="flex flex-col">
-                      <span className="font-mono font-semibold">{e.sous_troncon_code}</span>
-                      <span className="text-fluid-xs app-text-muted">{e.sous_troncon_nom}</span>
-                    </div>
-                  ) : (
-                    <span className="text-fluid-xs app-text-muted italic">axe entier</span>
-                  )}
-                </Td>
-                <Td className="font-mono">{e.tranche}</Td>
-                <Td className="text-right font-semibold">{e.nb_total_semaine}</Td>
-                <Td>
-                  {e.regle_jour_indicatif && (
-                    <span className="mr-2 inline-block rounded bg-statut-congestionne/20 px-2 py-0.5 text-xs text-statut-congestionne">
-                      ≥ 3 / jour
-                    </span>
-                  )}
-                  {e.regle_semaine && (
-                    <span className="inline-block rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
-                      ≥ 4 / semaine
-                    </span>
-                  )}
-                </Td>
-                <Td>
-                  <div className="flex flex-wrap gap-1 text-fluid-xs">
-                    {Object.entries(e.nb_par_jour_semaine).map(([jour, nb]) => (
-                      <span
-                        key={jour}
-                        className="rounded bg-paa-blue-50 px-1.5 py-0.5 dark:bg-paa-navy-800"
-                      >
-                        {jour}: {nb}
-                      </span>
-                    ))}
-                  </div>
-                </Td>
-              </tr>
+            {entreesAxes.map((e) => (
+              <LigneAxe key={`${e.troncon_id}-${e.heure}`} e={e} />
             ))}
-            {(rapport?.entrees ?? []).length === 0 && (
+            {entreesAxes.length === 0 && (
               <tr>
-                <Td colSpan={6}>
+                <Td colSpan={5}>
                   <span className="app-text-muted">
                     {rapport
-                      ? "Aucun tronçon congestionné sur cette campagne — conforme aux observations DEESP de la zone portuaire."
+                      ? "Aucun axe congestionné sur cette campagne."
                       : "Chargement…"}
                   </span>
                 </Td>
@@ -137,7 +131,136 @@ export function TableauZonesCongestionnees({
           </tbody>
         </table>
       </div>
+
+      {entreesAxes.length > 0 && (
+        <div className="mt-2 flex justify-end">
+          <BoutonExportCsv
+            label="Exporter axes CSV"
+            onClick={() =>
+              exporterCsv(entreesAxes, `congestion_axes_${rapport?.campagne ?? "export"}.csv`, "AXE")
+            }
+          />
+        </div>
+      )}
+
+      {/* ──── Tableau 2 : TRONÇONS CODIFIÉS ──── */}
+      <h3 className="mt-6 mb-2 text-fluid-base font-semibold text-paa-navy-800 dark:text-paa-blue-200">
+        Congestion par tronçon codifié
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-fluid-sm">
+          <thead className="bg-paa-navy-700 text-white dark:bg-paa-navy-800">
+            <tr>
+              <Th>TRONÇON</Th>
+              <Th>AXE</Th>
+              <Th>TRANCHE HORAIRE</Th>
+              <Th className="text-right">NB / SEMAINE</Th>
+              <Th>RÈGLE DÉCLENCHÉE</Th>
+              <Th>RÉPARTITION PAR JOUR</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {entreesTroncons.map((e) => (
+              <LigneTroncon key={`${e.sous_troncon_id}-${e.troncon_id}-${e.heure}`} e={e} />
+            ))}
+            {entreesTroncons.length === 0 && (
+              <tr>
+                <Td colSpan={6}>
+                  <span className="app-text-muted">
+                    {rapport
+                      ? "Aucun tronçon codifié congestionné sur cette campagne."
+                      : "Chargement…"}
+                  </span>
+                </Td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {entreesTroncons.length > 0 && (
+        <div className="mt-2 flex justify-end">
+          <BoutonExportCsv
+            label="Exporter tronçons CSV"
+            onClick={() =>
+              exporterCsv(entreesTroncons, `congestion_troncons_${rapport?.campagne ?? "export"}.csv`, "TRONÇON")
+            }
+          />
+        </div>
+      )}
     </Card>
+  );
+}
+
+function LigneAxe({ e }: { e: EntreeCongestion }) {
+  return (
+    <tr className="border-t app-border">
+      <Td>{e.troncon_nom}</Td>
+      <Td className="font-mono">{e.tranche}</Td>
+      <Td className="text-right font-semibold">{e.nb_total_semaine}</Td>
+      <Td>
+        <Regles e={e} />
+      </Td>
+      <Td>
+        <Repartition e={e} />
+      </Td>
+    </tr>
+  );
+}
+
+function LigneTroncon({ e }: { e: EntreeCongestion }) {
+  return (
+    <tr className="border-t app-border">
+      <Td>
+        <div className="flex flex-col">
+          <span className="font-mono font-semibold">{e.sous_troncon_code}</span>
+          <span className="text-fluid-xs app-text-muted">{e.sous_troncon_nom}</span>
+        </div>
+      </Td>
+      <Td>
+        <span className="text-fluid-xs app-text-muted">{e.troncon_nom}</span>
+      </Td>
+      <Td className="font-mono">{e.tranche}</Td>
+      <Td className="text-right font-semibold">{e.nb_total_semaine}</Td>
+      <Td>
+        <Regles e={e} />
+      </Td>
+      <Td>
+        <Repartition e={e} />
+      </Td>
+    </tr>
+  );
+}
+
+function Regles({ e }: { e: EntreeCongestion }) {
+  return (
+    <>
+      {e.regle_jour_indicatif && (
+        <span className="mr-2 inline-block rounded bg-statut-congestionne/20 px-2 py-0.5 text-xs text-statut-congestionne">
+          ≥ 3 / jour
+        </span>
+      )}
+      {e.regle_semaine && (
+        <span className="inline-block rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
+          ≥ 4 / semaine
+        </span>
+      )}
+    </>
+  );
+}
+
+function Repartition({ e }: { e: EntreeCongestion }) {
+  return (
+    <div className="flex flex-wrap gap-1 text-fluid-xs">
+      {Object.entries(e.nb_par_jour_semaine).map(([jour, nb]) => (
+        <span
+          key={jour}
+          className="rounded bg-paa-blue-50 px-1.5 py-0.5 dark:bg-paa-navy-800"
+        >
+          {jour}: {nb}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -175,6 +298,24 @@ function BoutonExportPdf({
         </>
       </button>
     </div>
+  );
+}
+
+function BoutonExportCsv({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 rounded-md border app-border px-3 py-1.5
+                 text-fluid-xs font-medium app-text transition-colors
+                 hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800
+                 focus:outline-none focus:ring-2 focus:ring-paa-blue-400"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden="true">
+        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+      </svg>
+      {label}
+    </button>
   );
 }
 
