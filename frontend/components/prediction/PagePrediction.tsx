@@ -195,44 +195,16 @@ export function PagePrediction() {
         <label className="flex flex-col gap-1 text-fluid-sm font-medium max-w-md">
           {t("prediction.selectTroncon")}
           <select
-            value={
-              selection === null
-                ? ""
-                : selection.sousTronconId !== null
-                  ? `sous-${selection.sousTronconId}`
-                  : `axe-${selection.tronconId}`
-            }
+            value={selection === null ? "" : String(selection.tronconId)}
             onChange={(e) => {
-              const v = e.target.value;
-              if (v.startsWith("axe-")) {
-                setSelection({ tronconId: Number(v.slice(4)), sousTronconId: null });
-              } else if (v.startsWith("sous-")) {
-                const sid = Number(v.slice(5));
-                const parent = troncons.find((a) =>
-                  (a.sous_troncons ?? []).some((s) => s.id === sid),
-                );
-                if (parent) setSelection({ tronconId: parent.id, sousTronconId: sid });
-              }
+              setSelection({ tronconId: Number(e.target.value), sousTronconId: null });
             }}
             className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
                        focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
           >
-            <optgroup label="── Axes ──">
-              {troncons.map((tr) => (
-                <option key={`axe-${tr.id}`} value={`axe-${tr.id}`}>{tr.nom}</option>
-              ))}
-            </optgroup>
-            {troncons.some((t) => (t.sous_troncons?.length ?? 0) > 0) && (
-              <optgroup label="── Tronçons codifiés ──">
-                {troncons.flatMap((a) =>
-                  (a.sous_troncons ?? []).map((s) => (
-                    <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
-                      [{s.code}] {s.nom_court} — {a.nom}
-                    </option>
-                  )),
-                )}
-              </optgroup>
-            )}
+            {troncons.map((tr) => (
+              <option key={tr.id} value={tr.id}>{tr.nom}</option>
+            ))}
           </select>
         </label>
       </Card>

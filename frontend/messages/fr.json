@@ -192,7 +192,7 @@
   "prediction": {
     "title": "Temps de traversée par période",
     "subtitle": "Temps réel basé sur Google Maps — confrontation avec les temps terrain GPX en bas de page.",
-    "selectTroncon": "Axe / Tronçons par axes",
+    "selectTroncon": "Axe",
     "chargement": "Chargement…",
     "erreur": "Erreur :",
     "tempsReel": "Temps réel (Google Maps)",
@@ -281,7 +281,7 @@
   "heureOptimale": {
     "titre": "Heure optimale de départ",
     "sousTitre": "Créneaux recommandés pour minimiser le temps de traversée, basés sur l'historique des mesures.",
-    "selectTroncon": "Axe / Tronçons par axes",
+    "selectTroncon": "Axe",
     "selectTypeJour": "Type de jour",
     "joursOuvrables": "Jours ouvrables",
     "weekEnds": "Week-ends",

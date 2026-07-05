@@ -192,7 +192,7 @@
   "prediction": {
     "title": "Crossing time by period",
     "subtitle": "Real-time data from Google Maps — comparison with field GPX times at the bottom of the page.",
-    "selectTroncon": "Axis / Segments by axis",
+    "selectTroncon": "Axis",
     "chargement": "Loading…",
     "erreur": "Error:",
     "tempsReel": "Real-time (Google Maps)",
@@ -281,7 +281,7 @@
   "heureOptimale": {
     "titre": "Best departure time",
     "sousTitre": "Recommended time slots to minimize crossing time, based on historical measurements.",
-    "selectTroncon": "Axis / Segments by axis",
+    "selectTroncon": "Axis",
     "selectTypeJour": "Day type",
     "joursOuvrables": "Weekdays",
     "weekEnds": "Weekends",
