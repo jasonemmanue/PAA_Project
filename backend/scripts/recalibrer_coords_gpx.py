@@ -88,7 +88,7 @@ COORDS_SOUS_TRONCONS: dict[str, dict] = {
     },
     "T1D": {
         "lat_debut": 5.293730, "lon_debut": -4.000654,
-        "lat_fin":   5.286306, "lon_fin":   -4.004886,
+        "lat_fin":   5.275921, "lon_fin":   -4.008554,
     },
 }
 
