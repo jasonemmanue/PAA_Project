@@ -118,6 +118,7 @@ def recuperer_etat_trafic(db: Session) -> str:
             select(Mesure)
             .where(
                 Mesure.troncon_id == t.id,
+                Mesure.sous_troncon_id.is_(None),
                 Mesure.source == SourceMesure.google,
                 Mesure.duree_trafic_s.isnot(None),
                 Mesure.horodatage >= fenetre,
@@ -183,6 +184,7 @@ def recuperer_temps_traversee(db: Session) -> str:
             select(Mesure)
             .where(
                 Mesure.troncon_id == t.id,
+                Mesure.sous_troncon_id.is_(None),
                 Mesure.source == SourceMesure.google,
                 Mesure.duree_trafic_s.isnot(None),
                 Mesure.horodatage >= fenetre,
@@ -333,6 +335,7 @@ def recuperer_statistiques_semaine(db: Session) -> str:
             select(Mesure.duree_trafic_s, Mesure.est_congestionne)
             .where(
                 Mesure.troncon_id == t.id,
+                Mesure.sous_troncon_id.is_(None),
                 Mesure.source == SourceMesure.google,
                 Mesure.duree_trafic_s.isnot(None),
                 Mesure.aberrante.is_(False),

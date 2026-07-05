@@ -197,6 +197,7 @@ def temps_traversee_par_troncon(
         db.execute(
             select(Mesure).where(
                 Mesure.source == SourceMesure.google,
+                Mesure.sous_troncon_id.is_(None),
                 Mesure.duree_trafic_s.is_not(None),
                 Mesure.aberrante.is_(False),
                 Mesure.horodatage >= debut_utc,
@@ -423,6 +424,8 @@ def matrice_congestion(
     ]
     if sous_troncon_id is not None:
         conds.append(Mesure.sous_troncon_id == sous_troncon_id)
+    else:
+        conds.append(Mesure.sous_troncon_id.is_(None))
     rows = list(
         db.execute(
             select(
@@ -517,6 +520,8 @@ def matrice_temps(
     ]
     if sous_troncon_id is not None:
         conds.append(Mesure.sous_troncon_id == sous_troncon_id)
+    else:
+        conds.append(Mesure.sous_troncon_id.is_(None))
     rows = list(
         db.execute(
             select(
@@ -605,6 +610,7 @@ def serie_graphique(
         db.execute(
             select(Mesure).where(
                 Mesure.troncon_id == troncon_id,
+                Mesure.sous_troncon_id.is_(None),
                 Mesure.source == SourceMesure.google,
                 Mesure.duree_trafic_s.is_not(None),
                 Mesure.aberrante.is_(False),

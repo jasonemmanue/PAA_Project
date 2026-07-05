@@ -272,6 +272,8 @@ async def get_heure_optimale(
         ]
         if sous_troncon_id is not None:
             conds_m.append(Mesure.sous_troncon_id == sous_troncon_id)
+        else:
+            conds_m.append(Mesure.sous_troncon_id.is_(None))
         mesures_db = db.execute(
             select(Mesure.horodatage, Mesure.duree_trafic_s).where(*conds_m)
         ).all()

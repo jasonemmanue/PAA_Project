@@ -162,7 +162,10 @@ def calcul_indicateurs(
     ref_vit = 50.0 if sous is not None else troncon.vitesse_ref_kmh
     t_ref_50 = ref_dist / (ref_vit / 3.6)
 
-    # Chargement des mesures de la fenêtre (succès uniquement)
+    # Chargement des mesures de la fenêtre (succès uniquement).
+    # Quand on interroge un axe (sous_troncon_id=None), on exclut les
+    # mesures portant sur un sous-tronçon — elles ont des durées courtes
+    # (portion d'axe) qui contamineraient les min/moyen/max de l'axe entier.
     requete = select(Mesure).where(
         Mesure.troncon_id == troncon_id,
         Mesure.horodatage >= debut_utc,
@@ -171,6 +174,8 @@ def calcul_indicateurs(
     )
     if sous_troncon_id is not None:
         requete = requete.where(Mesure.sous_troncon_id == sous_troncon_id)
+    else:
+        requete = requete.where(Mesure.sous_troncon_id.is_(None))
     mesures: list[Mesure] = list(db.execute(requete).scalars())
 
     # Filtre par plage horaire locale si nécessaire
@@ -361,6 +366,8 @@ def serie_temporelle(
     )
     if sous_troncon_id is not None:
         requete = requete.where(Mesure.sous_troncon_id == sous_troncon_id)
+    else:
+        requete = requete.where(Mesure.sous_troncon_id.is_(None))
     if not inclure_aberrantes:
         requete = requete.where(Mesure.aberrante.is_(False))
 

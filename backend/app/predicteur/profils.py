@@ -223,6 +223,7 @@ def _prediction_google(
         select(Mesure)
         .where(
             Mesure.troncon_id == troncon.id,
+            Mesure.sous_troncon_id.is_(None),
             Mesure.source == SourceMesure.google,
             Mesure.duree_trafic_s.is_not(None),
             Mesure.horodatage >= debut,
@@ -289,6 +290,7 @@ def _prediction_jour_type(
         db.execute(
             select(Mesure.duree_trafic_s, Mesure.horodatage).where(
                 Mesure.troncon_id == troncon.id,
+                Mesure.sous_troncon_id.is_(None),
                 Mesure.source == SourceMesure.google,
                 Mesure.duree_trafic_s.is_not(None),
                 Mesure.aberrante.is_(False),
@@ -453,6 +455,8 @@ def _stats_mesures_periode(
     ]
     if sous_troncon_id is not None:
         conditions.append(Mesure.sous_troncon_id == sous_troncon_id)
+    else:
+        conditions.append(Mesure.sous_troncon_id.is_(None))
 
     rows = list(
         db.execute(

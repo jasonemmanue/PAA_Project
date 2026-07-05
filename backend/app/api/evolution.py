@@ -109,6 +109,7 @@ def _stats_periode_par_troncon(
             select(Mesure.duree_trafic_s, Mesure.horodatage)
             .where(
                 Mesure.troncon_id == troncon_id,
+                Mesure.sous_troncon_id.is_(None),
                 Mesure.source == SourceMesure.google,
                 Mesure.duree_trafic_s.is_not(None),
                 Mesure.aberrante.is_(False),
