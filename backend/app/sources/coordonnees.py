@@ -6,10 +6,9 @@ Ces coordonnées servent à :
   2. Reconstruire l'origine/destination à partir du nom d'un tronçon lors d'un
      appel /diag/*.
 
-⚠️  **Source de vérité** : Google Maps. Ces coordonnées ont été ajustées sur
-    la base d'observations terrain et sont alignées avec celles déployées en
-    production Railway. Tout `git pull` qui ramènerait d'anciennes valeurs
-    OSM approximatives doit être rejeté.
+⚠️  **Source de vérité** : fichiers GPX terrain du 2026-06-22 (26 traces
+    BasicAirData GPS Logger). Coordonnées recalibrées le 2026-07-05 pour
+    être exactement SUR LA ROUTE (et non sur le bâtiment comme Google Maps).
 """
 
 from typing import NamedTuple
@@ -22,21 +21,21 @@ class PointGPS(NamedTuple):
 
 
 # ---------------------------------------------------------------------------
-# Points d'extrémité — Abidjan, Côte d'Ivoire (source : Google Maps)
+# Points d'extrémité — Abidjan, Côte d'Ivoire
+# Source : GPX terrain recalibrés 2026-07-05 (moyenne aller/retour)
 # ---------------------------------------------------------------------------
-# Convention : 4 points uniques, partagés par les axes (Palm Beach commun aux 3).
 
-CARENA_PLATEAU = PointGPS(lat=5.328119, lon=-4.028563)
-"""CARENA (Compagnie Africaine de Réparations Navales) — Plateau, bord de lagune."""
+CARENA_PLATEAU = PointGPS(lat=5.317375, lon=-4.024489)
+"""CARENA — point GPS enregistré sur la route, départ du tracé GPX."""
 
-TOYOTA_CFAO_TREICHVILLE = PointGPS(lat=5.295971, lon=-4.005131)
-"""Concession Toyota / CFAO Motors — Boulevard Giscard d'Estaing, Treichville."""
+TOYOTA_CFAO_TREICHVILLE = PointGPS(lat=5.294394, lon=-4.006206)
+"""TOYOTA CFAO — point GPS enregistré sur la route (trace T1B)."""
 
-SODECI_ZONE_4 = PointGPS(lat=5.293686, lon=-4.000390)
-"""Agence SODECI — Zone 4 (Marcory), Boulevard de Marseille."""
+SODECI_ZONE_4 = PointGPS(lat=5.293730, lon=-4.000654)
+"""Agence SODECI — point GPS enregistré sur la route (trace T1D)."""
 
-PHARMACIE_PALM_BEACH = PointGPS(lat=5.258705, lon=-3.981960)
-"""Pharmacie Palm Beach — Zone 4 / Port-Bouët, proche carrefour Vridi."""
+PHARMACIE_PALM_BEACH = PointGPS(lat=5.258348, lon=-3.981822)
+"""Pharmacie Palm Beach — point GPS enregistré sur la route (moyenne aller/retour)."""
 
 
 # ---------------------------------------------------------------------------

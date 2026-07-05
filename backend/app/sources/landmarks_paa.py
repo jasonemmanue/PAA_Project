@@ -44,10 +44,17 @@ def _normaliser(texte: str) -> str:
 # Sources : Google Maps (validation manuelle). Ordre = ordre de traversée
 # de l'axe CARENA → Pharmacie Palm Beach (T1C, T1A, T2 → T11).
 LANDMARKS_PAA: list[LandmarkPAA] = [
+    # -----------------------------------------------------------------------
+    # Coordonnées recalibrées le 2026-07-05 depuis les fichiers GPX terrain
+    # réels (26 traces enregistrées le 2026-06-22 avec BasicAirData GPS
+    # Logger). Chaque position est la MOYENNE des points de jonction
+    # aller/retour, donc située exactement SUR LA ROUTE — pas sur le
+    # bâtiment ou le trottoir comme Google Maps le ferait.
+    # -----------------------------------------------------------------------
     LandmarkPAA(
         nom_canonique="CARENA (Chantier Naval, Plateau)",
         alias=("carena", "carena plateau", "chantier naval carena"),
-        lat=5.310540, lon=-4.019180,
+        lat=5.317375, lon=-4.024489,
     ),
     LandmarkPAA(
         nom_canonique="Grands Moulins d'Abidjan (GMA)",
@@ -56,7 +63,7 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "grands moulins abidjan", "grand moulin abidjan",
             "moulins d abidjan",
         ),
-        lat=5.302870, lon=-4.014980,
+        lat=5.306613, lon=-4.021423,
     ),
     LandmarkPAA(
         nom_canonique="Commissariat spécial du port",
@@ -64,15 +71,15 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "commissariat special", "commissariat special du port",
             "commissariat port", "commissariat 4e arrondissement",
         ),
-        lat=5.298830, lon=-4.013220,
+        lat=5.303883, lon=-4.023036,
     ),
     LandmarkPAA(
         nom_canonique="CIMIVOIRE (Ciments de Côte d'Ivoire)",
         alias=(
             "cimivoire", "ciments de cote d ivoire",
-            "ciments cote d ivoire", "cim ivoire",
+            "ciments cote d ivoire", "cim ivoire", "sim ivoire",
         ),
-        lat=5.294810, lon=-4.010580,
+        lat=5.298595, lon=-4.015156,
     ),
     LandmarkPAA(
         nom_canonique="Carrefour Seamen's Club",
@@ -81,12 +88,12 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "carrefour seamen", "carrefour seamens club",
             "carrefour seamen's club",
         ),
-        lat=5.291470, lon=-4.005190,
+        lat=5.293656, lon=-4.008266,
     ),
     LandmarkPAA(
         nom_canonique="Pharmacie du port",
         alias=("pharmacie du port", "pharmacie port"),
-        lat=5.288820, lon=-4.001040,
+        lat=5.289099, lon=-4.008330,
     ),
     LandmarkPAA(
         nom_canonique="Unilever Côte d'Ivoire",
@@ -94,14 +101,14 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "unilever", "unilever ci", "unilever cote d ivoire",
             "unilever abidjan",
         ),
-        lat=5.284120, lon=-3.998720,
+        lat=5.282904, lon=-4.008375,
     ),
     LandmarkPAA(
         nom_canonique="ATC Comafrique",
         alias=(
             "atc", "atc comafrique", "comafrique", "atc-comafrique",
         ),
-        lat=5.279830, lon=-3.996650,
+        lat=5.275854, lon=-4.008499,
     ),
     LandmarkPAA(
         nom_canonique="SGBCI (Société Générale — Port)",
@@ -109,7 +116,7 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "sgbci", "sgbci port", "societe generale port",
             "societe generale abidjan port",
         ),
-        lat=5.276680, lon=-3.995280,
+        lat=5.268585, lon=-4.004069,
     ),
     LandmarkPAA(
         nom_canonique="DGI (Direction Générale des Impôts)",
@@ -117,7 +124,7 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "dgi", "direction generale des impots",
             "direction generale impots", "impots port",
         ),
-        lat=5.273420, lon=-3.993710,
+        lat=5.264824, lon=-3.999947,
     ),
     LandmarkPAA(
         nom_canonique="Gare SOTRA — Terminus 19",
@@ -126,7 +133,7 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "sotra terminus 19", "terminus 19 sotra",
             "sotra 19",
         ),
-        lat=5.269660, lon=-3.991470,
+        lat=5.256348, lon=-3.997206,
     ),
     LandmarkPAA(
         nom_canonique="Siège social Libya Oil CI",
@@ -135,7 +142,7 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "siege social libya oil", "lybia oil", "lybia oil ci",
             "lybia oil abidjan",
         ),
-        lat=5.264780, lon=-3.988030,
+        lat=5.257508, lon=-3.986315,
     ),
     LandmarkPAA(
         nom_canonique="Pharmacie Palm Beach",
@@ -143,7 +150,7 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "pharmacie palm beach", "palm beach", "palmbeach",
             "pharmacie palmbeach",
         ),
-        lat=5.259040, lon=-3.984020,
+        lat=5.258348, lon=-3.981822,
     ),
     # Autres axes DEESP
     LandmarkPAA(
@@ -152,7 +159,7 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "toyota cfao", "toyota cfao treichville", "toyota",
             "cfao motors", "cfao toyota",
         ),
-        lat=5.294070, lon=-4.017190,
+        lat=5.294394, lon=-4.006206,
     ),
     LandmarkPAA(
         nom_canonique="Agence SODECI (Zone 4)",
@@ -160,7 +167,7 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "agence sodeci", "sodeci zone 4", "sodeci",
             "sodeci vridi", "agence sodeci zone 4",
         ),
-        lat=5.286370, lon=-3.997900,
+        lat=5.293730, lon=-4.000654,
     ),
     # Points transverses souvent recherchés
     LandmarkPAA(
@@ -185,6 +192,14 @@ LANDMARKS_PAA: list[LandmarkPAA] = [
             "outillage",
         ),
         lat=5.276830, lon=-3.998720,
+    ),
+    # Gendarmerie du port (borne T1D retour)
+    LandmarkPAA(
+        nom_canonique="Gendarmerie du port",
+        alias=(
+            "gendarmerie du port", "gendarmerie port",
+        ),
+        lat=5.286306, lon=-4.004886,
     ),
 ]
 
