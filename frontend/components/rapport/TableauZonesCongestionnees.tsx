@@ -88,16 +88,6 @@ export function TableauZonesCongestionnees({
         </div>
       )}
 
-      {/* Bouton export PDF — téléchargement direct via backend fpdf2 */}
-      <BoutonExportPdf
-        campagne={rapport?.campagne ?? ""}
-        actif={!!rapport}
-        debut={debutRange}
-        fin={finRange}
-        heureDebut={heureDebut}
-        heureFin={heureFin}
-      />
-
       {/* ──── Tableau 1 : AXES ──── */}
       <h3 className="mt-2 mb-2 text-fluid-base font-semibold text-paa-navy-800 dark:text-paa-blue-200">
         Congestion par axe
@@ -131,17 +121,6 @@ export function TableauZonesCongestionnees({
           </tbody>
         </table>
       </div>
-
-      {entreesAxes.length > 0 && (
-        <div className="mt-2 flex justify-end">
-          <BoutonExportCsv
-            label="Exporter axes CSV"
-            onClick={() =>
-              exporterCsv(entreesAxes, `congestion_axes_${rapport?.campagne ?? "export"}.csv`, "AXE")
-            }
-          />
-        </div>
-      )}
 
       {/* ──── Tableau 2 : TRONÇONS CODIFIÉS ──── */}
       <h3 className="mt-6 mb-2 text-fluid-base font-semibold text-paa-navy-800 dark:text-paa-blue-200">
