@@ -57,6 +57,27 @@ def distance_haversine_m(
     return int(round(2 * R * asin(sqrt(h))))
 
 
+def calculer_sens_par_axe(
+    axe_lat_origine: float, axe_lon_origine: float,
+    sous_lat_debut: float, sous_lon_debut: float,
+    sous_lat_fin: float, sous_lon_fin: float,
+) -> str:
+    """Détermine le sens de circulation d'un sous-tronçon pour un axe parent.
+
+    Retourne "direct" (lat_debut → lat_fin) si l'origine de l'axe est plus
+    proche de `lat_debut` que de `lat_fin`, sinon "inverse". Un même
+    sous-tronçon partagé entre 2 axes de sens opposés est ainsi mesuré
+    dans les deux directions à chaque cycle de collecte.
+    """
+    d_debut = distance_haversine_m(
+        axe_lat_origine, axe_lon_origine, sous_lat_debut, sous_lon_debut,
+    )
+    d_fin = distance_haversine_m(
+        axe_lat_origine, axe_lon_origine, sous_lat_fin, sous_lon_fin,
+    )
+    return "direct" if d_debut <= d_fin else "inverse"
+
+
 def distance_cumulee_m(points: list[tuple[float, float]]) -> int:
     """Distance totale en mètres d'une polyligne (suite de Haversine)."""
     if len(points) < 2:

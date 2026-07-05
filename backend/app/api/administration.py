@@ -38,6 +38,7 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.models import SousTroncon, Troncon, axe_sous_troncons
 from app.sources.polyline import (
+    calculer_sens_par_axe,
     distance_cumulee_m,
     distance_haversine_m,
     encoder_polyline,
@@ -45,6 +46,72 @@ from app.sources.polyline import (
 
 
 router = APIRouter(prefix="/administration", tags=["administration"])
+
+
+# ===========================================================================
+# Réordonnancement géographique des sous-tronçons
+# ===========================================================================
+
+
+def _reordonner_sous_troncons_par_axe(db: Session, axe_id: int) -> None:
+    """Recalcule l'ordre des sous-tronçons d'un axe en fonction de leur
+    position GPS le long du parcours, en tenant compte du sens de
+    circulation propre à cet axe.
+
+    Pour chaque sous-tronçon rattaché : on prend le point d'entrée
+    dans le SENS de l'axe (lat_debut si direct, lat_fin si inverse)
+    et on calcule la distance depuis l'origine de l'axe. Résultat :
+    peu importe l'ordre d'ajout, les sous-tronçons s'affichent dans
+    l'ordre chronologique de traversée.
+    """
+    axe = db.get(Troncon, axe_id)
+    if axe is None or axe.lat_origine is None or axe.lon_origine is None:
+        return
+
+    liens = db.execute(
+        select(axe_sous_troncons.c.sous_troncon_id)
+        .where(axe_sous_troncons.c.axe_id == axe_id)
+    ).scalars().all()
+    if not liens:
+        return
+
+    subs = list(db.execute(
+        select(SousTroncon)
+        .where(SousTroncon.id.in_(liens), SousTroncon.actif.is_(True))
+    ).scalars())
+    if not subs:
+        return
+
+    subs_avec_dist = []
+    for s in subs:
+        sens = calculer_sens_par_axe(
+            axe.lat_origine, axe.lon_origine,
+            s.lat_debut, s.lon_debut, s.lat_fin, s.lon_fin,
+        )
+        # Point d'entrée dans le sens de l'axe
+        lat_entree, lon_entree = (
+            (s.lat_debut, s.lon_debut) if sens == "direct"
+            else (s.lat_fin, s.lon_fin)
+        )
+        d = distance_haversine_m(
+            axe.lat_origine, axe.lon_origine, lat_entree, lon_entree,
+        )
+        subs_avec_dist.append((d, s))
+    subs_avec_dist.sort(key=lambda x: x[0])
+
+    # L'`ordre` sur `SousTroncon` reste l'ordre du parent principal (rétro-compat).
+    # L'ordre par axe vit dans la table de jonction.
+    for nouvel_ordre, (_, s) in enumerate(subs_avec_dist, start=1):
+        db.execute(
+            axe_sous_troncons.update()
+            .where(
+                axe_sous_troncons.c.axe_id == axe_id,
+                axe_sous_troncons.c.sous_troncon_id == s.id,
+            )
+            .values(ordre=nouvel_ordre)
+        )
+        if axe_id == s.troncon_id and s.ordre != nouvel_ordre:
+            s.ordre = nouvel_ordre
 
 
 # ===========================================================================
@@ -314,7 +381,7 @@ def lister_sous_troncons(
         "nb_sous_troncons": len(sous_troncons),
         "sous_troncons": [
             _serializer_sous_troncon(
-                s,
+                s, db=db,
                 axes_ids=axes_par_sous.get(s.id, [s.troncon_id]),
             ) for s in sous_troncons
         ],
@@ -456,9 +523,16 @@ async def creer_sous_troncon(
         db.execute(insert(axe_sous_troncons).values(
             axe_id=axe_id, sous_troncon_id=sous.id, ordre=ordre,
         ))
+    # Réordonnancement automatique sur CHAQUE axe parent.
+    # Peu importe l'ordre d'ajout, tous les sous-tronçons sont retriés
+    # par position GPS le long du parcours de chaque axe (avec sens propre).
+    for axe_id in axes_finaux:
+        _reordonner_sous_troncons_par_axe(db, axe_id)
     db.commit()
     db.refresh(sous)
-    return _serializer_sous_troncon(sous, axes_ids=list(axes_finaux))
+    return _serializer_sous_troncon(
+        sous, db=db, axes_ids=list(axes_finaux),
+    )
 
 
 @router.patch(
@@ -520,16 +594,23 @@ def maj_sous_troncon(
             db.execute(insert(axe_sous_troncons).values(
                 axe_id=axe_id, sous_troncon_id=sous.id, ordre=sous.ordre,
             ))
+        # Réordonnancement automatique sur chaque axe touché (ancien + nouveau).
+        anciens_axes = {row[0] for row in db.execute(
+            select(axe_sous_troncons.c.axe_id).where(
+                axe_sous_troncons.c.sous_troncon_id == sous.id
+            )
+        ).all()}
+        for axe_id in axes_finaux | anciens_axes:
+            _reordonner_sous_troncons_par_axe(db, axe_id)
 
     db.commit()
     db.refresh(sous)
-    # Lecture des axes parents actuels pour la réponse
     axes_actuels = [row[0] for row in db.execute(
         select(axe_sous_troncons.c.axe_id).where(
             axe_sous_troncons.c.sous_troncon_id == sous.id
         )
     ).all()]
-    return _serializer_sous_troncon(sous, axes_ids=axes_actuels)
+    return _serializer_sous_troncon(sous, db=db, axes_ids=axes_actuels)
 
 
 @router.delete(
@@ -586,22 +667,47 @@ def _resume_adoption_collecte(db: Session) -> dict[str, Any]:
     relit la liste des tronçons actifs à chaque tick.
     """
     settings = get_settings()
-    # Granularité réelle de mesure : parents sans sous-tronçon actif + sous-tronçons actifs.
-    parents_avec_sous = {
-        tid for (tid,) in db.execute(
-            select(SousTroncon.troncon_id).where(SousTroncon.actif.is_(True)).distinct()
+    # Granularité réelle de mesure : parents sans sous-tronçon actif
+    # (mesurés en tant qu'axe complet) + une mesure par lien (axe, sous)
+    # dans la table M2M — un sous partagé entre 2 axes = 2 mesures/cycle.
+    axes_couverts_par_sous = {
+        aid for (aid,) in db.execute(
+            select(axe_sous_troncons.c.axe_id).distinct()
         ).all()
     }
+    # Repli pour données legacy (sans lien M2M) : le parent principal
+    # d'un sous actif est considéré couvert.
+    for (tid,) in db.execute(
+        select(SousTroncon.troncon_id).where(SousTroncon.actif.is_(True)).distinct()
+    ).all():
+        axes_couverts_par_sous.add(tid)
     ids_parents_actifs = [
         tid for (tid,) in db.execute(
             select(Troncon.id).where(Troncon.actif.is_(True))
         ).all()
     ]
-    nb_parents_a_mesurer = sum(1 for tid in ids_parents_actifs if tid not in parents_avec_sous)
-    nb_sous_actifs = db.execute(
-        select(func.count(SousTroncon.id)).where(SousTroncon.actif.is_(True))
+    nb_parents_a_mesurer = sum(
+        1 for tid in ids_parents_actifs if tid not in axes_couverts_par_sous
+    )
+    # Une mesure par lien (axe, sous) actif dans la M2M — un sous partagé
+    # entre 2 axes compte pour 2 requêtes/cycle.
+    nb_liens_sous = db.execute(
+        select(func.count()).select_from(
+            axe_sous_troncons.join(
+                SousTroncon,
+                axe_sous_troncons.c.sous_troncon_id == SousTroncon.id,
+            )
+        ).where(SousTroncon.actif.is_(True))
     ).scalar_one() or 0
-    nb_actifs = nb_parents_a_mesurer + nb_sous_actifs
+    # Repli pour sous sans lien M2M (donnée legacy).
+    nb_sous_orphelins = db.execute(
+        select(func.count(SousTroncon.id))
+        .where(
+            SousTroncon.actif.is_(True),
+            ~SousTroncon.id.in_(select(axe_sous_troncons.c.sous_troncon_id)),
+        )
+    ).scalar_one() or 0
+    nb_actifs = nb_parents_a_mesurer + nb_liens_sous + nb_sous_orphelins
     estimation = estimer_requetes_par_jour(settings, nb_actifs)
     avertissement: str | None = None
     if estimation > QUOTA_GOOGLE_JOUR_MAX:
@@ -725,8 +831,30 @@ async def geocoder_lieu(
 
 def _serializer_sous_troncon(
     s: SousTroncon,
+    db: Session | None = None,
     axes_ids: list[int] | None = None,
 ) -> dict[str, Any]:
+    ids = axes_ids if axes_ids is not None else [s.troncon_id]
+    # Enrichit chaque parent avec son sens de circulation (direct/inverse).
+    # L'UI peut ainsi afficher un badge ⇢ / ⇠ par rattachement.
+    axes_details: list[dict[str, Any]] = []
+    if db is not None and ids:
+        axes = list(db.execute(
+            select(Troncon).where(Troncon.id.in_(ids))
+        ).scalars())
+        for a in axes:
+            if a.lat_origine is None or a.lon_origine is None:
+                sens = "direct"
+            else:
+                sens = calculer_sens_par_axe(
+                    a.lat_origine, a.lon_origine,
+                    s.lat_debut, s.lon_debut, s.lat_fin, s.lon_fin,
+                )
+            axes_details.append({
+                "id": a.id,
+                "nom": a.nom,
+                "sens": sens,
+            })
     return {
         "id": s.id,
         "troncon_id": s.troncon_id,
@@ -740,7 +868,8 @@ def _serializer_sous_troncon(
         "polyline": s.polyline,
         "distance_m": s.distance_m,
         "actif": s.actif,
-        # Multi-parent (migration 0016). Liste des axes parents rattachés.
-        # Contient TOUJOURS `troncon_id` (parent principal).
-        "axe_ids": axes_ids if axes_ids is not None else [s.troncon_id],
+        # Multi-parent (migration 0016). Contient TOUJOURS `troncon_id`.
+        "axe_ids": ids,
+        # Détail par axe avec sens de circulation calculé depuis la géométrie.
+        "axes": axes_details,
     }

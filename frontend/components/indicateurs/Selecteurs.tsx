@@ -70,28 +70,35 @@ export function SelecteurTroncon({
         onChange={(e) => surSelect(e.target.value)}
         className="rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
                    text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
-                   dark:text-paa-blue-100 min-h-[44px]"
+                   dark:text-paa-blue-100 min-h-[44px] font-medium"
       >
         {axes.length > 0 && (
-          <optgroup label="── Axes ──">
+          <optgroup label="━━━ AXES ━━━">
             {axes.map((tr) => (
-              <option key={`axe-${tr.id}`} value={`axe-${tr.id}`}>{tr.nom}</option>
+              <option key={`axe-${tr.id}`} value={`axe-${tr.id}`}>
+                🛣️  {tr.nom}
+              </option>
             ))}
           </optgroup>
         )}
         {axes.some((a) => (a.sous_troncons?.length ?? 0) > 0) && (
-          <optgroup label="── Tronçons par axes ──">
+          <optgroup label="━━━ TRONÇONS CODIFIÉS ━━━">
             {axes.flatMap((a) =>
-              (a.sous_troncons ?? []).map((s) => (
-                <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
-                  {a.nom} : {s.nom_court} ({s.code})
-                </option>
-              )),
+              (a.sous_troncons ?? []).map((s) => {
+                // Sens exposé par l'API si présent (typé sur EtatSousTronconCarte).
+                const sens = (s as unknown as { sens?: string }).sens;
+                const fleche = sens === "inverse" ? "⇠" : sens === "direct" ? "⇢" : "•";
+                return (
+                  <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
+                    {`  ${fleche}  [${s.code}] ${s.nom_court}  —  ${a.nom}`}
+                  </option>
+                );
+              }),
             )}
           </optgroup>
         )}
         {orphelins.length > 0 && (
-          <optgroup label="── Tronçons ──">
+          <optgroup label="━━━ AUTRES ━━━">
             {orphelins.map((tr) => (
               <option key={`orph-${tr.id}`} value={`axe-${tr.id}`}>{tr.nom}</option>
             ))}

@@ -50,6 +50,8 @@ export interface TronconSousResume {
   code: string;
   nom_court: string;
   ordre?: number;
+  /** Sens de circulation dans le contexte du parent (calculé par le backend). */
+  sens?: "direct" | "inverse";
 }
 
 /**
@@ -91,6 +93,10 @@ export interface EtatSousTronconCarte {
   code: string;
   nom_court: string;
   ordre: number;
+  /** Sens de circulation dans le contexte de l'axe parent : "direct" ou "inverse". */
+  sens?: "direct" | "inverse";
+  /** Symbole ⇢ / ⇠ prêt à afficher. */
+  sens_symbole?: string;
   distance_m?: number;
   distance_km?: number;
   polyline: string | null;

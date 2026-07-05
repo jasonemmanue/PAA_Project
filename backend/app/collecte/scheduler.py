@@ -41,7 +41,8 @@ from app.agregation.profils import executer_agregation
 from app.core.config import Settings, get_settings
 from app.db.session import SessionLocal
 from app.etat.carte import construire_etat_carte
-from app.models.models import Mesure, SourceMesure, SousTroncon, Troncon
+from app.models.models import Mesure, SourceMesure, SousTroncon, Troncon, axe_sous_troncons
+from app.sources.polyline import calculer_sens_par_axe
 from app.realtime.diffusion import get_diffuseur
 from app.sources import google_routes
 from app.sources.coordonnees import PointGPS
@@ -165,22 +166,33 @@ async def _collecter_google_pour_troncon(troncon: Troncon) -> ResultatSource:
 
 async def _collecter_google_pour_sous_troncon(
     sous_troncon: SousTroncon,
+    axe_id_contexte: int | None = None,
+    sens: str = "direct",
 ) -> ResultatSource:
     """Interroge Google Routes pour un sous-tronçon (portion fine T1A, T1B…).
 
-    Le `troncon_id` retourné est celui du parent — par cohérence d'historique
-    et pour faciliter l'agrégation au niveau axe.
+    - `axe_id_contexte` : axe parent auquel la mesure est attribuée. Permet à
+      un même sous-tronçon partagé entre plusieurs axes d'avoir une mesure
+      dédiée par axe (chaque axe = un contexte de circulation propre).
+      Si None, on retombe sur `sous_troncon.troncon_id` (parent principal).
+    - `sens` : "direct" (lat_debut → lat_fin) ou "inverse" (lat_fin → lat_debut).
+      Le sens est déterminé par l'orientation de l'axe parent (cf.
+      `calculer_sens_par_axe`) — un pont partagé par 2 axes opposés est ainsi
+      mesuré dans les 2 sens automatiquement à chaque cycle.
     """
+    troncon_id_cible = axe_id_contexte if axe_id_contexte is not None else sous_troncon.troncon_id
 
     async def _operation() -> ResultatSource:
-        origine = PointGPS(lat=sous_troncon.lat_debut, lon=sous_troncon.lon_debut)
-        destination = PointGPS(
-            lat=sous_troncon.lat_fin, lon=sous_troncon.lon_fin
-        )
+        if sens == "inverse":
+            origine = PointGPS(lat=sous_troncon.lat_fin, lon=sous_troncon.lon_fin)
+            destination = PointGPS(lat=sous_troncon.lat_debut, lon=sous_troncon.lon_debut)
+        else:
+            origine = PointGPS(lat=sous_troncon.lat_debut, lon=sous_troncon.lon_debut)
+            destination = PointGPS(lat=sous_troncon.lat_fin, lon=sous_troncon.lon_fin)
         reponse = await google_routes.calcul_itineraire(origine, destination)
         return ResultatSource(
             source=SourceMesure.google,
-            troncon_id=sous_troncon.troncon_id,
+            troncon_id=troncon_id_cible,
             sous_troncon_id=sous_troncon.id,
             succes=True,
             duree_trafic_s=reponse.duree_trafic_s,
@@ -192,12 +204,10 @@ async def _collecter_google_pour_sous_troncon(
             est_congestionne=reponse.est_congestionne,
         )
 
-    # On utilise un id "virtuel" négatif pour les logs (le sous-tronçon n'a
-    # pas son propre champ dans ResultatSource utilisé par _appel_avec_backoff).
     return await _appel_avec_backoff(
         _operation,
         source=SourceMesure.google,
-        troncon_id=sous_troncon.troncon_id,
+        troncon_id=troncon_id_cible,
     )
 
 
@@ -334,8 +344,22 @@ async def cycle_de_collecte() -> dict[str, int]:
                 select(SousTroncon).where(SousTroncon.actif.is_(True))
             ).scalars()
         )
+        # Chargement des rattachements M2M (multi-parent, migration 0016).
+        # Permet à un sous-tronçon partagé entre 2 axes d'être mesuré dans
+        # les 2 sens automatiquement, chaque mesure étant attribuée à son
+        # axe de contexte.
+        liens_m2m = list(session.execute(
+            select(axe_sous_troncons.c.axe_id, axe_sous_troncons.c.sous_troncon_id)
+        ).all())
+        # Cache des axes par id pour lire l'origine (calcul du sens).
+        axes_par_id = {t.id: t for t in troncons_actifs}
     finally:
         session.close()
+
+    # Regroupe les axes parents rattachés à chaque sous-tronçon.
+    axes_par_sous: dict[int, list[int]] = {}
+    for axe_id, sous_id in liens_m2m:
+        axes_par_sous.setdefault(sous_id, []).append(axe_id)
 
     if not troncons_actifs and not sous_troncons_actifs:
         logger.warning("Cycle de collecte : aucun tronçon/sous-tronçon actif.")
@@ -344,11 +368,18 @@ async def cycle_de_collecte() -> dict[str, int]:
             "nb_troncons": 0, "nb_sous_troncons": 0, "nb_appels": 0,
         }
 
-    # Quels parents ont déjà des sous-tronçons actifs ? Ces parents seront
-    # exclus du cycle (la granularité fine prend le relais).
-    parents_avec_sous = {st.troncon_id for st in sous_troncons_actifs}
+    # Quels axes sont déjà couverts par au moins un sous-tronçon actif ?
+    # Ils sont exclus de la mesure "axe complet" (granularité fine prime),
+    # via le rattachement M2M — pas seulement le parent principal.
+    axes_avec_sous_couvert: set[int] = set()
+    for sous_id, axes_ids in axes_par_sous.items():
+        axes_avec_sous_couvert.update(axes_ids)
+    # Repli pour les sous-tronçons sans lien M2M (données pré-migration 0016)
+    for st in sous_troncons_actifs:
+        if st.id not in axes_par_sous:
+            axes_avec_sous_couvert.add(st.troncon_id)
     troncons_a_mesurer = [
-        t for t in troncons_actifs if t.id not in parents_avec_sous
+        t for t in troncons_actifs if t.id not in axes_avec_sous_couvert
     ]
 
     # 2. Décision des sources interrogées
@@ -361,17 +392,39 @@ async def cycle_de_collecte() -> dict[str, int]:
             "trous de mesure pour ce cycle."
         )
 
-    # 3. Construction des tâches : parents seuls + sous-tronçons
+    # 3. Construction des tâches.
+    # Pour les sous-tronçons : une tâche par (axe parent, sous), avec sens
+    # calculé depuis l'origine de l'axe. Un pont partagé par 2 axes de sens
+    # opposés est donc mesuré 2 fois — une par sens de circulation réel.
+    # Fallback : un sous sans lien M2M (données legacy) est mesuré une fois
+    # avec son parent principal.
+    paires_sous: list[tuple[SousTroncon, int, str]] = []
+    for sous in sous_troncons_actifs:
+        ids_axes = axes_par_sous.get(sous.id, [sous.troncon_id])
+        for axe_id in ids_axes:
+            axe = axes_par_id.get(axe_id)
+            if axe is None or axe.lat_origine is None or axe.lon_origine is None:
+                sens = "direct"
+            else:
+                sens = calculer_sens_par_axe(
+                    axe.lat_origine, axe.lon_origine,
+                    sous.lat_debut, sous.lon_debut,
+                    sous.lat_fin, sous.lon_fin,
+                )
+            paires_sous.append((sous, axe_id, sens))
+
     taches: list[Awaitable[ResultatSource]] = []
     for troncon in troncons_a_mesurer:
         for src in sources_actives:
             adaptateur = _ADAPTATEURS_SOURCES[src]
             taches.append(adaptateur(troncon))
-    for sous in sous_troncons_actifs:
+    for sous, axe_id_ctx, sens in paires_sous:
         if SourceMesure.google in sources_actives:
-            taches.append(_collecter_google_pour_sous_troncon(sous))
+            taches.append(_collecter_google_pour_sous_troncon(
+                sous, axe_id_contexte=axe_id_ctx, sens=sens,
+            ))
 
-    # Si aucune source n'est dispo, on génère quand même des trous
+    # Si aucune source n'est dispo, on génère quand même des trous.
     if not sources_actives:
         resultats: list[ResultatSource] = []
         for t in troncons_a_mesurer:
@@ -379,10 +432,10 @@ async def cycle_de_collecte() -> dict[str, int]:
                 source=SourceMesure.google, troncon_id=t.id, succes=False,
                 message_erreur="aucune source temps réel configurée",
             ))
-        for s in sous_troncons_actifs:
+        for sous, axe_id_ctx, _sens in paires_sous:
             resultats.append(ResultatSource(
                 source=SourceMesure.google,
-                troncon_id=s.troncon_id, sous_troncon_id=s.id, succes=False,
+                troncon_id=axe_id_ctx, sous_troncon_id=sous.id, succes=False,
                 message_erreur="aucune source temps réel configurée",
             ))
     else:
@@ -398,7 +451,7 @@ async def cycle_de_collecte() -> dict[str, int]:
         "%d appels, %d réussites, %d trous.",
         horodatage_utc.isoformat(),
         len(troncons_a_mesurer),
-        len(sous_troncons_actifs),
+        len(paires_sous),
         len(resultats),
         nb_succes,
         nb_trous,
@@ -419,7 +472,7 @@ async def cycle_de_collecte() -> dict[str, int]:
         "nb_succes": nb_succes,
         "nb_trous": nb_trous,
         "nb_troncons": len(troncons_a_mesurer),
-        "nb_sous_troncons": len(sous_troncons_actifs),
+        "nb_sous_troncons": len(paires_sous),
         "nb_appels": len(resultats),
     }
 

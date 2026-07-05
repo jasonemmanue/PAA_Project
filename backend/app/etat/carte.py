@@ -40,7 +40,8 @@ from app.analyse.congestion import (
 )
 from app.core.config import get_settings
 from app.db.session import SessionLocal
-from app.models.models import Incident, Mesure, SousTroncon, Troncon
+from app.models.models import Incident, Mesure, SousTroncon, Troncon, axe_sous_troncons
+from app.sources.polyline import calculer_sens_par_axe
 
 
 def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
@@ -113,6 +114,20 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
         # Index des sous-tronçons par parent — un même sous peut apparaître
         # sous plusieurs axes s'il est partagé (multi-parent M2M).
         ids_troncons_visibles = {t.id for t in troncons}
+
+        # Ordre par axe issu de la M2M (recalculé par distance GPS à
+        # chaque ajout — cf. _reordonner_sous_troncons_par_axe).
+        ordre_m2m: dict[tuple[int, int], int] = {
+            (row.axe_id, row.sous_troncon_id): row.ordre
+            for row in session.execute(
+                select(
+                    axe_sous_troncons.c.axe_id,
+                    axe_sous_troncons.c.sous_troncon_id,
+                    axe_sous_troncons.c.ordre,
+                )
+            ).all()
+        }
+
         sous_par_parent: dict[int, list[SousTroncon]] = {}
         for s in sous_troncons:
             parents_axes = [a for a in s.axes if a.id in ids_troncons_visibles and a.actif]
@@ -123,6 +138,9 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 parents_axes = [p for p in parents_axes if p is not None]
             for axe in parents_axes:
                 sous_par_parent.setdefault(axe.id, []).append(s)
+        # Tri par axe selon l'ordre M2M (respecte le sens de circulation).
+        for axe_id, subs in sous_par_parent.items():
+            subs.sort(key=lambda s: ordre_m2m.get((axe_id, s.id), s.ordre))
 
         def _serialiser_mesure(m: Mesure | None) -> dict[str, Any] | None:
             if m is None:
@@ -135,7 +153,7 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 "source": m.source.value,
             }
 
-        def _carte_sous_troncon(s: SousTroncon) -> dict[str, Any]:
+        def _carte_sous_troncon(s: SousTroncon, axe_parent: Troncon | None = None) -> dict[str, Any]:
             m = dernieres_par_sous.get(s.id)
             pct_rouge = m.pourcentage_rouge if m is not None else None
             pct_orange = m.pourcentage_orange if m is not None else None
@@ -144,11 +162,21 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
             statut_s = "sans_mesure"
             if m is not None:
                 statut_s = "mesure_disponible" if m.duree_trafic_s is not None else "trou_de_mesure"
+            # Sens de circulation dans le contexte de cet axe parent —
+            # direct = lat_debut → lat_fin ; inverse = lat_fin → lat_debut.
+            sens_axe = "direct"
+            if axe_parent is not None and axe_parent.lat_origine is not None:
+                sens_axe = calculer_sens_par_axe(
+                    axe_parent.lat_origine, axe_parent.lon_origine,
+                    s.lat_debut, s.lon_debut, s.lat_fin, s.lon_fin,
+                )
             return {
                 "id": s.id,
                 "code": s.code,
                 "nom_court": s.nom_court,
                 "ordre": s.ordre,
+                "sens": sens_axe,
+                "sens_symbole": "⇢" if sens_axe == "direct" else "⇠",
                 "distance_m": s.distance_m,
                 "distance_km": round(s.distance_m / 1000.0, 2),
                 "polyline": s.polyline,
@@ -202,7 +230,7 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 else:
                     statut = "trou_de_mesure"
 
-            sous_serialises = [_carte_sous_troncon(s) for s in sous_du_parent]
+            sous_serialises = [_carte_sous_troncon(s, troncon) for s in sous_du_parent]
 
             # Si l'axe a des sous-tronçons actifs, on dérive TOUJOURS sa classe
             # de ceux-ci (le scheduler ne mesure plus l'axe parent dans ce cas
