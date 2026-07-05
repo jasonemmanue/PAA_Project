@@ -246,6 +246,8 @@ export function BarrePilotage({
             <span className="text-fluid-xs app-text-muted">
               {statut.compteurs_jour.nb_succes} /{" "}
               {statut.config.estimation_requetes_google_par_jour} req/j
+              {statut.compteurs_jour.nb_entites_mesurees != null &&
+                ` · ${statut.compteurs_jour.nb_entites_mesurees} entités/cycle`}
             </span>
             {plage && (
               <span className="text-fluid-xs app-text-muted">

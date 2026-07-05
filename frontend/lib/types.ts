@@ -184,6 +184,7 @@ export interface CollecteStatus {
     nb_succes: number;
     nb_trous: number;
     nb_troncons_actifs: number;
+    nb_entites_mesurees?: number;
   };
 }
 

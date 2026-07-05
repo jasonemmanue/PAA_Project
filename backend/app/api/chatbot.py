@@ -104,20 +104,27 @@ ONGLET "TRONÇONS CODIFIÉS". Cet onglet permet de découper un axe en tronçons
 ══════════════════════════════════════
 COORDONNÉES GPS DES LIEUX DE RÉFÉRENCE DE LA ZONE PORTUAIRE D'ABIDJAN
 ══════════════════════════════════════
-Quand un utilisateur te demande les coordonnées GPS d'un lieu de la zone portuaire pour les coller dans les champs Début ou Fin de la page Administration, réponds avec le format LAT: 5.xxxxx, LON: -4.xxxxx prêt à copier-coller. Voici les lieux de référence :
-CARENA (Plateau) : LAT: 5.32812, LON: -4.02856.
-Pharmacie Palm Beach : LAT: 5.25871, LON: -3.98196.
-Toyota CFAO (Treichville) : LAT: 5.29280, LON: -3.99320.
-Agence SODECI Zone 4 : LAT: 5.28450, LON: -4.00080.
-Pont Houphouët-Boigny (aussi appelé pont HB ou pont Félix) : LAT: 5.31200, LON: -4.02100.
-Seamen's Club : LAT: 5.29700, LON: -4.00450.
-Boulevard de Marseille (milieu) : LAT: 5.30150, LON: -4.01300.
-Port d'Abidjan (Terminal principal) : LAT: 5.26800, LON: -4.00200.
-AGL Terminal : LAT: 5.27100, LON: -4.00450.
-Grand Moulin d'Abidjan : LAT: 5.28200, LON: -4.00300.
-Pharmacie du port : LAT: 5.26400, LON: -3.99800.
-Carrefour Seamen's : LAT: 5.29800, LON: -4.00400.
-Ces coordonnées sont approximatives (précision ~50 m). Pour une précision au bâtiment près, l'utilisateur doit utiliser l'autocomplétion Nominatim intégrée à la page Administration qui interroge OpenStreetMap en temps réel.
+Ces coordonnées ont été recalibrées le 2026-07-05 depuis les 26 fichiers GPX terrain réels enregistrés le 2026-06-22 avec BasicAirData GPS Logger. Chaque position est la moyenne aller/retour des points de jonction, située exactement SUR LA ROUTE — pas sur le bâtiment ou le trottoir. Quand un utilisateur te demande les coordonnées GPS d'un lieu de la zone portuaire pour les coller dans les champs Début ou Fin de la page Administration, réponds avec le format LAT: 5.xxxxx, LON: -4.xxxxx prêt à copier-coller. Voici les 19 lieux de référence dans l'ordre de traversée de l'axe CARENA vers Palm Beach :
+CARENA (Chantier Naval, Plateau) : LAT: 5.31738, LON: -4.02449.
+Grands Moulins d'Abidjan (GMA) : LAT: 5.30661, LON: -4.02142.
+Commissariat spécial du port : LAT: 5.30388, LON: -4.02304.
+CIMIVOIRE (Ciments de Côte d'Ivoire) : LAT: 5.29860, LON: -4.01516.
+Carrefour Seamen's Club : LAT: 5.29366, LON: -4.00827.
+Pharmacie du port : LAT: 5.28910, LON: -4.00833.
+Unilever Côte d'Ivoire : LAT: 5.28290, LON: -4.00838.
+ATC Comafrique : LAT: 5.27585, LON: -4.00850.
+SGBCI (Société Générale — Port) : LAT: 5.26859, LON: -4.00407.
+DGI (Direction Générale des Impôts) : LAT: 5.26482, LON: -3.99995.
+Gare SOTRA — Terminus 19 : LAT: 5.25635, LON: -3.99721.
+Siège social Libya Oil CI : LAT: 5.25751, LON: -3.98632.
+Pharmacie Palm Beach : LAT: 5.25835, LON: -3.98182.
+Toyota CFAO (Treichville) : LAT: 5.29439, LON: -4.00621.
+Agence SODECI (Zone 4) : LAT: 5.29373, LON: -4.00065.
+Pont Houphouët-Boigny (aussi appelé pont HB ou pont Félix) : LAT: 5.31143, LON: -4.01980.
+AGL Terminal (ex-Bolloré) : LAT: 5.28346, LON: -4.00561.
+Outillage Port d'Abidjan : LAT: 5.27683, LON: -3.99872.
+Gendarmerie du port : LAT: 5.28631, LON: -4.00489.
+Ces coordonnées sont précises à moins de 10 m (GPS terrain recalibré). L'autocomplétion intégrée à la page Administration retourne directement ces coordonnées en priorité (badge PAA), avant Google Places et Nominatim.
 
 ══════════════════════════════════════
 FONCTIONNALITÉS TRANSVERSES (DISPONIBLES SUR TOUTES LES PAGES)
