@@ -79,6 +79,13 @@ async def serie_indicateurs(
         None,
         description="Optionnel : restreint aux mesures fines d'un sous-tronçon.",
     ),
+    type_jour: str = Query(
+        "tous",
+        description=(
+            "Filtre par type de jour : `tous` (défaut), `jour_ouvrable` "
+            "(lundi-vendredi), `week_end` (samedi-dimanche)."
+        ),
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     fuseau_local = ZoneInfo(get_settings().tz)
@@ -95,6 +102,7 @@ async def serie_indicateurs(
             heure_debut=heure_debut,
             heure_fin=heure_fin,
             sous_troncon_id=sous_troncon_id,
+            type_jour=type_jour,
         )
     except LookupError as exc:
         raise HTTPException(

@@ -165,6 +165,58 @@ export function SelecteurPeriode({
 }
 
 // ---------------------------------------------------------------------------
+// Sélecteur de type de jour (tous / jours ouvrables / week-end)
+// ---------------------------------------------------------------------------
+export type TypeJour = "tous" | "jour_ouvrable" | "week_end";
+const TYPES_JOUR: TypeJour[] = ["tous", "jour_ouvrable", "week_end"];
+
+export function SelecteurTypeJour({
+  valeur,
+  onChange,
+}: {
+  valeur: TypeJour;
+  onChange: (tj: TypeJour) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-fluid-xs font-medium app-text-muted">
+        {t("indicateurs.selectTypeJour")}
+      </span>
+      <div
+        role="group"
+        aria-label={t("indicateurs.selectTypeJour")}
+        className="inline-flex flex-wrap gap-1 rounded-md border app-border p-1 app-surface"
+      >
+        {TYPES_JOUR.map((tj) => {
+          const actif = valeur === tj;
+          return (
+            <button
+              key={tj}
+              type="button"
+              onClick={() => onChange(tj)}
+              aria-pressed={actif}
+              className={clsx(
+                "px-3 py-1.5 text-fluid-xs font-medium rounded transition-colors min-h-[36px]",
+                actif
+                  ? "bg-paa-navy-700 text-white"
+                  : "text-paa-navy-700 hover:bg-paa-blue-50 dark:text-paa-blue-100 dark:hover:bg-paa-navy-700",
+              )}
+            >
+              {t(
+                tj === "tous" ? "indicateurs.typeJourTous"
+                : tj === "jour_ouvrable" ? "indicateurs.typeJourOuvrable"
+                : "indicateurs.typeJourWeekEnd",
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sélecteur de jour de semaine (pour le profil horaire)
 // ---------------------------------------------------------------------------
 const JOURS: JourSemaine[] = [

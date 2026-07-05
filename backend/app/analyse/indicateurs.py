@@ -134,6 +134,7 @@ def calcul_indicateurs(
     heure_debut: int = 0,
     heure_fin: int = 24,
     sous_troncon_id: int | None = None,
+    type_jour: str = "tous",
 ) -> IndicateursTroncon:
     """Calcule les indicateurs DEESP pour un tronçon sur [debut, fin].
 
@@ -178,14 +179,24 @@ def calcul_indicateurs(
         requete = requete.where(Mesure.sous_troncon_id.is_(None))
     mesures: list[Mesure] = list(db.execute(requete).scalars())
 
-    # Filtre par plage horaire locale si nécessaire
+    # Filtre par plage horaire locale et type de jour si nécessaire
     filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
-    if filtrer_heure:
+    filtrer_type_jour = type_jour in ("jour_ouvrable", "week_end")
+    if filtrer_heure or filtrer_type_jour:
         fuseau = ZoneInfo(get_settings().tz)
-        mesures = [
-            m for m in mesures
-            if heure_debut <= m.horodatage.astimezone(fuseau).hour < heure_fin
-        ]
+        resultat = []
+        for m in mesures:
+            h_local = m.horodatage.astimezone(fuseau)
+            if filtrer_heure and not (heure_debut <= h_local.hour < heure_fin):
+                continue
+            if filtrer_type_jour:
+                est_ouvrable = h_local.weekday() < 5
+                if type_jour == "jour_ouvrable" and not est_ouvrable:
+                    continue
+                if type_jour == "week_end" and est_ouvrable:
+                    continue
+            resultat.append(m)
+        mesures = resultat
 
     aberrantes = [m for m in mesures if m.aberrante]
     valides = mesures if inclure_aberrantes else [m for m in mesures if not m.aberrante]
@@ -332,6 +343,7 @@ def serie_temporelle(
     heure_debut: int = 0,
     heure_fin: int = 24,
     sous_troncon_id: int | None = None,
+    type_jour: str = "tous",
 ) -> dict[str, object]:
     """Renvoie une série temporelle agrégée (heure ou jour) du temps de traversée.
 
@@ -373,13 +385,23 @@ def serie_temporelle(
 
     mesures: list[Mesure] = list(db.execute(requete).scalars())
 
-    # Filtre par plage horaire locale si nécessaire
+    # Filtre par plage horaire locale et type de jour si nécessaire
     filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
-    if filtrer_heure:
-        mesures = [
-            m for m in mesures
-            if heure_debut <= m.horodatage.astimezone(fuseau_local).hour < heure_fin
-        ]
+    filtrer_type_jour = type_jour in ("jour_ouvrable", "week_end")
+    if filtrer_heure or filtrer_type_jour:
+        resultat = []
+        for m in mesures:
+            h_local = m.horodatage.astimezone(fuseau_local)
+            if filtrer_heure and not (heure_debut <= h_local.hour < heure_fin):
+                continue
+            if filtrer_type_jour:
+                est_ouvrable = h_local.weekday() < 5
+                if type_jour == "jour_ouvrable" and not est_ouvrable:
+                    continue
+                if type_jour == "week_end" and est_ouvrable:
+                    continue
+            resultat.append(m)
+        mesures = resultat
 
     buckets: dict[datetime, list[Mesure]] = defaultdict(list)
     for m in mesures:
@@ -449,6 +471,7 @@ def indicateurs_par_jour(
     heure_debut: int = 0,
     heure_fin: int = 24,
     sous_troncon_id: int | None = None,
+    type_jour: str = "tous",
 ) -> dict[str, object]:
     """Calcule les indicateurs DEESP jour par jour sur les N derniers jours.
 
@@ -475,6 +498,7 @@ def indicateurs_par_jour(
             heure_debut=heure_debut,
             heure_fin=heure_fin,
             sous_troncon_id=sous_troncon_id,
+            type_jour=type_jour,
         )
         jours.append({
             "date_locale": jour_local.isoformat(),

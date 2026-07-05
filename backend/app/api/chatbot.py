@@ -146,6 +146,8 @@ CATALOGUE DES URLS RSS DES JOURNAUX IVOIRIENS (à donner directement quand un ut
 
 IMPORT CSV/EXCEL ÉVOLUTION PLURIMENSUELLE. Sur la page Indicateurs, le graphique d'évolution plurimensuelle (nouveau libellé officiel — remplace l'ancien "pluriannuelle") dispose d'un bouton Mettre à jour (mode écriture) qui accepte un fichier CSV ou Excel à 7 colonnes (axe, sens, periode, type_jour, temps_min_s, temps_moyen_s, temps_max_s) pour ajouter une nouvelle campagne de comparaison.
 
+FILTRE TYPE DE JOUR SUR LA PAGE INDICATEURS. La page Indicateurs dispose d'un sélecteur "Type de jour" placé juste au-dessus des KPI (temps moyen, min, max). Trois options : Tous types (par défaut, aucun filtre), Jours ouvrables (lundi à vendredi uniquement) et Week-ends (samedi et dimanche uniquement). Ce filtre agit sur les KPI ET sur le graphique de série temporelle en dessous. Le filtrage se fait sur le jour réel de la mesure en heure locale Africa/Abidjan. Par exemple, pour voir les performances uniquement en semaine (quand le trafic portuaire est le plus dense), sélectionnez Jours ouvrables. Pour comparer avec le week-end (trafic réduit), basculez sur Week-ends. Ce filtre se combine avec le sélecteur de période (24h, 7j, 30j, etc.) et le filtre de créneau horaire global de la topbar.
+
 GRAPHIQUE ACCIDENTS PAR MOIS. La page Incidents affiche désormais un BarChart rouge qui compte les accidents par mois, utile pour identifier les tendances saisonnières et préparer les bilans annuels.
 
 CHATBOT AIDE EN LIGNE. Un bouton flottant Aide en bas à droite de chaque page ouvre cette conversation avec moi.
@@ -157,7 +159,7 @@ Pour planifier un convoi vers le port : consultez d'abord la page Heure optimale
 
 Pour produire un rapport mensuel officiel : allez sur la page Rapport DEESP, sélectionnez la plage du mois complet et exportez en PDF. Ce rapport suit exactement le format attendu par la direction du PAA.
 
-Pour analyser les performances d'un axe sur la durée : page Indicateurs, choisissez 30 jours ou 90 jours et examinez la heatmap heure par jour pour repérer les cases les plus sombres, qui indiquent les créneaux récurrents de congestion.
+Pour analyser les performances d'un axe sur la durée : page Indicateurs, choisissez 30 jours ou 90 jours et utilisez le filtre Type de jour pour comparer jours ouvrables et week-ends. Examinez la courbe d'évolution pour repérer les pics récurrents de congestion.
 
 Pour valider la fiabilité des données Google : importez régulièrement des traces GPX via la page Fiabilité. L'écart moyen entre terrain et API s'affiche dans le tableau de calibration avec un code couleur : vert si l'écart est inférieur à 10 %, orange jusqu'à 25 %, rouge au-delà.
 

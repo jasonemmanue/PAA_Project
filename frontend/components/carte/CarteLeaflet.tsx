@@ -506,10 +506,11 @@ export function CarteLeaflet({
           )
           .addTo(map);
       }
+      // Remonter l'axe parent au-dessus des autres axes
+      lignesRef.current.get(parentTrouve.id)?.bringToFront();
       const cle = `p${parentTrouve.id}_s${sousTronconSelectionneId}`;
       const ligneSous = lignesSousRef.current.get(cle);
-      // Superposition axe + sous-tronçon : on remonte le sous-tronçon
-      // sélectionné au premier plan pour que SA couleur DEESP s'affiche.
+      // Puis le sous-tronçon au-dessus de tout
       ligneSous?.bringToFront();
       ligneSous?.openPopup();
       return;

@@ -16,8 +16,10 @@ import { KpiCards } from "@/components/indicateurs/KpiCards";
 import {
   SelecteurPeriode,
   SelecteurTroncon,
+  SelecteurTypeJour,
   type SelectionTroncon,
   type Periode,
+  type TypeJour,
 } from "@/components/indicateurs/Selecteurs";
 import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
 import { api } from "@/lib/api";
@@ -47,6 +49,7 @@ export function PageIndicateurs() {
   const sousTronconId =
     selection?.type === "sous" ? selection.sousTronconId : null;
   const [periode, setPeriode] = useState<Periode>("24h");
+  const [typeJour, setTypeJour] = useState<TypeJour>("tous");
   const [indicateurs, setIndicateurs] = useState<IndicateursPeriode | null>(null);
   const [serie, setSerie] = useState<SerieTemporelle | null>(null);
   const [chargement, setChargement] = useState(true);
@@ -96,7 +99,7 @@ export function PageIndicateurs() {
     const fin = finDate.toISOString().slice(0, 10);
 
     Promise.all([
-      api.indicateurs(tronconId, periode, heureDebut, heureFin, sousTronconId),
+      api.indicateurs(tronconId, periode, heureDebut, heureFin, sousTronconId, typeJour),
       api.serieTemporelle(tronconId, {
         debut,
         fin,
@@ -104,6 +107,7 @@ export function PageIndicateurs() {
         heureDebut,
         heureFin,
         sousTronconId,
+        typeJour,
       }),
     ])
       .then(([ind, ser]) => {
@@ -119,7 +123,7 @@ export function PageIndicateurs() {
     return () => {
       annule = true;
     };
-  }, [tronconId, sousTronconId, periode, heureDebut, heureFin]);
+  }, [tronconId, sousTronconId, periode, heureDebut, heureFin, typeJour]);
 
   return (
     <div className="flex flex-col gap-fluid-4">
@@ -150,6 +154,9 @@ export function PageIndicateurs() {
 
       {/* Barre de pilotage : collecte + exports */}
       <BarrePilotage tronconId={tronconId} troncons={troncons} periode={periode} />
+
+      {/* Filtre type de jour */}
+      <SelecteurTypeJour valeur={typeJour} onChange={setTypeJour} />
 
       {/* KPIs (temps min/moyen/max + verdict couleur DEESP) */}
       <KpiCards snapshot={indicateurs?.snapshot ?? null} />

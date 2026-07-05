@@ -137,6 +137,7 @@ export function getIndicateursTroncon(
   heureDebut = 0,
   heureFin = 24,
   sousTronconId: number | null = null,
+  typeJour: "tous" | "jour_ouvrable" | "week_end" = "tous",
 ): Promise<IndicateursPeriode> {
   const periodeApi =
     periode === "24h" ? "1j"
@@ -147,6 +148,7 @@ export function getIndicateursTroncon(
   if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
   if (heureFin !== 24) p.set("heure_fin", String(heureFin));
   if (sousTronconId !== null) p.set("sous_troncon_id", String(sousTronconId));
+  if (typeJour !== "tous") p.set("type_jour", typeJour);
   return appel<IndicateursPeriode>(
     `/troncons/${id}/indicateurs?${p.toString()}`,
   );
@@ -190,6 +192,7 @@ export function getSerieTemporelle(
     heureDebut?: number;
     heureFin?: number;
     sousTronconId?: number | null;
+    typeJour?: "tous" | "jour_ouvrable" | "week_end";
   },
 ): Promise<SerieTemporelle> {
   const query = new URLSearchParams();
@@ -205,6 +208,8 @@ export function getSerieTemporelle(
     query.set("heure_fin", String(params.heureFin));
   if (params?.sousTronconId != null)
     query.set("sous_troncon_id", String(params.sousTronconId));
+  if (params?.typeJour && params.typeJour !== "tous")
+    query.set("type_jour", params.typeJour);
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return appel<SerieTemporelle>(
     `/indicateurs/troncons/${id}/serie${suffix}`,

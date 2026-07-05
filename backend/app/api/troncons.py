@@ -273,6 +273,13 @@ async def indicateurs_troncon(
             "codifié (T1A, T2A…). L'axe reste `troncon_id` (parent)."
         ),
     ),
+    type_jour: str = Query(
+        "tous",
+        description=(
+            "Filtre par type de jour : `tous` (défaut), `jour_ouvrable` "
+            "(lundi-vendredi), `week_end` (samedi-dimanche)."
+        ),
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -288,6 +295,12 @@ async def indicateurs_troncon(
             detail="La période doit être comprise entre 1 et 365 jours.",
         )
 
+    if type_jour not in ("tous", "jour_ouvrable", "week_end"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="type_jour doit valoir 'tous', 'jour_ouvrable' ou 'week_end'.",
+        )
+
     settings = get_settings()
     fuseau_local = ZoneInfo(settings.tz)
     fin_local = datetime.now(tz=fuseau_local)
@@ -301,11 +314,13 @@ async def indicateurs_troncon(
             heure_debut=heure_debut,
             heure_fin=heure_fin,
             sous_troncon_id=sous_troncon_id,
+            type_jour=type_jour,
         )
         detail = indicateurs_par_jour(
             db, troncon_id, nb_jours=jours,
             heure_debut=heure_debut, heure_fin=heure_fin,
             sous_troncon_id=sous_troncon_id,
+            type_jour=type_jour,
         )
     except LookupError as exc:
         raise HTTPException(
