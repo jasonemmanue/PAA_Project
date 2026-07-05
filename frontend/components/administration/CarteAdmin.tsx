@@ -45,6 +45,10 @@ interface Props {
   debut: { lat: number; lon: number } | null;
   fin: { lat: number; lon: number } | null;
   polylinesParent?: PolylineParent[];
+  /** Polyline OSRM encodée du vrai tracé routier prévisualisé (si dispo). */
+  previewPolyline?: string | null;
+  /** Source du preview : 'osrm' (routier) ou 'haversine' (droit). */
+  previewSource?: "osrm" | "haversine" | null;
   onClick: (lat: number, lon: number) => void;
 }
 
@@ -53,6 +57,8 @@ export function CarteAdmin({
   debut,
   fin,
   polylinesParent,
+  previewPolyline,
+  previewSource,
   onClick,
 }: Props) {
   const conteneurRef = useRef<HTMLDivElement | null>(null);
@@ -227,7 +233,10 @@ export function CarteAdmin({
     }
   }, [fin]);
 
-  // Ligne de prévisualisation entre début et fin
+  // Ligne de prévisualisation entre début et fin :
+  //  - si `previewPolyline` est fournie (tracé OSRM) → dessine ce tracé
+  //    en trait plein violet.
+  //  - sinon, trait pointillé droit entre les 2 points (aperçu linéaire).
   useEffect(() => {
     const L = LRef.current;
     const map = mapRef.current;
@@ -235,17 +244,37 @@ export function CarteAdmin({
     lignePreviewRef.current?.remove();
     lignePreviewRef.current = null;
     if (debut && fin) {
-      const coords: [number, number][] = [
+      let coords: [number, number][] = [
         [debut.lat, debut.lon],
         [fin.lat, fin.lon],
       ];
+      let dashArray: string | undefined = "8 4";
+      let opacity = 0.7;
+      if (previewPolyline && previewSource === "osrm") {
+        try {
+          const dec = decoderPolyline(previewPolyline);
+          if (dec.length >= 2) {
+            coords = dec;
+            dashArray = undefined;
+            opacity = 0.85;
+          }
+        } catch {
+          /* polyline invalide → conserve la droite */
+        }
+      }
       lignePreviewRef.current = L.polyline(coords, {
         color: "#9C27B0",
-        weight: 4,
-        opacity: 0.7,
-        dashArray: "8 4",
-      }).addTo(map);
-      // Recentrer pour englober les deux points
+        weight: 5,
+        opacity,
+        dashArray,
+      })
+        .bindTooltip(
+          previewSource === "osrm"
+            ? "Aperçu du tracé routier réel (OSRM)"
+            : "Aperçu linéaire (segment droit)",
+          { direction: "top", sticky: true },
+        )
+        .addTo(map);
       try {
         map.fitBounds(L.latLngBounds(coords), {
           padding: [40, 40],
@@ -257,7 +286,7 @@ export function CarteAdmin({
     } else if (debut) {
       map.setView([debut.lat, debut.lon], 14);
     }
-  }, [debut, fin]);
+  }, [debut, fin, previewPolyline, previewSource]);
 
   return (
     <div className="relative h-80 w-full overflow-hidden rounded-md sm:h-96">

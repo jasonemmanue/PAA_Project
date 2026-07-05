@@ -16,7 +16,7 @@
  */
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AutocompleteLieu } from "@/components/administration/AutocompleteLieu";
 import { Card } from "@/components/ui/Card";
@@ -48,6 +48,41 @@ export function OngletAxes({
   const [enCours, setEnCours] = useState(false);
   // Mode avancé (repli sur clic-carte + saisie manuelle des coords)
   const [modeAvance, setModeAvance] = useState<boolean>(false);
+
+  // Prévisualisation OSRM du tracé routier (auto-fetch dès qu'on a les 2 points)
+  const [previewPolyline, setPreviewPolyline] = useState<string | null>(null);
+  const [previewSource, setPreviewSource] = useState<"osrm" | "haversine" | null>(null);
+  const [previewKm, setPreviewKm] = useState<number | null>(null);
+  const [previewChargement, setPreviewChargement] = useState<boolean>(false);
+
+  useEffect(() => {
+    setPreviewPolyline(null);
+    setPreviewSource(null);
+    setPreviewKm(null);
+    if (!debut || !fin) return;
+    let annule = false;
+    setPreviewChargement(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const r = await api.previewRoute(debut.lat, debut.lon, fin.lat, fin.lon);
+        if (annule) return;
+        setPreviewPolyline(r.polyline);
+        setPreviewSource(r.source);
+        setPreviewKm(r.distance_km);
+      } catch {
+        if (!annule) {
+          setPreviewPolyline(null);
+          setPreviewSource(null);
+        }
+      } finally {
+        if (!annule) setPreviewChargement(false);
+      }
+    }, 350);
+    return () => {
+      annule = true;
+      window.clearTimeout(timer);
+    };
+  }, [debut, fin]);
 
   const reinitialiser = () => {
     setNom("");
@@ -350,23 +385,34 @@ export function OngletAxes({
         </div>
       </Card>
 
-      {/* Carte — uniquement en mode avancé */}
-      {modeAvance && (
+      {/* Carte — toujours visible pour voir l'aperçu du tracé, quelle
+          que soit la méthode de saisie (autocomplete ou clic-carte) */}
       <Card
-        titre="Carte interactive (mode avancé)"
-        description={`Les ${troncons.filter((t) => t.actif).length} axes actifs en pointillés. Le nouvel axe en violet plein.`}
+        titre="Aperçu du tracé sur la carte"
+        description={
+          debut && fin
+            ? previewChargement
+              ? "Calcul du tracé routier en cours…"
+              : previewSource === "osrm"
+                ? `Tracé routier OSRM (${previewKm?.toFixed(2)} km). Il sera le tracé définitif après création.`
+                : previewSource === "haversine"
+                  ? `Aperçu linéaire (${previewKm?.toFixed(2)} km à vol d'oiseau) — OSRM indisponible, le tracé final sera calculé côté serveur.`
+                  : "Aperçu linéaire — placez début + fin pour voir le tracé routier calculé."
+            : `Les ${troncons.filter((t) => t.actif).length} axes actifs en pointillés. Placez début + fin pour voir l'aperçu.`
+        }
       >
         <CarteAdmin
           pointActif={pointActif}
           debut={debut}
           fin={fin}
+          previewPolyline={previewPolyline}
+          previewSource={previewSource}
           polylinesParent={troncons
             .filter((t) => t.actif && t.polyline)
             .map((t) => ({ id: t.id, polyline: t.polyline, couleur: t.couleur }))}
           onClick={handleClickCarte}
         />
       </Card>
-      )}
       </>)}
 
       {/* Panneau d'édition inline */}

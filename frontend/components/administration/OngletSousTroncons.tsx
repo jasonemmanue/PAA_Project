@@ -24,8 +24,13 @@ const CarteAdmin = dynamic(
 
 export function OngletSousTroncons({
   troncons,
+  onChange,
 }: {
   troncons: TronconAdmin[];
+  /** Callback pour rafraîchir la liste des axes/sous-tronçons au niveau
+   *  parent (utile pour propager la nouvelle polyline OSRM à la carte
+   *  principale et aux autres onglets). */
+  onChange?: () => void;
 }) {
   const { peutEcrire } = useAuth();
   const [parentId, setParentId] = useState<number | null>(null);
@@ -41,6 +46,41 @@ export function OngletSousTroncons({
   const [modeAvance, setModeAvance] = useState<boolean>(false);
   // Multi-parent (P12.2) : axes secondaires cochés en plus du parent principal
   const [axesSecondaires, setAxesSecondaires] = useState<Set<number>>(new Set());
+
+  // Prévisualisation OSRM du tracé du sous-tronçon
+  const [previewPolyline, setPreviewPolyline] = useState<string | null>(null);
+  const [previewSource, setPreviewSource] = useState<"osrm" | "haversine" | null>(null);
+  const [previewKm, setPreviewKm] = useState<number | null>(null);
+  const [previewChargement, setPreviewChargement] = useState<boolean>(false);
+
+  useEffect(() => {
+    setPreviewPolyline(null);
+    setPreviewSource(null);
+    setPreviewKm(null);
+    if (!debut || !fin) return;
+    let annule = false;
+    setPreviewChargement(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const r = await api.previewRoute(debut.lat, debut.lon, fin.lat, fin.lon);
+        if (annule) return;
+        setPreviewPolyline(r.polyline);
+        setPreviewSource(r.source);
+        setPreviewKm(r.distance_km);
+      } catch {
+        if (!annule) {
+          setPreviewPolyline(null);
+          setPreviewSource(null);
+        }
+      } finally {
+        if (!annule) setPreviewChargement(false);
+      }
+    }, 350);
+    return () => {
+      annule = true;
+      window.clearTimeout(timer);
+    };
+  }, [debut, fin]);
 
   useEffect(() => {
     if (parentId === null && troncons.length > 0) {
@@ -128,6 +168,7 @@ export function OngletSousTroncons({
       );
       reinitialiser();
       void chargerSousTroncons();
+      onChange?.();
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
@@ -140,6 +181,7 @@ export function OngletSousTroncons({
     try {
       await api.supprimerSousTroncon(s.id);
       void chargerSousTroncons();
+      onChange?.();
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     }
@@ -202,6 +244,7 @@ export function OngletSousTroncons({
       await api.majSousTroncon(editId, payload);
       setEditId(null);
       void chargerSousTroncons();
+      onChange?.();
     } catch (e) {
       setEditErreur(e instanceof Error ? e.message : String(e));
     } finally {
@@ -443,13 +486,27 @@ export function OngletSousTroncons({
         )}
       </Card>
 
-      {/* Carte — uniquement en mode avancé */}
-      {modeAvance && (
-      <Card titre="Polyline parent + tronçon en cours (mode avancé)">
+      {/* Carte — toujours visible avec aperçu OSRM en direct */}
+      <Card
+        titre="Aperçu du sous-tronçon sur la carte"
+        description={
+          debut && fin
+            ? previewChargement
+              ? "Calcul du tracé routier en cours…"
+              : previewSource === "osrm"
+                ? `Tracé routier OSRM (${previewKm?.toFixed(2)} km). Ce sera le tracé définitif après création.`
+                : previewSource === "haversine"
+                  ? `Aperçu linéaire (${previewKm?.toFixed(2)} km à vol d'oiseau) — OSRM indisponible.`
+                  : "Placez début + fin pour prévisualiser le tracé routier."
+            : `Polyline parent en pointillé. Placez début + fin pour voir l'aperçu.`
+        }
+      >
         <CarteAdmin
           pointActif={pointActif}
           debut={debut}
           fin={fin}
+          previewPolyline={previewPolyline}
+          previewSource={previewSource}
           polylinesParent={
             parent
               ? [{
@@ -467,7 +524,6 @@ export function OngletSousTroncons({
           onClick={handleClickCarte}
         />
       </Card>
-      )}
       </>)}
 
       {/* Panneau d'édition inline */}

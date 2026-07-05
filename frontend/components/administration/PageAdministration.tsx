@@ -120,7 +120,7 @@ export function PageAdministration() {
         <OngletAxes troncons={troncons} onChange={charger} />
       )}
       {!chargement && onglet === "sous_troncons" && (
-        <OngletSousTroncons troncons={troncons} />
+        <OngletSousTroncons troncons={troncons} onChange={charger} />
       )}
     </div>
   );

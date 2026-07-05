@@ -482,6 +482,7 @@ export const api = {
   majSousTroncon: patchSousTroncon,
   supprimerSousTroncon: deleteSousTroncon,
   geocoderLieu: getGeocoderLieu,
+  previewRoute: getPreviewRoute,
   urlExportMesures,
   urlExportProfils,
   getIncidents,
@@ -620,6 +621,29 @@ export function getGeocoderLieu(
 ): Promise<ReponseGeocoder> {
   const p = new URLSearchParams({ q, limit: String(limit) });
   return appel<ReponseGeocoder>(`/administration/geocoder?${p}`);
+}
+
+export interface ReponsePreviewRoute {
+  polyline: string;
+  distance_m: number;
+  distance_km: number;
+  source: "osrm" | "haversine";
+}
+
+/** Aperçu OSRM (ou repli Haversine) du tracé entre 2 points avant création. */
+export function getPreviewRoute(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): Promise<ReponsePreviewRoute> {
+  const p = new URLSearchParams({
+    lat1: String(lat1),
+    lon1: String(lon1),
+    lat2: String(lat2),
+    lon2: String(lon2),
+  });
+  return appel<ReponsePreviewRoute>(`/administration/preview-route?${p}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -881,6 +881,61 @@ _VIEWBOX_ABIDJAN = "-4.15,5.10,-3.85,5.55"  # left,top,right,bottom (lon,lat)
 
 
 @router.get(
+    "/preview-route",
+    summary="Prévisualisation du tracé OSRM entre 2 points GPS",
+    description=(
+        "Retourne la polyline encodée + la distance calculée par OSRM entre "
+        "(lat1, lon1) et (lat2, lon2). Permet de prévisualiser le vrai tracé "
+        "routier avant de créer un axe ou un sous-tronçon. Si OSRM n'est pas "
+        "configuré, retourne un segment droit Haversine. Résultat en cache "
+        "mémoire 10 min par paire de points."
+    ),
+)
+async def preview_route(
+    lat1: float = Query(...),
+    lon1: float = Query(...),
+    lat2: float = Query(...),
+    lon2: float = Query(...),
+) -> dict[str, Any]:
+    settings = get_settings()
+    cle = f"{lat1:.5f},{lon1:.5f}::{lat2:.5f},{lon2:.5f}"
+    maintenant = time.time()
+    # Réutilise le cache _CACHE_GEOCODE (structure identique) sous préfixe distinct.
+    cle_cache = f"preview::{cle}"
+    if cle_cache in _CACHE_GEOCODE:
+        t_cache, cached = _CACHE_GEOCODE[cle_cache]
+        if maintenant - t_cache < 600 and isinstance(cached, list) and cached:
+            return cached[0]  # type: ignore[return-value]
+
+    polyline = encoder_polyline([(lat1, lon1), (lat2, lon2)])
+    distance = distance_haversine_m(lat1, lon1, lat2, lon2)
+    source = "haversine"
+
+    if settings.osrm_base_url:
+        try:
+            from app.sources import osrm
+            from app.sources.coordonnees import PointGPS
+            rep = await osrm.route(
+                PointGPS(lat=lat1, lon=lon1),
+                PointGPS(lat=lat2, lon=lon2),
+            )
+            polyline = rep.polyline_encodee
+            distance = rep.distance_m
+            source = "osrm"
+        except Exception as exc:
+            logger.warning("Preview OSRM indisponible (%s) → repli Haversine.", exc)
+
+    resultat = {
+        "polyline": polyline,
+        "distance_m": distance,
+        "distance_km": round(distance / 1000.0, 2),
+        "source": source,
+    }
+    _CACHE_GEOCODE[cle_cache] = (maintenant, [resultat])  # type: ignore[arg-type]
+    return resultat
+
+
+@router.get(
     "/geocoder",
     summary="Autocomplétion de lieux — proxy Nominatim OSM",
     description=(
