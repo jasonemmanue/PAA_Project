@@ -613,6 +613,8 @@ export interface SuggestionLieu {
   lon: number;
   type: string;
   importance: number;
+  /** Provenance : 'landmark_paa' (curé), 'google_places', 'nominatim'. */
+  source?: "landmark_paa" | "google_places" | "nominatim";
 }
 
 export interface ReponseGeocoder {

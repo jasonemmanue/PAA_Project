@@ -168,7 +168,33 @@ export function AutocompleteLieu({
                            focus:outline-none focus:bg-paa-blue-50 dark:focus:bg-paa-navy-800"
                 role="option"
               >
-                <div className="font-medium truncate">{s.nom_affiche}</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium truncate flex-1">{s.nom_affiche}</span>
+                  {s.source === "landmark_paa" && (
+                    <span
+                      className="shrink-0 rounded bg-paa-navy-700 text-white text-[9px] font-semibold px-1.5 py-0.5"
+                      title="Landmark curé (coordonnées Google Maps validées)"
+                    >
+                      ★ PAA
+                    </span>
+                  )}
+                  {s.source === "google_places" && (
+                    <span
+                      className="shrink-0 rounded bg-blue-600 text-white text-[9px] font-semibold px-1.5 py-0.5"
+                      title="Google Places API"
+                    >
+                      G
+                    </span>
+                  )}
+                  {s.source === "nominatim" && (
+                    <span
+                      className="shrink-0 rounded bg-gray-500 text-white text-[9px] font-semibold px-1.5 py-0.5"
+                      title="OpenStreetMap (Nominatim)"
+                    >
+                      OSM
+                    </span>
+                  )}
+                </div>
                 <div className="app-text-muted font-mono text-[10px] mt-0.5">
                   {s.lat.toFixed(5)}, {s.lon.toFixed(5)} · {s.type}
                 </div>

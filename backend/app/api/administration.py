@@ -935,15 +935,114 @@ async def preview_route(
     return resultat
 
 
+# Ancre géographique d'Abidjan pour biaiser Google Places
+_ABIDJAN_LAT = 5.29
+_ABIDJAN_LON = -4.0
+_ABIDJAN_RAYON_M = 25_000  # 25 km — couvre l'agglomération et le port
+
+
+async def _google_places_autocomplete(
+    q: str, limit: int, cle_api: str,
+) -> list[dict[str, Any]]:
+    """Interroge Google Places API (New) — 'Autocomplete' + 'Place Details'.
+
+    Retourne une liste `[{nom_affiche, lat, lon, type, importance}]`
+    filtrée sur la zone Abidjan et enrichie des coordonnées via
+    Place Details (une requête par suggestion).
+
+    Utilise le même GOOGLE_ROUTES_API_KEY (la clé doit autoriser
+    l'API 'Places API (New)' dans Google Cloud Console).
+    """
+    url_autocomplete = "https://places.googleapis.com/v1/places:autocomplete"
+    entetes = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": cle_api,
+    }
+    corps = {
+        "input": q,
+        "languageCode": "fr",
+        "regionCode": "CI",
+        "locationBias": {
+            "circle": {
+                "center": {"latitude": _ABIDJAN_LAT, "longitude": _ABIDJAN_LON},
+                "radius": float(_ABIDJAN_RAYON_M),
+            },
+        },
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            rep = await client.post(url_autocomplete, json=corps, headers=entetes)
+            rep.raise_for_status()
+            payload = rep.json()
+    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+        logger.warning("Google Places Autocomplete indisponible : %s", exc)
+        return []
+
+    suggestions = payload.get("suggestions", [])[:limit]
+    resultats: list[dict[str, Any]] = []
+    for s in suggestions:
+        pp = s.get("placePrediction") or {}
+        place_id = pp.get("placeId")
+        texte = (pp.get("text") or {}).get("text") or ""
+        structured = pp.get("structuredFormat") or {}
+        nom_principal = (structured.get("mainText") or {}).get("text") or texte
+        nom_secondaire = (structured.get("secondaryText") or {}).get("text") or ""
+        if not place_id:
+            continue
+        # Place Details pour récupérer lat/lon
+        try:
+            url_details = f"https://places.googleapis.com/v1/places/{place_id}"
+            entetes_det = {
+                "X-Goog-Api-Key": cle_api,
+                "X-Goog-FieldMask": "location,displayName,formattedAddress",
+            }
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                rep_det = await client.get(url_details, headers=entetes_det)
+                rep_det.raise_for_status()
+                det = rep_det.json()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Google Places Details KO place_id=%s : %s", place_id, exc)
+            continue
+
+        loc = det.get("location") or {}
+        try:
+            lat = float(loc["latitude"])
+            lon = float(loc["longitude"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        # Filtre "élargi Abidjan" — évite un résultat à Bouaké par exemple
+        if not (4.9 <= lat <= 5.55 and -4.25 <= lon <= -3.7):
+            continue
+
+        libelle = nom_principal
+        if nom_secondaire and nom_secondaire.lower() not in libelle.lower():
+            libelle = f"{nom_principal} — {nom_secondaire}"
+
+        resultats.append({
+            "nom_affiche": libelle,
+            "lat": lat,
+            "lon": lon,
+            "type": "google_place",
+            "importance": 0.85,
+            "source": "google_places",
+        })
+
+    return resultats
+
+
 @router.get(
     "/geocoder",
-    summary="Autocomplétion de lieux — proxy Nominatim OSM",
+    summary="Autocomplétion de lieux — cascade Landmarks PAA → Google Places → Nominatim",
     description=(
-        "Renvoie jusqu'à `limit` suggestions pour la chaîne `q` en biaisant "
-        "sur la région Abidjan (Côte d'Ivoire). La réponse contient pour "
-        "chaque suggestion : `nom_affiche`, `lat`, `lon`, `type` (`landmark`, "
-        "`street`, `city`...). Cache mémoire 1 h par requête. Respecte le "
-        "ToS Nominatim (1 req/s max sortant, User-Agent FLUIDIS)."
+        "Cascade à 3 niveaux :\n"
+        "1. **Landmarks PAA** : dictionnaire curé des points d'intérêt de la "
+        "zone portuaire (CARENA, Palm Beach, GMA, CIMIVOIRE, DGI, SOTRA…) "
+        "avec coordonnées Google Maps validées.\n"
+        "2. **Google Places API** (si `GOOGLE_ROUTES_API_KEY` est configurée "
+        "et couvre l'API Places (New)) — biais sur Abidjan, résultats de "
+        "qualité équivalente à Google Maps.\n"
+        "3. **Nominatim OSM** en repli (couverture Abidjan limitée).\n\n"
+        "Cache mémoire 1 h par requête. Filtre géographique élargi Abidjan."
     ),
 )
 async def geocoder_lieu(
@@ -951,66 +1050,83 @@ async def geocoder_lieu(
                    description="Texte partiel de lieu (ex. 'palm beach')"),
     limit: int = Query(5, ge=1, le=10),
 ) -> dict[str, Any]:
-    """Autocomplétion via Nominatim OSM avec cache et rate limiting."""
+    """Autocomplétion en cascade avec cache et rate limiting."""
+    from app.sources.landmarks_paa import rechercher_landmarks
+
     cle = f"{q.strip().lower()}::{limit}"
     maintenant = time.time()
 
-    # 1. Cache ?
     if cle in _CACHE_GEOCODE:
-        t_cache, resultats = _CACHE_GEOCODE[cle]
+        t_cache, resultats_cache = _CACHE_GEOCODE[cle]
         if maintenant - t_cache < _CACHE_TTL_SEC:
-            return {"q": q, "resultats": resultats, "cache": True}
+            return {"q": q, "resultats": resultats_cache, "cache": True}
 
-    # 2. Rate limiting sortant (ToS Nominatim = max 1 req/s)
-    depuis_dernier = maintenant - _DERNIER_APPEL_NOMINATIM["t"]
-    if depuis_dernier < _DELAI_NOMINATIM_SEC:
-        await asyncio.sleep(_DELAI_NOMINATIM_SEC - depuis_dernier)
-    _DERNIER_APPEL_NOMINATIM["t"] = time.time()
-
-    # 3. Appel Nominatim
-    parametres = {
-        "q": q,
-        "format": "jsonv2",
-        "addressdetails": 1,
-        "limit": limit,
-        "countrycodes": "ci",
-        "viewbox": _VIEWBOX_ABIDJAN,
-        "bounded": 0,
-        "accept-language": "fr",
-    }
-    entetes = {
-        "User-Agent": "FLUIDIS/1.0 (hackathon; contact:sakamemmanuel@gmail.com)",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            rep = await client.get(
-                "https://nominatim.openstreetmap.org/search",
-                params=parametres,
-                headers=entetes,
-            )
-            rep.raise_for_status()
-            donnees = rep.json()
-    except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-        logger.warning("Nominatim indisponible pour q=%r : %s", q, exc)
-        return {"q": q, "resultats": [], "cache": False, "erreur": "Service Nominatim temporairement indisponible."}
-
-    # 4. Formatage court
     resultats: list[dict[str, Any]] = []
-    for r in donnees[:limit]:
-        try:
-            lat = float(r["lat"])
-            lon = float(r["lon"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        resultats.append({
-            "nom_affiche": r.get("display_name", ""),
-            "lat": lat,
-            "lon": lon,
-            "type": r.get("category", r.get("type", "lieu")),
-            "importance": r.get("importance", 0.0),
-        })
 
-    # 5. Cache et réponse
+    # 1. Landmarks curés (instantané, offline, coords Google Maps validées)
+    landmarks = rechercher_landmarks(q, limit=limit)
+    resultats.extend(landmarks)
+
+    # 2. Google Places API — si clé dispo et budget quota respecté
+    settings = get_settings()
+    besoin_plus = len(resultats) < limit
+    if besoin_plus and settings.google_routes_api_key:
+        limite_google = limit - len(resultats)
+        places = await _google_places_autocomplete(
+            q, limite_google, settings.google_routes_api_key,
+        )
+        # Dédoublonne : évite d'ajouter un Google Place trop proche d'un landmark
+        for p in places:
+            doublon = any(
+                abs(p["lat"] - r["lat"]) < 5e-4 and abs(p["lon"] - r["lon"]) < 5e-4
+                for r in resultats
+            )
+            if not doublon:
+                resultats.append(p)
+                if len(resultats) >= limit:
+                    break
+
+    # 3. Nominatim OSM en dernier repli si vraiment aucun résultat
+    if not resultats:
+        depuis_dernier = maintenant - _DERNIER_APPEL_NOMINATIM["t"]
+        if depuis_dernier < _DELAI_NOMINATIM_SEC:
+            await asyncio.sleep(_DELAI_NOMINATIM_SEC - depuis_dernier)
+        _DERNIER_APPEL_NOMINATIM["t"] = time.time()
+
+        parametres = {
+            "q": q, "format": "jsonv2", "addressdetails": 1, "limit": limit,
+            "countrycodes": "ci", "viewbox": _VIEWBOX_ABIDJAN, "bounded": 0,
+            "accept-language": "fr",
+        }
+        entetes = {
+            "User-Agent": "FLUIDIS/1.0 (hackathon; contact:sakamemmanuel@gmail.com)",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                rep = await client.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params=parametres, headers=entetes,
+                )
+                rep.raise_for_status()
+                donnees = rep.json()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            logger.warning("Nominatim indisponible pour q=%r : %s", q, exc)
+            donnees = []
+
+        for r in donnees[:limit]:
+            try:
+                lat = float(r["lat"])
+                lon = float(r["lon"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            resultats.append({
+                "nom_affiche": r.get("display_name", ""),
+                "lat": lat, "lon": lon,
+                "type": r.get("category", r.get("type", "lieu")),
+                "importance": r.get("importance", 0.0),
+                "source": "nominatim",
+            })
+
     _CACHE_GEOCODE[cle] = (maintenant, resultats)
     return {"q": q, "resultats": resultats, "cache": False}
 
