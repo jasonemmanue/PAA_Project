@@ -305,7 +305,7 @@ async def get_zones_congestionnees_pdf(
 
     # En-tête
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 7, "Tableau 16 - Troncons congestionnes (regles DEESP)", ln=True)
+    pdf.cell(0, 7, "Tableau 16 - Axes congestionnes (regles DEESP)", ln=True)
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_text_color(26, 54, 93)
     pdf.cell(0, 5, f"Campagne : {campagne}    -    {nb_jours} jour(s) analyse(s)", ln=True)
@@ -324,7 +324,7 @@ async def get_zones_congestionnees_pdf(
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 8)
     largeurs = [60, 35, 25, 18, 30, 110]  # mm — total = 278
-    entetes = ["AXE", "SOUS-TRONCON", "TRANCHE", "NB/SEM.", "REGLE", "REPARTITION PAR JOUR"]
+    entetes = ["AXE", "TRONCON CODIFIE", "TRANCHE", "NB/SEM.", "REGLE", "REPARTITION PAR JOUR"]
     for w, h in zip(largeurs, entetes):
         pdf.cell(w, 7, h, border=1, fill=True, align="L")
     pdf.ln()

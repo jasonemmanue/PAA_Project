@@ -179,7 +179,7 @@ export function TableauZonesCongestionnees({
       </div>
 
       {entreesTroncons.length > 0 && (
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex justify-end gap-2">
           <BoutonExportCsv
             label="Exporter tronçons CSV"
             onClick={() =>
@@ -188,6 +188,18 @@ export function TableauZonesCongestionnees({
           />
         </div>
       )}
+
+      {/* Bouton PDF global en bas — couvre axes + tronçons codifiés */}
+      <div className="mt-4 border-t app-border pt-4">
+        <BoutonExportPdf
+          campagne={rapport?.campagne ?? ""}
+          actif={!!rapport}
+          debut={debutRange}
+          fin={finRange}
+          heureDebut={heureDebut}
+          heureFin={heureFin}
+        />
+      </div>
     </Card>
   );
 }
