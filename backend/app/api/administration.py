@@ -49,20 +49,39 @@ router = APIRouter(prefix="/administration", tags=["administration"])
 
 
 # ===========================================================================
-# Réordonnancement géographique des sous-tronçons
+# Réordonnancement des sous-tronçons — ordre DEESP officiel
 # ===========================================================================
+
+# Ordre officiel de traversée des sous-tronçons codifiés par axe DEESP.
+# Clé = axe_id (1-6), Valeur = liste ordonnée des codes de sous-tronçons
+# dans le sens de circulation de cet axe.
+_ORDRE_DEESP_PAR_AXE: dict[int, list[str]] = {
+    # Axe 1 — CARENA → Pharmacie Palm Beach (aller)
+    1: ["T1C", "T1A", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11"],
+    # Axe 2 — Pharmacie Palm Beach → CARENA (retour)
+    2: ["T11", "T10", "T9", "T8", "T7", "T6", "T5", "T4", "T3", "T2", "T1A", "T1C"],
+    # Axe 3 — Toyota CFAO → Pharmacie Palm Beach (aller)
+    3: ["T1B", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11"],
+    # Axe 4 — Pharmacie Palm Beach → Toyota CFAO (retour)
+    4: ["T11", "T10", "T9", "T8", "T7", "T6", "T5", "T4", "T1B"],
+    # Axe 5 — Agence SODECI → Pharmacie Palm Beach (aller)
+    5: ["T1D", "T7", "T8", "T9", "T10", "T11"],
+    # Axe 6 — Pharmacie Palm Beach → Agence SODECI (retour)
+    6: ["T11", "T10", "T9", "T8", "T7", "T1D"],
+}
 
 
 def _reordonner_sous_troncons_par_axe(db: Session, axe_id: int) -> None:
-    """Recalcule l'ordre des sous-tronçons d'un axe en fonction de leur
-    position GPS le long du parcours, en tenant compte du sens de
-    circulation propre à cet axe.
+    """Recalcule l'ordre des sous-tronçons d'un axe.
 
-    Pour chaque sous-tronçon rattaché : on prend le point d'entrée
-    dans le SENS de l'axe (lat_debut si direct, lat_fin si inverse)
-    et on calcule la distance depuis l'origine de l'axe. Résultat :
-    peu importe l'ordre d'ajout, les sous-tronçons s'affichent dans
-    l'ordre chronologique de traversée.
+    Pour les 6 axes officiels DEESP (id 1-6) : l'ordre est fixé selon
+    la séquence officielle du rapport (§ CLAUDE.md 23). Un sous-tronçon
+    absent de la séquence officielle est placé après les codes connus,
+    trié par distance GPS.
+
+    Pour les axes créés via Administration (id > 6) : l'ordre est
+    calculé par distance Haversine depuis l'origine de l'axe, en tenant
+    compte du sens de circulation (direct / inverse).
     """
     axe = db.get(Troncon, axe_id)
     if axe is None or axe.lat_origine is None or axe.lon_origine is None:
@@ -82,26 +101,32 @@ def _reordonner_sous_troncons_par_axe(db: Session, axe_id: int) -> None:
     if not subs:
         return
 
-    subs_avec_dist = []
-    for s in subs:
-        sens = calculer_sens_par_axe(
-            axe.lat_origine, axe.lon_origine,
-            s.lat_debut, s.lon_debut, s.lat_fin, s.lon_fin,
-        )
-        # Point d'entrée dans le sens de l'axe
-        lat_entree, lon_entree = (
-            (s.lat_debut, s.lon_debut) if sens == "direct"
-            else (s.lat_fin, s.lon_fin)
-        )
-        d = distance_haversine_m(
-            axe.lat_origine, axe.lon_origine, lat_entree, lon_entree,
-        )
-        subs_avec_dist.append((d, s))
-    subs_avec_dist.sort(key=lambda x: x[0])
+    ordre_deesp = _ORDRE_DEESP_PAR_AXE.get(axe_id)
+    if ordre_deesp:
+        # Axes officiels : tri par position dans la séquence DEESP.
+        # Codes absents de la séquence → placés à la fin (ordre 999+).
+        index_par_code = {code: i for i, code in enumerate(ordre_deesp)}
+        subs.sort(key=lambda s: index_par_code.get(s.code, 999))
+    else:
+        # Axes créés via Administration : tri par distance GPS.
+        subs_avec_dist = []
+        for s in subs:
+            sens = calculer_sens_par_axe(
+                axe.lat_origine, axe.lon_origine,
+                s.lat_debut, s.lon_debut, s.lat_fin, s.lon_fin,
+            )
+            lat_entree, lon_entree = (
+                (s.lat_debut, s.lon_debut) if sens == "direct"
+                else (s.lat_fin, s.lon_fin)
+            )
+            d = distance_haversine_m(
+                axe.lat_origine, axe.lon_origine, lat_entree, lon_entree,
+            )
+            subs_avec_dist.append((d, s))
+        subs_avec_dist.sort(key=lambda x: x[0])
+        subs = [s for _, s in subs_avec_dist]
 
-    # L'`ordre` sur `SousTroncon` reste l'ordre du parent principal (rétro-compat).
-    # L'ordre par axe vit dans la table de jonction.
-    for nouvel_ordre, (_, s) in enumerate(subs_avec_dist, start=1):
+    for nouvel_ordre, s in enumerate(subs, start=1):
         db.execute(
             axe_sous_troncons.update()
             .where(
