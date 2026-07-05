@@ -282,24 +282,11 @@ export function PageHeureOptimale() {
                        text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
                        dark:text-paa-blue-100 min-h-[40px]"
           >
-            <optgroup label="── Axes ──">
-              {troncons.map((tr) => (
-                <option key={`axe-${tr.id}`} value={`axe-${tr.id}`}>
-                  {tr.nom}
-                </option>
-              ))}
-            </optgroup>
-            {troncons.some((t) => (t.sous_troncons?.length ?? 0) > 0) && (
-              <optgroup label="── Tronçons par axes ──">
-                {troncons.flatMap((a) =>
-                  (a.sous_troncons ?? []).map((s) => (
-                    <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
-                      {a.nom} : {s.nom_court} ({s.code})
-                    </option>
-                  )),
-                )}
-              </optgroup>
-            )}
+            {troncons.map((tr) => (
+              <option key={`axe-${tr.id}`} value={`axe-${tr.id}`}>
+                {tr.nom}
+              </option>
+            ))}
           </select>
         </label>
 

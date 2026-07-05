@@ -71,9 +71,9 @@ export function TableauZonesCongestionnees({
 
   return (
     <Card
-      titre="Tableau 16 — Tronçons congestionnés (règles DEESP)"
+      titre="Tableau 16 — Axes congestionnés (règles DEESP)"
       description={
-        "Tronçon congestionné si : (a) ≥ 3 occurrences sur un jour-indicatif " +
+        "Axe congestionné si : (a) ≥ 3 occurrences sur un jour-indicatif " +
         "à la même heure, OU (b) ≥ 4 occurrences à la même heure dans la semaine. " +
         "Critère DEESP par mesure : couleur Google Maps — rouge présent OU orange ≥ 50 % du tronçon."
       }
