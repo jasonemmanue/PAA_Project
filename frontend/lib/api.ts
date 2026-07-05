@@ -475,9 +475,11 @@ export const api = {
   resumePrediction: getResumePrediction,
   heureOptimale: getHeureOptimale,
   creerTroncon: postCreerTroncon,
+  majTroncon: patchTroncon,
   supprimerTroncon: deleteTroncon,
   sousTroncons: getSousTroncons,
   creerSousTroncon: postCreerSousTroncon,
+  majSousTroncon: patchSousTroncon,
   supprimerSousTroncon: deleteSousTroncon,
   geocoderLieu: getGeocoderLieu,
   urlExportMesures,
@@ -534,6 +536,29 @@ export function deleteTroncon(id: number): Promise<unknown> {
   return appel<unknown>(`/administration/troncons/${id}`, { method: "DELETE" });
 }
 
+export interface TronconMajPayload {
+  nom?: string;
+  vitesse_ref_kmh?: number;
+  couleur?: string;
+  lat_origine?: number;
+  lon_origine?: number;
+  lat_destination?: number;
+  lon_destination?: number;
+  distance_m?: number;
+  est_axe?: boolean;
+}
+
+export function patchTroncon(
+  id: number,
+  payload: TronconMajPayload,
+): Promise<TronconAdmin> {
+  return appel<TronconAdmin>(`/administration/troncons/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getSousTroncons(tronconId: number): Promise<SousTronconsResponse> {
   return appel<SousTronconsResponse>(
     `/administration/troncons/${tronconId}/sous-troncons`,
@@ -557,6 +582,27 @@ export function postCreerSousTroncon(
 export function deleteSousTroncon(id: number): Promise<unknown> {
   return appel<unknown>(`/administration/sous-troncons/${id}`, {
     method: "DELETE",
+  });
+}
+
+export interface SousTronconMajPayload {
+  code?: string;
+  nom_court?: string;
+  lat_debut?: number;
+  lon_debut?: number;
+  lat_fin?: number;
+  lon_fin?: number;
+  axe_ids?: number[];
+}
+
+export function patchSousTroncon(
+  id: number,
+  payload: SousTronconMajPayload,
+): Promise<SousTroncon> {
+  return appel<SousTroncon>(`/administration/sous-troncons/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 

@@ -151,6 +151,14 @@ class TronconMaj(BaseModel):
     nom: str | None = Field(None, min_length=3, max_length=200)
     vitesse_ref_kmh: float | None = None
     couleur: str | None = None
+    lat_origine: float | None = None
+    lon_origine: float | None = None
+    lat_destination: float | None = None
+    lon_destination: float | None = None
+    # Si l'une des 4 coord change, la polyline et la distance sont recalculées
+    # (OSRM si dispo, sinon Haversine) — cf. maj_troncon.
+    distance_m: int | None = None
+    est_axe: bool | None = None
 
 
 class SousTronconCreer(BaseModel):
@@ -182,6 +190,10 @@ class SousTronconMaj(BaseModel):
     """Payload pour PATCH /administration/sous-troncons/{id}."""
     code: str | None = Field(None, min_length=2, max_length=10)
     nom_court: str | None = Field(None, min_length=3, max_length=120)
+    lat_debut: float | None = None
+    lon_debut: float | None = None
+    lat_fin: float | None = None
+    lon_fin: float | None = None
     axe_ids: list[int] | None = Field(
         default=None,
         description=(
@@ -284,9 +296,16 @@ async def creer_troncon(
 
 @router.patch(
     "/troncons/{troncon_id}",
-    summary="Mettre à jour un tronçon (nom, couleur, vitesse de référence)",
+    summary="Mettre à jour un tronçon (nom, couleur, vitesse, coordonnées)",
+    description=(
+        "Tous les champs sont optionnels. Si l'une des 4 coordonnées est "
+        "modifiée, la polyline et la distance sont recalculées (OSRM si "
+        "configuré, sinon segment droit + Haversine). Après recalcul de "
+        "l'origine, tous les sous-tronçons rattachés à cet axe sont "
+        "automatiquement réordonnés par distance GPS (§ 18)."
+    ),
 )
-def maj_troncon(
+async def maj_troncon(
     troncon_id: int,
     payload: TronconMaj,
     db: Session = Depends(get_db),
@@ -303,6 +322,48 @@ def maj_troncon(
         troncon.vitesse_ref_kmh = payload.vitesse_ref_kmh
     if payload.couleur is not None:
         troncon.couleur = payload.couleur
+    if payload.est_axe is not None:
+        troncon.est_axe = payload.est_axe
+
+    coords_changees = any(
+        v is not None for v in [
+            payload.lat_origine, payload.lon_origine,
+            payload.lat_destination, payload.lon_destination,
+        ]
+    )
+    if coords_changees:
+        if payload.lat_origine is not None: troncon.lat_origine = payload.lat_origine
+        if payload.lon_origine is not None: troncon.lon_origine = payload.lon_origine
+        if payload.lat_destination is not None: troncon.lat_destination = payload.lat_destination
+        if payload.lon_destination is not None: troncon.lon_destination = payload.lon_destination
+
+        settings = get_settings()
+        pts = [
+            (troncon.lat_origine, troncon.lon_origine),
+            (troncon.lat_destination, troncon.lon_destination),
+        ]
+        polyline: str = encoder_polyline(pts)
+        distance = payload.distance_m if payload.distance_m is not None else distance_cumulee_m(pts)
+        if settings.osrm_base_url:
+            try:
+                from app.sources import osrm
+                from app.sources.coordonnees import PointGPS
+                rep = await osrm.route(
+                    PointGPS(lat=troncon.lat_origine, lon=troncon.lon_origine),
+                    PointGPS(lat=troncon.lat_destination, lon=troncon.lon_destination),
+                )
+                polyline = rep.polyline_encodee
+                if payload.distance_m is None:
+                    distance = rep.distance_m
+            except Exception:
+                pass
+        troncon.polyline = polyline
+        troncon.distance_m = distance
+        # Ré-ordonne les sous-tronçons de cet axe : l'origine a bougé.
+        _reordonner_sous_troncons_par_axe(db, troncon_id)
+    elif payload.distance_m is not None:
+        troncon.distance_m = payload.distance_m
+
     db.commit()
     db.refresh(troncon)
     return _serializer_troncon(troncon)
@@ -357,15 +418,39 @@ def lister_sous_troncons(
             detail=f"Tronçon id={troncon_id} introuvable.",
         )
 
+    # Inclut les sous-tronçons rattachés à cet axe :
+    #  - soit comme parent principal (`troncon_id == axe_id`, rétro-compat),
+    #  - soit via la M2M (`axe_sous_troncons`, migration 0016 — pour un
+    #    tronçon partagé rattaché à un axe secondaire, ex. le retour).
+    ids_via_m2m = db.execute(
+        select(axe_sous_troncons.c.sous_troncon_id)
+        .where(axe_sous_troncons.c.axe_id == troncon_id)
+    ).scalars().all()
+
+    from sqlalchemy import or_
     requete = (
         select(SousTroncon)
-        .where(SousTroncon.troncon_id == troncon_id)
-        .order_by(SousTroncon.ordre)
+        .where(or_(
+            SousTroncon.troncon_id == troncon_id,
+            SousTroncon.id.in_(ids_via_m2m) if ids_via_m2m else False,
+        ))
     )
     if not inclure_archives:
         requete = requete.where(SousTroncon.actif.is_(True))
 
     sous_troncons = list(db.execute(requete).scalars())
+
+    # Tri par l'ordre M2M spécifique à CET axe (respecte le sens de circulation
+    # propre, cf. _reordonner_sous_troncons_par_axe). Repli sur SousTroncon.ordre.
+    ordre_ici: dict[int, int] = {
+        sid: o for (sid, o) in db.execute(
+            select(
+                axe_sous_troncons.c.sous_troncon_id,
+                axe_sous_troncons.c.ordre,
+            ).where(axe_sous_troncons.c.axe_id == troncon_id)
+        ).all()
+    }
+    sous_troncons.sort(key=lambda s: ordre_ici.get(s.id, s.ordre))
     # Charger les axes parents de chaque sous-tronçon en un seul SELECT
     liens = db.execute(
         select(axe_sous_troncons.c.sous_troncon_id, axe_sous_troncons.c.axe_id)
@@ -537,9 +622,14 @@ async def creer_sous_troncon(
 
 @router.patch(
     "/sous-troncons/{sous_id}",
-    summary="Modifier le code ou nom d'un sous-tronçon",
+    summary="Modifier code, nom, coordonnées ou axes parents d'un sous-tronçon",
+    description=(
+        "Tous les champs sont optionnels. Si une coordonnée change, la "
+        "polyline et la distance sont recalculées, et TOUS les axes parents "
+        "de ce sous-tronçon sont réordonnés par distance GPS."
+    ),
 )
-def maj_sous_troncon(
+async def maj_sous_troncon(
     sous_id: int,
     payload: SousTronconMaj,
     db: Session = Depends(get_db),
@@ -568,6 +658,42 @@ def maj_sous_troncon(
         sous.code = payload.code.upper()
     if payload.nom_court is not None:
         sous.nom_court = payload.nom_court
+
+    # Coordonnées : recalcule polyline + distance si l'une bouge.
+    coords_changees = any(
+        v is not None for v in [
+            payload.lat_debut, payload.lon_debut,
+            payload.lat_fin, payload.lon_fin,
+        ]
+    )
+    if coords_changees:
+        if payload.lat_debut is not None: sous.lat_debut = payload.lat_debut
+        if payload.lon_debut is not None: sous.lon_debut = payload.lon_debut
+        if payload.lat_fin is not None: sous.lat_fin = payload.lat_fin
+        if payload.lon_fin is not None: sous.lon_fin = payload.lon_fin
+        settings = get_settings()
+        polyline = encoder_polyline([
+            (sous.lat_debut, sous.lon_debut),
+            (sous.lat_fin, sous.lon_fin),
+        ])
+        distance = distance_haversine_m(
+            sous.lat_debut, sous.lon_debut,
+            sous.lat_fin, sous.lon_fin,
+        )
+        if settings.osrm_base_url:
+            try:
+                from app.sources import osrm
+                from app.sources.coordonnees import PointGPS
+                rep = await osrm.route(
+                    PointGPS(lat=sous.lat_debut, lon=sous.lon_debut),
+                    PointGPS(lat=sous.lat_fin, lon=sous.lon_fin),
+                )
+                polyline = rep.polyline_encodee
+                distance = rep.distance_m
+            except Exception:
+                pass
+        sous.polyline = polyline
+        sous.distance_m = distance
 
     if payload.axe_ids is not None:
         cibles = list(db.execute(
@@ -601,6 +727,16 @@ def maj_sous_troncon(
             )
         ).all()}
         for axe_id in axes_finaux | anciens_axes:
+            _reordonner_sous_troncons_par_axe(db, axe_id)
+    elif coords_changees:
+        # Coords ont changé sans toucher aux liens M2M : réordonne les axes actuels.
+        axes_actuels_ids = {row[0] for row in db.execute(
+            select(axe_sous_troncons.c.axe_id).where(
+                axe_sous_troncons.c.sous_troncon_id == sous.id
+            )
+        ).all()}
+        axes_actuels_ids.add(sous.troncon_id)
+        for axe_id in axes_actuels_ids:
             _reordonner_sous_troncons_par_axe(db, axe_id)
 
     db.commit()

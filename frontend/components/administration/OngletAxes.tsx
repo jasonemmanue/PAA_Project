@@ -117,6 +117,61 @@ export function OngletAxes({
     }
   };
 
+  // --- Édition inline d'un axe existant ---
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editNom, setEditNom] = useState<string>("");
+  const [editCouleur, setEditCouleur] = useState<string>("#000000");
+  const [editVitesse, setEditVitesse] = useState<number>(50);
+  const [editLatOrig, setEditLatOrig] = useState<string>("");
+  const [editLonOrig, setEditLonOrig] = useState<string>("");
+  const [editLatDest, setEditLatDest] = useState<string>("");
+  const [editLonDest, setEditLonDest] = useState<string>("");
+  const [editErreur, setEditErreur] = useState<string | null>(null);
+  const [editEnCours, setEditEnCours] = useState<boolean>(false);
+
+  const ouvrirEdition = (t: TronconAdmin) => {
+    setEditId(t.id);
+    setEditNom(t.nom);
+    setEditCouleur(t.couleur ?? "#000000");
+    setEditVitesse(t.vitesse_ref_kmh ?? 50);
+    setEditLatOrig(t.lat_origine != null ? String(t.lat_origine) : "");
+    setEditLonOrig(t.lon_origine != null ? String(t.lon_origine) : "");
+    setEditLatDest(t.lat_destination != null ? String(t.lat_destination) : "");
+    setEditLonDest(t.lon_destination != null ? String(t.lon_destination) : "");
+    setEditErreur(null);
+  };
+
+  const annulerEdition = () => setEditId(null);
+
+  const enregistrerEdition = async () => {
+    if (editId === null) return;
+    setEditEnCours(true);
+    setEditErreur(null);
+    try {
+      const payload: Parameters<typeof api.majTroncon>[1] = {
+        nom: editNom.trim(),
+        couleur: editCouleur,
+        vitesse_ref_kmh: editVitesse,
+      };
+      const parseNum = (s: string) => (s.trim() === "" ? undefined : Number(s));
+      const lo = parseNum(editLatOrig);
+      const lg = parseNum(editLonOrig);
+      const ld = parseNum(editLatDest);
+      const lgd = parseNum(editLonDest);
+      if (lo !== undefined) payload.lat_origine = lo;
+      if (lg !== undefined) payload.lon_origine = lg;
+      if (ld !== undefined) payload.lat_destination = ld;
+      if (lgd !== undefined) payload.lon_destination = lgd;
+      await api.majTroncon(editId, payload);
+      setEditId(null);
+      onChange();
+    } catch (e) {
+      setEditErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEditEnCours(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-fluid-4">
       {/* Formulaire de création + carte interactive — masqués en mode lecture */}
@@ -314,6 +369,116 @@ export function OngletAxes({
       )}
       </>)}
 
+      {/* Panneau d'édition inline */}
+      {peutEcrire && editId !== null && (
+        <Card titre={`✏️ Modifier l'axe #${editId}`}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Nom
+              <input
+                type="text"
+                value={editNom}
+                onChange={(e) => setEditNom(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Couleur
+              <input
+                type="color"
+                value={editCouleur}
+                onChange={(e) => setEditCouleur(e.target.value)}
+                className="h-10 w-20 rounded border app-border cursor-pointer"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Vitesse de référence (km/h)
+              <input
+                type="number"
+                step={1}
+                min={10}
+                max={130}
+                value={editVitesse}
+                onChange={(e) => setEditVitesse(Number(e.target.value))}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <div />
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Latitude origine
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editLatOrig}
+                onChange={(e) => setEditLatOrig(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base font-mono
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Longitude origine
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editLonOrig}
+                onChange={(e) => setEditLonOrig(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base font-mono
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Latitude destination
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editLatDest}
+                onChange={(e) => setEditLatDest(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base font-mono
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Longitude destination
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editLonDest}
+                onChange={(e) => setEditLonDest(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base font-mono
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-fluid-xs app-text-muted">
+            Si vous modifiez une coordonnée, la polyline et la distance sont recalculées automatiquement (OSRM si disponible, sinon segment droit). Les sous-tronçons de cet axe sont réordonnés par distance GPS.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={enregistrerEdition}
+              disabled={editEnCours || !editNom.trim()}
+              className="btn-primary disabled:opacity-50 min-h-[42px]"
+            >
+              {editEnCours ? "Enregistrement…" : "💾 Enregistrer"}
+            </button>
+            <button
+              type="button"
+              onClick={annulerEdition}
+              className="btn-secondary min-h-[42px]"
+            >
+              ✕ Annuler
+            </button>
+          </div>
+          {editErreur && (
+            <div className="mt-3 rounded-md bg-statut-congestionne/10 border border-statut-congestionne/40 px-3 py-2 text-fluid-sm text-statut-congestionne">
+              {editErreur}
+            </div>
+          )}
+        </Card>
+      )}
+
       <Card titre={`${troncons.filter((t) => t.actif).length} axe${troncons.filter((t) => t.actif).length > 1 ? "s" : ""} actif${troncons.filter((t) => t.actif).length > 1 ? "s" : ""}`}>
         <div className="overflow-x-auto">
           <table className="min-w-full text-fluid-sm">
@@ -346,15 +511,28 @@ export function OngletAxes({
                       {t.couleur}
                     </span>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 whitespace-nowrap">
                     {t.actif ? (
-                      <button
-                        type="button"
-                        onClick={() => archiver(t)}
-                        className="text-fluid-xs text-statut-congestionne hover:underline"
-                      >
-                        🗄 Archiver
-                      </button>
+                      <div className="flex gap-2">
+                        {peutEcrire && (
+                          <button
+                            type="button"
+                            onClick={() => ouvrirEdition(t)}
+                            className="text-fluid-xs text-paa-navy-700 dark:text-paa-blue-200 hover:underline"
+                          >
+                            ✏️ Modifier
+                          </button>
+                        )}
+                        {peutEcrire && (
+                          <button
+                            type="button"
+                            onClick={() => archiver(t)}
+                            className="text-fluid-xs text-statut-congestionne hover:underline"
+                          >
+                            🗄 Archiver
+                          </button>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-fluid-xs app-text-muted">
                         Archivé

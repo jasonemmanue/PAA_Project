@@ -145,6 +145,70 @@ export function OngletSousTroncons({
     }
   };
 
+  // --- Édition inline d'un sous-tronçon existant ---
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editCode, setEditCode] = useState<string>("");
+  const [editNomCourt, setEditNomCourt] = useState<string>("");
+  const [editLatDebut, setEditLatDebut] = useState<string>("");
+  const [editLonDebut, setEditLonDebut] = useState<string>("");
+  const [editLatFin, setEditLatFin] = useState<string>("");
+  const [editLonFin, setEditLonFin] = useState<string>("");
+  const [editAxes, setEditAxes] = useState<Set<number>>(new Set());
+  const [editErreur, setEditErreur] = useState<string | null>(null);
+  const [editEnCours, setEditEnCours] = useState<boolean>(false);
+
+  const ouvrirEdition = (s: SousTroncon) => {
+    setEditId(s.id);
+    setEditCode(s.code);
+    setEditNomCourt(s.nom_court);
+    setEditLatDebut(String(s.lat_debut ?? ""));
+    setEditLonDebut(String(s.lon_debut ?? ""));
+    setEditLatFin(String(s.lat_fin ?? ""));
+    setEditLonFin(String(s.lon_fin ?? ""));
+    setEditAxes(new Set(s.axe_ids ?? [s.troncon_id]));
+    setEditErreur(null);
+  };
+
+  const annulerEdition = () => setEditId(null);
+
+  const basculerEditAxe = (id: number) => {
+    setEditAxes((prec) => {
+      const n = new Set(prec);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  };
+
+  const enregistrerEdition = async () => {
+    if (editId === null) return;
+    setEditEnCours(true);
+    setEditErreur(null);
+    try {
+      const payload: Parameters<typeof api.majSousTroncon>[1] = {
+        code: editCode.trim().toUpperCase(),
+        nom_court: editNomCourt.trim(),
+      };
+      const parseNum = (s: string) => (s.trim() === "" ? undefined : Number(s));
+      const a = parseNum(editLatDebut);
+      const b = parseNum(editLonDebut);
+      const c = parseNum(editLatFin);
+      const d = parseNum(editLonFin);
+      if (a !== undefined) payload.lat_debut = a;
+      if (b !== undefined) payload.lon_debut = b;
+      if (c !== undefined) payload.lat_fin = c;
+      if (d !== undefined) payload.lon_fin = d;
+      if (editAxes.size > 0) payload.axe_ids = Array.from(editAxes);
+      await api.majSousTroncon(editId, payload);
+      setEditId(null);
+      void chargerSousTroncons();
+    } catch (e) {
+      setEditErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEditEnCours(false);
+    }
+  };
+
   const parent = troncons.find((t) => t.id === parentId);
   // Suggérer le prochain code (T<n><lettre> selon ordre)
   const lettresUtilisees = sousTroncons.map((s) => s.code.slice(-1).toUpperCase());
@@ -406,6 +470,126 @@ export function OngletSousTroncons({
       )}
       </>)}
 
+      {/* Panneau d'édition inline */}
+      {peutEcrire && editId !== null && (
+        <Card titre={`✏️ Modifier le tronçon #${editId}`}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Code
+              <input
+                type="text"
+                value={editCode}
+                onChange={(e) => setEditCode(e.target.value.toUpperCase())}
+                maxLength={10}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base font-mono
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Nom court
+              <input
+                type="text"
+                value={editNomCourt}
+                onChange={(e) => setEditNomCourt(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Latitude début
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editLatDebut}
+                onChange={(e) => setEditLatDebut(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base font-mono
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Longitude début
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editLonDebut}
+                onChange={(e) => setEditLonDebut(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base font-mono
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Latitude fin
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editLatFin}
+                onChange={(e) => setEditLatFin(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base font-mono
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-fluid-sm font-medium">
+              Longitude fin
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editLonFin}
+                onChange={(e) => setEditLonFin(e.target.value)}
+                className="rounded-md border app-border app-surface px-3 py-2 text-fluid-base font-mono
+                           focus:outline-none focus:ring-2 focus:ring-paa-blue-400 min-h-[42px]"
+              />
+            </label>
+          </div>
+          <div className="mt-3 rounded-md border app-border bg-amber-50/60 dark:bg-amber-900/20 p-3">
+            <h4 className="text-fluid-sm font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-2">
+              🔗 Axes parents rattachés
+            </h4>
+            <div className="grid gap-1 md:grid-cols-2">
+              {axesDispo.map((t) => (
+                <label
+                  key={`ed-ax-${t.id}`}
+                  className="flex items-center gap-2 rounded border app-border bg-white
+                             dark:bg-paa-navy-900 px-2 py-1 text-fluid-xs cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={editAxes.has(t.id)}
+                    onChange={() => basculerEditAxe(t.id)}
+                    className="h-4 w-4 accent-paa-navy-700"
+                  />
+                  <span className="flex-1 truncate">{t.nom}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <p className="mt-2 text-fluid-xs app-text-muted">
+            Coord modifiées → polyline + distance recalculées et sous-tronçons réordonnés sur chaque axe parent.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={enregistrerEdition}
+              disabled={editEnCours || !editCode.trim() || !editNomCourt.trim()}
+              className="btn-primary disabled:opacity-50 min-h-[42px]"
+            >
+              {editEnCours ? "Enregistrement…" : "💾 Enregistrer"}
+            </button>
+            <button
+              type="button"
+              onClick={annulerEdition}
+              className="btn-secondary min-h-[42px]"
+            >
+              ✕ Annuler
+            </button>
+          </div>
+          {editErreur && (
+            <div className="mt-3 rounded-md bg-statut-congestionne/10 border border-statut-congestionne/40 px-3 py-2 text-fluid-sm text-statut-congestionne">
+              {editErreur}
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Liste des tronçons codifiés de l'axe sélectionné */}
       <Card titre={`Tronçons de ${parent?.nom ?? "…"} (${sousTroncons.length})`}>
         <div className="overflow-x-auto">
@@ -415,13 +599,14 @@ export function OngletSousTroncons({
                 <th className="px-3 py-2 font-medium">Code</th>
                 <th className="px-3 py-2 font-medium">Nom</th>
                 <th className="px-3 py-2 font-medium text-right">Distance</th>
-                <th className="px-3 py-2 font-medium">État</th>
+                <th className="px-3 py-2 font-medium">Axes</th>
+                <th className="px-3 py-2 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {sousTroncons.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-3 py-4 text-center app-text-muted text-fluid-xs">
+                  <td colSpan={5} className="px-3 py-4 text-center app-text-muted text-fluid-xs">
                     Aucun tronçon défini pour cet axe.
                   </td>
                 </tr>
@@ -431,10 +616,30 @@ export function OngletSousTroncons({
                     <td className="px-3 py-2 font-mono font-semibold">{s.code}</td>
                     <td className="px-3 py-2">{s.nom_court}</td>
                     <td className="px-3 py-2 text-right">{s.distance_m} m</td>
-                    <td className="px-3 py-2">
-                      <span className="inline-block rounded bg-statut-fluide/20 px-2 py-0.5 text-fluid-xs font-medium text-statut-fluide">
-                        Actif
-                      </span>
+                    <td className="px-3 py-2 text-fluid-xs">
+                      {(s.axe_ids ?? [s.troncon_id]).length > 1
+                        ? `${(s.axe_ids ?? []).length} axes`
+                        : "1 axe"}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {peutEcrire && (
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => ouvrirEdition(s)}
+                            className="text-fluid-xs text-paa-navy-700 dark:text-paa-blue-200 hover:underline"
+                          >
+                            ✏️ Modifier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => archiver(s)}
+                            className="text-fluid-xs text-statut-congestionne hover:underline"
+                          >
+                            🗄 Archiver
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))
