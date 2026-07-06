@@ -103,7 +103,7 @@ export function PageCarte() {
         </div>
 
         {/* Panneau liste — colonne droite scrollable (hauteur calée sur la carte) */}
-        <div className="h-[45vh] overflow-y-auto lg:h-[70vh]">
+        <div className="h-[55vh] overflow-y-auto lg:h-[70vh]">
           <PanneauTroncons
             etat={etat}
             selectionId={selectionId}

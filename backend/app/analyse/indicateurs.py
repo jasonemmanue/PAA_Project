@@ -44,6 +44,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.analyse.aggregation import (
+    agreger_mesures_axe,
+    axe_a_sous_troncons,
+    distance_ref_sous_troncons,
+)
 from app.analyse.congestion import (
     ClasseCongestionDEESP,
     classer_congestion,
@@ -159,25 +164,40 @@ def calcul_indicateurs(
                 f"ou pas rattaché à l'axe {troncon_id}."
             )
 
-    ref_dist = sous.distance_m if sous is not None else troncon.distance_m
-    ref_vit = 50.0 if sous is not None else troncon.vitesse_ref_kmh
+    # Si on interroge un axe sans sous_troncon_id ET que l'axe a des sous-
+    # tronçons actifs, la distance de référence est la somme des sous.
+    utiliser_aggregation = (
+        sous_troncon_id is None and axe_a_sous_troncons(db, troncon_id)
+    )
+    if sous is not None:
+        ref_dist = sous.distance_m
+        ref_vit = 50.0
+    elif utiliser_aggregation:
+        ref_dist = distance_ref_sous_troncons(db, troncon_id)
+        ref_vit = troncon.vitesse_ref_kmh
+    else:
+        ref_dist = troncon.distance_m
+        ref_vit = troncon.vitesse_ref_kmh
     t_ref_50 = ref_dist / (ref_vit / 3.6)
 
-    # Chargement des mesures de la fenêtre (succès uniquement).
-    # Quand on interroge un axe (sous_troncon_id=None), on exclut les
-    # mesures portant sur un sous-tronçon — elles ont des durées courtes
-    # (portion d'axe) qui contamineraient les min/moyen/max de l'axe entier.
-    requete = select(Mesure).where(
-        Mesure.troncon_id == troncon_id,
-        Mesure.horodatage >= debut_utc,
-        Mesure.horodatage <= fin_utc,
-        Mesure.duree_trafic_s.is_not(None),
-    )
-    if sous_troncon_id is not None:
-        requete = requete.where(Mesure.sous_troncon_id == sous_troncon_id)
+    # Chargement des mesures. Si l'axe a des sous-tronçons, on agrège
+    # (somme des durées par créneau), sinon on lit les mesures directes.
+    if utiliser_aggregation:
+        mesures = agreger_mesures_axe(
+            db, troncon_id, debut_utc, fin_utc, exclure_aberrantes=False,
+        )
     else:
-        requete = requete.where(Mesure.sous_troncon_id.is_(None))
-    mesures: list[Mesure] = list(db.execute(requete).scalars())
+        requete = select(Mesure).where(
+            Mesure.troncon_id == troncon_id,
+            Mesure.horodatage >= debut_utc,
+            Mesure.horodatage <= fin_utc,
+            Mesure.duree_trafic_s.is_not(None),
+        )
+        if sous_troncon_id is not None:
+            requete = requete.where(Mesure.sous_troncon_id == sous_troncon_id)
+        else:
+            requete = requete.where(Mesure.sous_troncon_id.is_(None))
+        mesures = list(db.execute(requete).scalars())
 
     # Filtre par plage horaire locale et type de jour si nécessaire
     filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
@@ -365,25 +385,40 @@ def serie_temporelle(
                 f"ou pas rattaché à l'axe {troncon_id}."
             )
 
-    ref_dist = sous.distance_m if sous is not None else troncon.distance_m
-    ref_vit = 50.0 if sous is not None else troncon.vitesse_ref_kmh
+    utiliser_aggregation = (
+        sous_troncon_id is None and axe_a_sous_troncons(db, troncon_id)
+    )
+    if sous is not None:
+        ref_dist = sous.distance_m
+        ref_vit = 50.0
+    elif utiliser_aggregation:
+        ref_dist = distance_ref_sous_troncons(db, troncon_id)
+        ref_vit = troncon.vitesse_ref_kmh
+    else:
+        ref_dist = troncon.distance_m
+        ref_vit = troncon.vitesse_ref_kmh
     t_ref_50 = ref_dist / (ref_vit / 3.6)
     fuseau_local = ZoneInfo(get_settings().tz)
 
-    requete = select(Mesure).where(
-        Mesure.troncon_id == troncon_id,
-        Mesure.horodatage >= debut_utc,
-        Mesure.horodatage <= fin_utc,
-        Mesure.duree_trafic_s.is_not(None),
-    )
-    if sous_troncon_id is not None:
-        requete = requete.where(Mesure.sous_troncon_id == sous_troncon_id)
+    if utiliser_aggregation:
+        mesures = agreger_mesures_axe(
+            db, troncon_id, debut_utc, fin_utc,
+            exclure_aberrantes=(not inclure_aberrantes),
+        )
     else:
-        requete = requete.where(Mesure.sous_troncon_id.is_(None))
-    if not inclure_aberrantes:
-        requete = requete.where(Mesure.aberrante.is_(False))
-
-    mesures: list[Mesure] = list(db.execute(requete).scalars())
+        requete = select(Mesure).where(
+            Mesure.troncon_id == troncon_id,
+            Mesure.horodatage >= debut_utc,
+            Mesure.horodatage <= fin_utc,
+            Mesure.duree_trafic_s.is_not(None),
+        )
+        if sous_troncon_id is not None:
+            requete = requete.where(Mesure.sous_troncon_id == sous_troncon_id)
+        else:
+            requete = requete.where(Mesure.sous_troncon_id.is_(None))
+        if not inclure_aberrantes:
+            requete = requete.where(Mesure.aberrante.is_(False))
+        mesures = list(db.execute(requete).scalars())
 
     # Filtre par plage horaire locale et type de jour si nécessaire
     filtrer_heure = not (heure_debut == 0 and heure_fin == 24)

@@ -370,7 +370,7 @@ export function OngletSousTroncons({
             </span>{" "}
             (toujours inclus)
           </p>
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-2 md:grid-cols-2 max-h-[40vh] overflow-y-auto">
             {axesDispo
               .filter((t) => t.id !== parentId)
               .map((t) => (

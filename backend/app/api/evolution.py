@@ -21,6 +21,10 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.models import EvolutionIndicateur, Mesure, SourceMesure, Troncon
+from app.analyse.aggregation import (
+    agreger_durees_par_creneau,
+    axe_a_sous_troncons,
+)
 
 
 router = APIRouter(prefix="/evolution", tags=["évolution pluriannuelle"])
@@ -104,35 +108,53 @@ def _stats_periode_par_troncon(
     """
     fuseau = ZoneInfo(get_settings().tz)
 
-    rows = list(
-        db.execute(
-            select(Mesure.duree_trafic_s, Mesure.horodatage)
-            .where(
-                Mesure.troncon_id == troncon_id,
-                Mesure.sous_troncon_id.is_(None),
-                Mesure.source == SourceMesure.google,
-                Mesure.duree_trafic_s.is_not(None),
-                Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_utc,
-                Mesure.horodatage <= fin_utc,
-            )
-        ).all()
-    )
-
+    utiliser_agg = axe_a_sous_troncons(db, troncon_id)
     filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
     par_type: dict[str, list[float]] = {"jour_ouvrable": [], "week_end": []}
-    for duree_s, horodatage in rows:
-        if duree_s is None:
-            continue
-        h_local = (
-            horodatage.astimezone(fuseau)
-            if horodatage.tzinfo
-            else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+
+    if utiliser_agg:
+        tuples_agg = agreger_durees_par_creneau(
+            db, troncon_id, debut_utc, fin_utc, source_google_only=True,
         )
-        if filtrer_heure and not (heure_debut <= h_local.hour < heure_fin):
-            continue
-        tj = "week_end" if h_local.weekday() >= 5 else "jour_ouvrable"
-        par_type[tj].append(duree_s / 60.0)
+        nb_total = len(tuples_agg)
+        for horodatage, duree_s, _src in tuples_agg:
+            h_local = (
+                horodatage.astimezone(fuseau)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if filtrer_heure and not (heure_debut <= h_local.hour < heure_fin):
+                continue
+            tj = "week_end" if h_local.weekday() >= 5 else "jour_ouvrable"
+            par_type[tj].append(duree_s / 60.0)
+    else:
+        rows = list(
+            db.execute(
+                select(Mesure.duree_trafic_s, Mesure.horodatage)
+                .where(
+                    Mesure.troncon_id == troncon_id,
+                    Mesure.sous_troncon_id.is_(None),
+                    Mesure.source == SourceMesure.google,
+                    Mesure.duree_trafic_s.is_not(None),
+                    Mesure.aberrante.is_(False),
+                    Mesure.horodatage >= debut_utc,
+                    Mesure.horodatage <= fin_utc,
+                )
+            ).all()
+        )
+        nb_total = len(rows)
+        for duree_s, horodatage in rows:
+            if duree_s is None:
+                continue
+            h_local = (
+                horodatage.astimezone(fuseau)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if filtrer_heure and not (heure_debut <= h_local.hour < heure_fin):
+                continue
+            tj = "week_end" if h_local.weekday() >= 5 else "jour_ouvrable"
+            par_type[tj].append(duree_s / 60.0)
 
     def _calc(valeurs: list[float]) -> dict | None:
         if not valeurs:
@@ -147,7 +169,7 @@ def _stats_periode_par_troncon(
     return {
         "jour_ouvrable": _calc(par_type["jour_ouvrable"]),
         "week_end": _calc(par_type["week_end"]),
-        "nb_mesures_total": len(rows),
+        "nb_mesures_total": nb_total,
     }
 
 

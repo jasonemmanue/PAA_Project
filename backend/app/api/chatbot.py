@@ -127,6 +127,11 @@ Gendarmerie du port : LAT: 5.28631, LON: -4.00489.
 Ces coordonnées sont précises à moins de 10 m (GPS terrain recalibré). L'autocomplétion intégrée à la page Administration retourne directement ces coordonnées en priorité (badge PAA), avant Google Places et Nominatim.
 
 ══════════════════════════════════════
+AGRÉGATION AXE = SOMME DES TRONÇONS
+══════════════════════════════════════
+Quand un axe possède des tronçons codifiés (T1A, T1B…), toutes les mesures sont collectées au niveau des tronçons codifiés individuellement. Les indicateurs de l'axe complet sont ensuite calculés automatiquement par agrégation : le temps de traversée de l'axe est la SOMME des temps de traversée de ses tronçons codifiés pour chaque créneau horaire. Par exemple, si l'axe 1 (CARENA vers Palm Beach) possède 12 tronçons codifiés et que chaque tronçon a été mesuré à 10h, le temps total de l'axe à 10h est la somme des 12 durées individuelles. La congestion de l'axe suit la règle DEESP : l'axe est congestionné si AU MOINS UN de ses tronçons est congestionné (rouge ou orange long), et fluide SEULEMENT si TOUS ses tronçons sont fluides. Les pourcentages rouge/orange/vert de l'axe sont la moyenne pondérée par la distance de chaque tronçon. Cette logique s'applique sur toutes les pages : Indicateurs (KPI et courbe), Rapport DEESP (matrices congestion et temps), Heure optimale (créneaux), Temps de traversée (estimations), et aussi dans les réponses du chatbot (données RAG injectées). La distance de référence de l'axe est la somme des distances de ses tronçons codifiés.
+
+══════════════════════════════════════
 FONCTIONNALITÉS TRANSVERSES (DISPONIBLES SUR TOUTES LES PAGES)
 ══════════════════════════════════════
 

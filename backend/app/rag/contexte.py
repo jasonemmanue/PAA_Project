@@ -24,6 +24,12 @@ from app.models.models import (
     SourceMesure,
     Troncon,
 )
+from app.analyse.aggregation import (
+    agreger_mesures_axe,
+    agreger_durees_par_creneau,
+    axe_a_sous_troncons,
+    distance_ref_sous_troncons,
+)
 
 _FUSEAU = ZoneInfo("Africa/Abidjan")
 
@@ -114,20 +120,27 @@ def recuperer_etat_trafic(db: Session) -> str:
     lignes = [f"ÉTAT DU TRAFIC — relevé le {horodatage_str} (heure Abidjan)"]
 
     for t in troncons:
-        mesure = db.execute(
-            select(Mesure)
-            .where(
-                Mesure.troncon_id == t.id,
-                Mesure.sous_troncon_id.is_(None),
-                Mesure.source == SourceMesure.google,
-                Mesure.duree_trafic_s.isnot(None),
-                Mesure.horodatage >= fenetre,
+        if axe_a_sous_troncons(db, t.id):
+            mesures_agg = agreger_mesures_axe(
+                db, t.id, fenetre, maintenant_utc,
+                source_google_only=True, exclure_aberrantes=False,
             )
-            .order_by(desc(Mesure.horodatage))
-            .limit(1)
-        ).scalar_one_or_none()
-
-        ref_s = t.distance_m / 1000 / 50 * 3600 if t.distance_m else None
+            mesure = mesures_agg[-1] if mesures_agg else None
+            ref_s = distance_ref_sous_troncons(db, t.id) / 1000 / 50 * 3600
+        else:
+            mesure = db.execute(
+                select(Mesure)
+                .where(
+                    Mesure.troncon_id == t.id,
+                    Mesure.sous_troncon_id.is_(None),
+                    Mesure.source == SourceMesure.google,
+                    Mesure.duree_trafic_s.isnot(None),
+                    Mesure.horodatage >= fenetre,
+                )
+                .order_by(desc(Mesure.horodatage))
+                .limit(1)
+            ).scalar_one_or_none()
+            ref_s = t.distance_m / 1000 / 50 * 3600 if t.distance_m else None
 
         if mesure:
             age_min = int(
@@ -180,20 +193,27 @@ def recuperer_temps_traversee(db: Session) -> str:
     lignes = [f"TEMPS DE TRAVERSÉE — {horodatage_str}"]
 
     for t in troncons:
-        mesure = db.execute(
-            select(Mesure)
-            .where(
-                Mesure.troncon_id == t.id,
-                Mesure.sous_troncon_id.is_(None),
-                Mesure.source == SourceMesure.google,
-                Mesure.duree_trafic_s.isnot(None),
-                Mesure.horodatage >= fenetre,
+        if axe_a_sous_troncons(db, t.id):
+            mesures_agg = agreger_mesures_axe(
+                db, t.id, fenetre, maintenant_utc,
+                source_google_only=True, exclure_aberrantes=False,
             )
-            .order_by(desc(Mesure.horodatage))
-            .limit(1)
-        ).scalar_one_or_none()
-
-        ref_s = t.distance_m / 1000 / 50 * 3600 if t.distance_m else None
+            mesure = mesures_agg[-1] if mesures_agg else None
+            ref_s = distance_ref_sous_troncons(db, t.id) / 1000 / 50 * 3600
+        else:
+            mesure = db.execute(
+                select(Mesure)
+                .where(
+                    Mesure.troncon_id == t.id,
+                    Mesure.sous_troncon_id.is_(None),
+                    Mesure.source == SourceMesure.google,
+                    Mesure.duree_trafic_s.isnot(None),
+                    Mesure.horodatage >= fenetre,
+                )
+                .order_by(desc(Mesure.horodatage))
+                .limit(1)
+            ).scalar_one_or_none()
+            ref_s = t.distance_m / 1000 / 50 * 3600 if t.distance_m else None
 
         if mesure:
             ecart = ""
@@ -331,25 +351,36 @@ def recuperer_statistiques_semaine(db: Session) -> str:
     lignes = [f"STATISTIQUES SEMAINE EN COURS (depuis lundi {debut_str})"]
 
     for t in troncons:
-        mesures = db.execute(
-            select(Mesure.duree_trafic_s, Mesure.est_congestionne)
-            .where(
-                Mesure.troncon_id == t.id,
-                Mesure.sous_troncon_id.is_(None),
-                Mesure.source == SourceMesure.google,
-                Mesure.duree_trafic_s.isnot(None),
-                Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_semaine_utc,
+        if axe_a_sous_troncons(db, t.id):
+            mesures_agg = agreger_mesures_axe(
+                db, t.id, debut_semaine_utc, maintenant_utc,
+                source_google_only=True, exclure_aberrantes=True,
             )
-        ).all()
+            if not mesures_agg:
+                lignes.append(f"  T{t.id} — {t.nom} : aucune mesure cette semaine")
+                continue
+            durees = [m.duree_trafic_s for m in mesures_agg]
+            nb_qualifies = sum(1 for m in mesures_agg if m.est_congestionne is not None)
+            nb_cong = sum(1 for m in mesures_agg if m.est_congestionne is True)
+        else:
+            mesures = db.execute(
+                select(Mesure.duree_trafic_s, Mesure.est_congestionne)
+                .where(
+                    Mesure.troncon_id == t.id,
+                    Mesure.sous_troncon_id.is_(None),
+                    Mesure.source == SourceMesure.google,
+                    Mesure.duree_trafic_s.isnot(None),
+                    Mesure.aberrante.is_(False),
+                    Mesure.horodatage >= debut_semaine_utc,
+                )
+            ).all()
+            if not mesures:
+                lignes.append(f"  T{t.id} — {t.nom} : aucune mesure cette semaine")
+                continue
+            durees = [m.duree_trafic_s for m in mesures]
+            nb_qualifies = sum(1 for m in mesures if m.est_congestionne is not None)
+            nb_cong = sum(1 for m in mesures if m.est_congestionne is True)
 
-        if not mesures:
-            lignes.append(f"  T{t.id} — {t.nom} : aucune mesure cette semaine")
-            continue
-
-        durees = [m.duree_trafic_s for m in mesures]
-        nb_qualifies = sum(1 for m in mesures if m.est_congestionne is not None)
-        nb_cong = sum(1 for m in mesures if m.est_congestionne is True)
         taux = (nb_cong / nb_qualifies * 100) if nb_qualifies else 0
 
         lignes.append(

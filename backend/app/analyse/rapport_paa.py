@@ -38,6 +38,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.models import Mesure, SourceMesure, Troncon
+from app.analyse.aggregation import (
+    agreger_durees_par_creneau,
+    agreger_mesures_axe,
+    axe_a_sous_troncons,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -415,50 +420,78 @@ def matrice_congestion(
     """
     fuseau = ZoneInfo(get_settings().tz)
 
-    conds = [
-        Mesure.troncon_id == troncon_id,
-        Mesure.source == SourceMesure.google,
-        Mesure.aberrante.is_(False),
-        Mesure.horodatage >= debut_utc,
-        Mesure.horodatage <= fin_utc,
-    ]
-    if sous_troncon_id is not None:
-        conds.append(Mesure.sous_troncon_id == sous_troncon_id)
-    else:
-        conds.append(Mesure.sous_troncon_id.is_(None))
-    rows = list(
-        db.execute(
-            select(
-                Mesure.horodatage,
-                Mesure.est_congestionne,
-                Mesure.pourcentage_rouge,
-                Mesure.pourcentage_orange,
-            )
-            .where(*conds)
-            .order_by(Mesure.horodatage)
-        ).all()
+    utiliser_aggregation = (
+        sous_troncon_id is None and axe_a_sous_troncons(db, troncon_id)
     )
 
     # Indexation : date_str → heure → cellule (dernière mesure de l'heure)
     par_date_heure: dict[str, dict[int, dict]] = {}
     dates_set: set[str] = set()
 
-    for horodatage, est_cong, pct_rouge, pct_orange in rows:
-        h_local = (
-            horodatage.astimezone(fuseau)
-            if horodatage.tzinfo
-            else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+    if utiliser_aggregation:
+        mesures_agg = agreger_mesures_axe(
+            db, troncon_id, debut_utc, fin_utc,
+            source_google_only=True, exclure_aberrantes=True,
         )
-        if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
-            continue
-        date_str = h_local.date().isoformat()
-        heure = h_local.hour
-        dates_set.add(date_str)
-        par_date_heure.setdefault(date_str, {})[heure] = {
-            "est_congestionne": est_cong,
-            "pct_rouge": round(pct_rouge * 100) if pct_rouge is not None else None,
-            "pct_orange": round(pct_orange * 100) if pct_orange is not None else None,
-        }
+        nb_rows = len(mesures_agg)
+        for m in mesures_agg:
+            h_local = (
+                m.horodatage.astimezone(fuseau)
+                if m.horodatage.tzinfo
+                else m.horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
+                continue
+            date_str = h_local.date().isoformat()
+            heure = h_local.hour
+            dates_set.add(date_str)
+            par_date_heure.setdefault(date_str, {})[heure] = {
+                "est_congestionne": m.est_congestionne,
+                "pct_rouge": round(m.pourcentage_rouge * 100) if m.pourcentage_rouge is not None else None,
+                "pct_orange": round(m.pourcentage_orange * 100) if m.pourcentage_orange is not None else None,
+            }
+    else:
+        conds = [
+            Mesure.troncon_id == troncon_id,
+            Mesure.source == SourceMesure.google,
+            Mesure.aberrante.is_(False),
+            Mesure.horodatage >= debut_utc,
+            Mesure.horodatage <= fin_utc,
+        ]
+        if sous_troncon_id is not None:
+            conds.append(Mesure.sous_troncon_id == sous_troncon_id)
+        else:
+            conds.append(Mesure.sous_troncon_id.is_(None))
+        rows = list(
+            db.execute(
+                select(
+                    Mesure.horodatage,
+                    Mesure.est_congestionne,
+                    Mesure.pourcentage_rouge,
+                    Mesure.pourcentage_orange,
+                )
+                .where(*conds)
+                .order_by(Mesure.horodatage)
+            ).all()
+        )
+        nb_rows = len(rows)
+
+        for horodatage, est_cong, pct_rouge, pct_orange in rows:
+            h_local = (
+                horodatage.astimezone(fuseau)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
+                continue
+            date_str = h_local.date().isoformat()
+            heure = h_local.hour
+            dates_set.add(date_str)
+            par_date_heure.setdefault(date_str, {})[heure] = {
+                "est_congestionne": est_cong,
+                "pct_rouge": round(pct_rouge * 100) if pct_rouge is not None else None,
+                "pct_orange": round(pct_orange * 100) if pct_orange is not None else None,
+            }
 
     dates_list = sorted(dates_set)
 
@@ -477,7 +510,7 @@ def matrice_congestion(
 
     return {
         "troncon_id": troncon_id,
-        "nb_mesures": len(rows),
+        "nb_mesures": nb_rows,
         "dates": dates_list,
         "tranches": tranches,
     }
@@ -511,47 +544,74 @@ def matrice_temps(
     """
     fuseau = ZoneInfo(get_settings().tz)
 
-    conds = [
-        Mesure.troncon_id == troncon_id,
-        Mesure.duree_trafic_s.is_not(None),
-        Mesure.aberrante.is_(False),
-        Mesure.horodatage >= debut_utc,
-        Mesure.horodatage <= fin_utc,
-    ]
-    if sous_troncon_id is not None:
-        conds.append(Mesure.sous_troncon_id == sous_troncon_id)
-    else:
-        conds.append(Mesure.sous_troncon_id.is_(None))
-    rows = list(
-        db.execute(
-            select(
-                Mesure.horodatage,
-                Mesure.duree_trafic_s,
-                Mesure.source,
-            )
-            .where(*conds)
-            .order_by(Mesure.horodatage)
-        ).all()
+    utiliser_aggregation_temps = (
+        sous_troncon_id is None and axe_a_sous_troncons(db, troncon_id)
     )
 
     par_date_heure: dict[str, dict[int, dict]] = {}
     dates_set: set[str] = set()
 
-    for horodatage, duree_s, source in rows:
-        h_local = (
-            horodatage.astimezone(fuseau)
-            if horodatage.tzinfo
-            else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+    if utiliser_aggregation_temps:
+        tuples_agg = agreger_durees_par_creneau(
+            db, troncon_id, debut_utc, fin_utc,
+            source_google_only=False,
         )
-        if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
-            continue
-        date_str = h_local.date().isoformat()
-        heure = h_local.hour
-        dates_set.add(date_str)
-        par_date_heure.setdefault(date_str, {})[heure] = {
-            "duree_s": duree_s,
-            "source": source.value if hasattr(source, "value") else str(source),
-        }
+        nb_rows_t = len(tuples_agg)
+        for horodatage, duree_s, src_str in tuples_agg:
+            h_local = (
+                horodatage.astimezone(fuseau)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
+                continue
+            date_str = h_local.date().isoformat()
+            heure = h_local.hour
+            dates_set.add(date_str)
+            par_date_heure.setdefault(date_str, {})[heure] = {
+                "duree_s": duree_s,
+                "source": src_str,
+            }
+    else:
+        conds = [
+            Mesure.troncon_id == troncon_id,
+            Mesure.duree_trafic_s.is_not(None),
+            Mesure.aberrante.is_(False),
+            Mesure.horodatage >= debut_utc,
+            Mesure.horodatage <= fin_utc,
+        ]
+        if sous_troncon_id is not None:
+            conds.append(Mesure.sous_troncon_id == sous_troncon_id)
+        else:
+            conds.append(Mesure.sous_troncon_id.is_(None))
+        rows = list(
+            db.execute(
+                select(
+                    Mesure.horodatage,
+                    Mesure.duree_trafic_s,
+                    Mesure.source,
+                )
+                .where(*conds)
+                .order_by(Mesure.horodatage)
+            ).all()
+        )
+        nb_rows_t = len(rows)
+
+        for horodatage, duree_s, source in rows:
+            h_local = (
+                horodatage.astimezone(fuseau)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
+                continue
+            date_str = h_local.date().isoformat()
+            heure = h_local.hour
+            dates_set.add(date_str)
+            par_date_heure.setdefault(date_str, {})[heure] = {
+                "duree_s": duree_s,
+                "source": source.value if hasattr(source, "value") else str(source),
+            }
 
     dates_list = sorted(dates_set)
 
@@ -570,7 +630,7 @@ def matrice_temps(
 
     return {
         "troncon_id": troncon_id,
-        "nb_mesures": len(rows),
+        "nb_mesures": nb_rows_t,
         "dates": dates_list,
         "tranches": tranches,
     }

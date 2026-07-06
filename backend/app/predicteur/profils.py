@@ -40,6 +40,12 @@ from app.models.models import (
     SourceMesure,
     Troncon,
 )
+from app.analyse.aggregation import (
+    agreger_durees_par_creneau,
+    agreger_mesures_axe,
+    axe_a_sous_troncons,
+    distance_ref_sous_troncons,
+)
 
 
 SourcePrediction = Literal[
@@ -219,25 +225,38 @@ def _prediction_google(
     """
     debut = instant_utc - timedelta(minutes=fenetre_minutes)
     fin = instant_utc
-    mesure = db.execute(
-        select(Mesure)
-        .where(
-            Mesure.troncon_id == troncon.id,
-            Mesure.sous_troncon_id.is_(None),
-            Mesure.source == SourceMesure.google,
-            Mesure.duree_trafic_s.is_not(None),
-            Mesure.horodatage >= debut,
-            Mesure.horodatage <= fin,
+
+    if axe_a_sous_troncons(db, troncon.id):
+        mesures_agg = agreger_mesures_axe(
+            db, troncon.id, debut, fin,
+            source_google_only=True, exclure_aberrantes=False,
         )
-        .order_by(func.abs(
-            func.extract("epoch", Mesure.horodatage)
-            - func.extract("epoch", instant_utc)
+        if not mesures_agg:
+            return None
+        best = min(mesures_agg, key=lambda m: abs(
+            (m.horodatage - instant_utc).total_seconds()
         ))
-        .limit(1)
-    ).scalar_one_or_none()
-    if mesure is None or not mesure.duree_trafic_s:
-        return None
-    duree_mn = int(round(mesure.duree_trafic_s / 60))
+        duree_mn = int(round(best.duree_trafic_s / 60))
+    else:
+        mesure = db.execute(
+            select(Mesure)
+            .where(
+                Mesure.troncon_id == troncon.id,
+                Mesure.sous_troncon_id.is_(None),
+                Mesure.source == SourceMesure.google,
+                Mesure.duree_trafic_s.is_not(None),
+                Mesure.horodatage >= debut,
+                Mesure.horodatage <= fin,
+            )
+            .order_by(func.abs(
+                func.extract("epoch", Mesure.horodatage)
+                - func.extract("epoch", instant_utc)
+            ))
+            .limit(1)
+        ).scalar_one_or_none()
+        if mesure is None or not mesure.duree_trafic_s:
+            return None
+        duree_mn = int(round(mesure.duree_trafic_s / 60))
     fuseau = ZoneInfo(get_settings().tz)
     instant_local = instant_utc.astimezone(fuseau)
     return Prediction(
@@ -286,32 +305,44 @@ def _prediction_jour_type(
     fin_utc = instant_utc
     debut_utc = fin_utc - timedelta(days=fenetre_jours)
 
-    rows = list(
-        db.execute(
-            select(Mesure.duree_trafic_s, Mesure.horodatage).where(
-                Mesure.troncon_id == troncon.id,
-                Mesure.sous_troncon_id.is_(None),
-                Mesure.source == SourceMesure.google,
-                Mesure.duree_trafic_s.is_not(None),
-                Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_utc,
-                Mesure.horodatage <= fin_utc,
-            )
-        ).all()
-    )
-
-    # Filtrage par type de jour de chaque mesure (en heure locale)
-    durees_s: list[float] = []
-    for duree_s, horodatage in rows:
-        if duree_s is None:
-            continue
-        h_local = (
-            horodatage.astimezone(fuseau)
-            if horodatage.tzinfo
-            else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+    if axe_a_sous_troncons(db, troncon.id):
+        tuples_agg = agreger_durees_par_creneau(
+            db, troncon.id, debut_utc, fin_utc, source_google_only=True,
         )
-        if _type_jour(h_local.date()) == type_jour_cible:
-            durees_s.append(float(duree_s))
+        durees_s: list[float] = []
+        for horodatage, duree_s, _src in tuples_agg:
+            h_local = (
+                horodatage.astimezone(fuseau)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if _type_jour(h_local.date()) == type_jour_cible:
+                durees_s.append(float(duree_s))
+    else:
+        rows = list(
+            db.execute(
+                select(Mesure.duree_trafic_s, Mesure.horodatage).where(
+                    Mesure.troncon_id == troncon.id,
+                    Mesure.sous_troncon_id.is_(None),
+                    Mesure.source == SourceMesure.google,
+                    Mesure.duree_trafic_s.is_not(None),
+                    Mesure.aberrante.is_(False),
+                    Mesure.horodatage >= debut_utc,
+                    Mesure.horodatage <= fin_utc,
+                )
+            ).all()
+        )
+        durees_s = []
+        for duree_s, horodatage in rows:
+            if duree_s is None:
+                continue
+            h_local = (
+                horodatage.astimezone(fuseau)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if _type_jour(h_local.date()) == type_jour_cible:
+                durees_s.append(float(duree_s))
 
     if not durees_s:
         return None
@@ -445,36 +476,56 @@ def _stats_mesures_periode(
 
     fuseau = ZoneInfo(get_settings().tz)
 
-    conditions = [
-        Mesure.troncon_id == troncon_id,
-        Mesure.source == SourceMesure.google,
-        Mesure.duree_trafic_s.is_not(None),
-        Mesure.aberrante.is_(False),
-        Mesure.horodatage >= debut_utc,
-        Mesure.horodatage <= fin_utc,
-    ]
-    if sous_troncon_id is not None:
-        conditions.append(Mesure.sous_troncon_id == sous_troncon_id)
-    else:
-        conditions.append(Mesure.sous_troncon_id.is_(None))
-
-    rows = list(
-        db.execute(
-            select(Mesure.duree_trafic_s, Mesure.horodatage)
-            .where(and_(*conditions))
-        ).all()
+    utiliser_agg = (
+        sous_troncon_id is None and axe_a_sous_troncons(db, troncon_id)
     )
-
     filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
     par_type: dict[str, list[float]] = {"jour_ouvrable": [], "week_end": []}
-    for duree_s, horodatage in rows:
-        if duree_s is None:
-            continue
-        horodatage_local = horodatage.astimezone(fuseau) if horodatage.tzinfo else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
-        if filtrer_heure and not (heure_debut <= horodatage_local.hour < heure_fin):
-            continue
-        tj = _type_jour(horodatage_local.date())
-        par_type[tj].append(duree_s / 60.0)
+
+    if utiliser_agg:
+        tuples_agg = agreger_durees_par_creneau(
+            db, troncon_id, debut_utc, fin_utc, source_google_only=True,
+        )
+        nb_total = len(tuples_agg)
+        for horodatage, duree_s, _src in tuples_agg:
+            h_local = (
+                horodatage.astimezone(fuseau)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if filtrer_heure and not (heure_debut <= h_local.hour < heure_fin):
+                continue
+            tj = _type_jour(h_local.date())
+            par_type[tj].append(duree_s / 60.0)
+    else:
+        conditions = [
+            Mesure.troncon_id == troncon_id,
+            Mesure.source == SourceMesure.google,
+            Mesure.duree_trafic_s.is_not(None),
+            Mesure.aberrante.is_(False),
+            Mesure.horodatage >= debut_utc,
+            Mesure.horodatage <= fin_utc,
+        ]
+        if sous_troncon_id is not None:
+            conditions.append(Mesure.sous_troncon_id == sous_troncon_id)
+        else:
+            conditions.append(Mesure.sous_troncon_id.is_(None))
+
+        rows = list(
+            db.execute(
+                select(Mesure.duree_trafic_s, Mesure.horodatage)
+                .where(and_(*conditions))
+            ).all()
+        )
+        nb_total = len(rows)
+        for duree_s, horodatage in rows:
+            if duree_s is None:
+                continue
+            horodatage_local = horodatage.astimezone(fuseau) if horodatage.tzinfo else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            if filtrer_heure and not (heure_debut <= horodatage_local.hour < heure_fin):
+                continue
+            tj = _type_jour(horodatage_local.date())
+            par_type[tj].append(duree_s / 60.0)
 
     def _calc(valeurs: list[float]) -> dict | None:
         if not valeurs:
@@ -489,5 +540,5 @@ def _stats_mesures_periode(
     return {
         "jour_ouvrable": _calc(par_type["jour_ouvrable"]),
         "week_end": _calc(par_type["week_end"]),
-        "nb_mesures_total": len(rows),
+        "nb_mesures_total": nb_total,
     }

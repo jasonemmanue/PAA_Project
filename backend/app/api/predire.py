@@ -24,6 +24,11 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.models import Mesure, ProfilHoraire, SourceMesure, Troncon
+from app.analyse.aggregation import (
+    agreger_durees_par_creneau,
+    axe_a_sous_troncons,
+    distance_ref_sous_troncons,
+)
 from app.predicteur.profils import (
     predire,
     _stats_mesures_periode,
@@ -262,28 +267,39 @@ async def get_heure_optimale(
         # --- Source 2 : mesures Google 30 derniers jours (repli) ---
         source = "mesures_recentes_30j"
         debut_utc = datetime.now(tz=timezone.utc) - timedelta(days=30)
+        fin_utc_ho = datetime.now(tz=timezone.utc)
 
-        conds_m = [
-            Mesure.troncon_id == troncon_id,
-            Mesure.source == SourceMesure.google,
-            Mesure.duree_trafic_s.isnot(None),
-            Mesure.aberrante.is_(False),
-            Mesure.horodatage >= debut_utc,
-        ]
-        if sous_troncon_id is not None:
-            conds_m.append(Mesure.sous_troncon_id == sous_troncon_id)
+        if sous_troncon_id is None and axe_a_sous_troncons(db, troncon_id):
+            tuples_agg = agreger_durees_par_creneau(
+                db, troncon_id, debut_utc, fin_utc_ho, source_google_only=True,
+            )
+            buckets: dict[int, list[int]] = defaultdict(list)
+            for horodatage, duree_s, _src in tuples_agg:
+                h_local = horodatage.astimezone(fuseau).hour
+                weekday = horodatage.astimezone(fuseau).weekday()
+                if heure_debut <= h_local < heure_fin and weekday in jours_filtre:
+                    buckets[h_local].append(duree_s)
         else:
-            conds_m.append(Mesure.sous_troncon_id.is_(None))
-        mesures_db = db.execute(
-            select(Mesure.horodatage, Mesure.duree_trafic_s).where(*conds_m)
-        ).all()
-
-        buckets: dict[int, list[int]] = defaultdict(list)
-        for m in mesures_db:
-            h_local = m.horodatage.astimezone(fuseau).hour
-            weekday = m.horodatage.astimezone(fuseau).weekday()
-            if heure_debut <= h_local < heure_fin and weekday in jours_filtre:
-                buckets[h_local].append(m.duree_trafic_s)
+            conds_m = [
+                Mesure.troncon_id == troncon_id,
+                Mesure.source == SourceMesure.google,
+                Mesure.duree_trafic_s.isnot(None),
+                Mesure.aberrante.is_(False),
+                Mesure.horodatage >= debut_utc,
+            ]
+            if sous_troncon_id is not None:
+                conds_m.append(Mesure.sous_troncon_id == sous_troncon_id)
+            else:
+                conds_m.append(Mesure.sous_troncon_id.is_(None))
+            mesures_db = db.execute(
+                select(Mesure.horodatage, Mesure.duree_trafic_s).where(*conds_m)
+            ).all()
+            buckets = defaultdict(list)
+            for m in mesures_db:
+                h_local = m.horodatage.astimezone(fuseau).hour
+                weekday = m.horodatage.astimezone(fuseau).weekday()
+                if heure_debut <= h_local < heure_fin and weekday in jours_filtre:
+                    buckets[h_local].append(m.duree_trafic_s)
 
         for h in sorted(buckets.keys()):
             vals = buckets[h]
@@ -309,8 +325,13 @@ async def get_heure_optimale(
     for c in creneaux:
         c["optimal"] = c["heure"] in top3_heures
 
-    # Temps de référence 50 km/h — basé sur la distance du sous-tronçon si demandé
-    ref_dist = sous.distance_m if sous is not None else (troncon.distance_m or 0)
+    # Temps de référence 50 km/h — basé sur la distance du sous-tronçon ou la somme des sous
+    if sous is not None:
+        ref_dist = sous.distance_m
+    elif axe_a_sous_troncons(db, troncon_id):
+        ref_dist = distance_ref_sous_troncons(db, troncon_id)
+    else:
+        ref_dist = troncon.distance_m or 0
     ref_s = int(ref_dist / 1000 / 50 * 3600) if ref_dist else None
 
     nom_affichage = (
