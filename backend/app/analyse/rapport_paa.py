@@ -361,7 +361,31 @@ def troncons_congestionnes(
             (m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)
         ] += 1
 
-    # Agrégation par (troncon, sous_troncon, heure) — règle SEMAINE
+    # ── Passe 1 : agrégation axe depuis sous-tronçons ──
+    # Pour chaque axe avec sous-tronçons : un créneau (weekday, hour) est
+    # congestionné au niveau axe si AU MOINS UN sous-tronçon est congestionné.
+    # On construit les occurrences axe-level avant d'appliquer les seuils.
+    axes_avec_sous: set[int] = set()
+    for (tid, sid, _wd, _h) in occurrences:
+        if sid is not None:
+            axes_avec_sous.add(tid)
+
+    # Pour chaque axe avec sous-tronçons : (axe_id, weekday, hour) → nb créneaux
+    # où au moins 1 sous-tronçon est congestionné. On compte 1 par créneau
+    # (pas le nb de sous-tronçons congestionnés).
+    creneaux_axe: dict[tuple[int, int, int], int] = defaultdict(int)
+    for (tid, sid, wd, h), nb in occurrences.items():
+        if sid is not None and tid in axes_avec_sous and nb > 0:
+            # Marquer que ce créneau (axe, weekday, hour) a au moins 1 congestion
+            creneaux_axe[(tid, wd, h)] = 1  # binaire : 1 = congestionné
+
+    # Injecter les occurrences axe-level (sous_troncon_id=None)
+    for (tid, wd, h), _flag in creneaux_axe.items():
+        occurrences[(tid, None, wd, h)] = max(
+            occurrences.get((tid, None, wd, h), 0), 1
+        )
+
+    # ── Passe 2 : agrégation par (troncon, sous_troncon, heure) — règle SEMAINE ──
     par_cle_heure: dict[tuple[int, int | None, int], dict[int, int]] = defaultdict(dict)
     for (tid, sid, wd, h), nb in occurrences.items():
         par_cle_heure[(tid, sid, h)][wd] = nb
