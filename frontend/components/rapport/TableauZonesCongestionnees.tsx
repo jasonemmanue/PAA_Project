@@ -65,15 +65,15 @@ export function TableauZonesCongestionnees({
   heureDebut?: number;
   heureFin?: number;
 }) {
-  const toutes = rapport?.entrees ?? [];
-  const entreesAxes = toutes.filter((e) => e.sous_troncon_id === null);
-  const entreesTroncons = toutes.filter((e) => e.sous_troncon_id !== null);
+  // Seuls les tronçons codifiés (sous-tronçons) sont affichés — conformément
+  // à la méthodologie DEESP : la congestion s'évalue au niveau tronçon.
+  const entrees = (rapport?.entrees ?? []).filter((e) => e.sous_troncon_id !== null);
 
   return (
     <Card
-      titre="Tableau 16 — Axes congestionnés (règles DEESP)"
+      titre="Tableau 16 — Tronçons congestionnés (règles DEESP)"
       description={
-        "Axe congestionné si : (a) ≥ 3 occurrences sur un jour-indicatif " +
+        "Tronçon congestionné si : (a) ≥ 3 occurrences sur un jour-indicatif " +
         "à la même heure, OU (b) ≥ 4 occurrences à la même heure dans la semaine. " +
         "Critère DEESP par mesure : couleur Google Maps — rouge présent OU orange ≥ 50 % du tronçon."
       }
@@ -88,44 +88,7 @@ export function TableauZonesCongestionnees({
         </div>
       )}
 
-      {/* ──── Tableau 1 : AXES ──── */}
-      <h3 className="mt-2 mb-2 text-fluid-base font-semibold text-paa-navy-800 dark:text-paa-blue-200">
-        Congestion par axe
-      </h3>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-fluid-sm">
-          <thead className="bg-paa-navy-700 text-white dark:bg-paa-navy-800">
-            <tr>
-              <Th>AXE</Th>
-              <Th>TRANCHE HORAIRE</Th>
-              <Th className="text-right">NB / SEMAINE</Th>
-              <Th>RÈGLE DÉCLENCHÉE</Th>
-              <Th>RÉPARTITION PAR JOUR</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {entreesAxes.map((e) => (
-              <LigneAxe key={`${e.troncon_id}-${e.heure}`} e={e} />
-            ))}
-            {entreesAxes.length === 0 && (
-              <tr>
-                <Td colSpan={5}>
-                  <span className="app-text-muted">
-                    {rapport
-                      ? "Aucun axe congestionné sur cette campagne."
-                      : "Chargement…"}
-                  </span>
-                </Td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ──── Tableau 2 : TRONÇONS CODIFIÉS ──── */}
-      <h3 className="mt-6 mb-2 text-fluid-base font-semibold text-paa-navy-800 dark:text-paa-blue-200">
-        Congestion par tronçon codifié
-      </h3>
+      {/* ──── Tronçons codifiés congestionnés ──── */}
       <div className="overflow-x-auto">
         <table className="min-w-full text-fluid-sm">
           <thead className="bg-paa-navy-700 text-white dark:bg-paa-navy-800">
@@ -139,10 +102,10 @@ export function TableauZonesCongestionnees({
             </tr>
           </thead>
           <tbody>
-            {entreesTroncons.map((e) => (
+            {entrees.map((e) => (
               <LigneTroncon key={`${e.sous_troncon_id}-${e.troncon_id}-${e.heure}`} e={e} />
             ))}
-            {entreesTroncons.length === 0 && (
+            {entrees.length === 0 && (
               <tr>
                 <Td colSpan={6}>
                   <span className="app-text-muted">
@@ -157,12 +120,12 @@ export function TableauZonesCongestionnees({
         </table>
       </div>
 
-      {entreesTroncons.length > 0 && (
+      {entrees.length > 0 && (
         <div className="mt-2 flex justify-end gap-2">
           <BoutonExportCsv
-            label="Exporter tronçons CSV"
+            label="Exporter CSV"
             onClick={() =>
-              exporterCsv(entreesTroncons, `congestion_troncons_${rapport?.campagne ?? "export"}.csv`, "TRONÇON")
+              exporterCsv(entrees, `congestion_troncons_${rapport?.campagne ?? "export"}.csv`, "TRONÇON")
             }
           />
         </div>
@@ -180,22 +143,6 @@ export function TableauZonesCongestionnees({
         />
       </div>
     </Card>
-  );
-}
-
-function LigneAxe({ e }: { e: EntreeCongestion }) {
-  return (
-    <tr className="border-t app-border">
-      <Td>{e.troncon_nom}</Td>
-      <Td className="font-mono">{e.tranche}</Td>
-      <Td className="text-right font-semibold">{e.nb_total_semaine}</Td>
-      <Td>
-        <Regles e={e} />
-      </Td>
-      <Td>
-        <Repartition e={e} />
-      </Td>
-    </tr>
   );
 }
 

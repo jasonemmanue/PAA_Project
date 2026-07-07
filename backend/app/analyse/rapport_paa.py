@@ -198,31 +198,53 @@ def temps_traversee_par_troncon(
         ).scalars()
     )
 
-    mesures = list(
-        db.execute(
-            select(Mesure).where(
-                Mesure.source == SourceMesure.google,
-                Mesure.sous_troncon_id.is_(None),
-                Mesure.duree_trafic_s.is_not(None),
-                Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_utc,
-                Mesure.horodatage <= fin_utc,
-            )
-        ).scalars()
-    )
-
     # Group key : (troncon_id, type_jour, date_locale) → list[duree_trafic_s]
     # ATTENTION : on FILTRE strictement à la plage DEESP officielle (7h-19h)
     # même si la collecte étend à 24h/24, pour préserver la conformité
     # méthodologique (cf. CLAUDE.md § 4.5.1).
     par_jour: dict[tuple[int, TypeJour, date], list[int]] = defaultdict(list)
-    for m in mesures:
-        local = m.horodatage.astimezone(fuseau_local)
-        if not _dans_plage_horaire(local, heure_debut, heure_fin):
+
+    # Axes SANS sous-tronçons actifs : lecture directe des mesures axe-level
+    ids_sans_sous = [t.id for t in troncons if not axe_a_sous_troncons(db, t.id)]
+    if ids_sans_sous:
+        mesures_directes = list(
+            db.execute(
+                select(Mesure).where(
+                    Mesure.source == SourceMesure.google,
+                    Mesure.troncon_id.in_(ids_sans_sous),
+                    Mesure.sous_troncon_id.is_(None),
+                    Mesure.duree_trafic_s.is_not(None),
+                    Mesure.aberrante.is_(False),
+                    Mesure.horodatage >= debut_utc,
+                    Mesure.horodatage <= fin_utc,
+                )
+            ).scalars()
+        )
+        for m in mesures_directes:
+            local = m.horodatage.astimezone(fuseau_local)
+            if not _dans_plage_horaire(local, heure_debut, heure_fin):
+                continue
+            d_local = local.date()
+            tj = _type_jour(d_local)
+            par_jour[(m.troncon_id, tj, d_local)].append(m.duree_trafic_s)
+
+    # Axes AVEC sous-tronçons actifs : agrégation SUM des sous-tronçons par créneau
+    ids_sans_sous_set = set(ids_sans_sous)
+    for t in troncons:
+        if t.id in ids_sans_sous_set:
             continue
-        d_local = local.date()
-        tj = _type_jour(d_local)
-        par_jour[(m.troncon_id, tj, d_local)].append(m.duree_trafic_s)
+        tuples_agg = agreger_durees_par_creneau(db, t.id, debut_utc, fin_utc, source_google_only=True)
+        for horodatage, duree_s, _src in tuples_agg:
+            local = (
+                horodatage.astimezone(fuseau_local)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau_local)
+            )
+            if not _dans_plage_horaire(local, heure_debut, heure_fin):
+                continue
+            d_local = local.date()
+            tj = _type_jour(d_local)
+            par_jour[(t.id, tj, d_local)].append(duree_s)
 
     # Group key : (troncon_id, type_jour) → list[moyennes_journalières (mn)]
     moyennes_par_jour: dict[tuple[int, TypeJour], list[float]] = defaultdict(list)
@@ -361,31 +383,7 @@ def troncons_congestionnes(
             (m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)
         ] += 1
 
-    # ── Passe 1 : agrégation axe depuis sous-tronçons ──
-    # Pour chaque axe avec sous-tronçons : un créneau (weekday, hour) est
-    # congestionné au niveau axe si AU MOINS UN sous-tronçon est congestionné.
-    # On construit les occurrences axe-level avant d'appliquer les seuils.
-    axes_avec_sous: set[int] = set()
-    for (tid, sid, _wd, _h) in occurrences:
-        if sid is not None:
-            axes_avec_sous.add(tid)
-
-    # Pour chaque axe avec sous-tronçons : (axe_id, weekday, hour) → nb créneaux
-    # où au moins 1 sous-tronçon est congestionné. On compte 1 par créneau
-    # (pas le nb de sous-tronçons congestionnés).
-    creneaux_axe: dict[tuple[int, int, int], int] = defaultdict(int)
-    for (tid, sid, wd, h), nb in occurrences.items():
-        if sid is not None and tid in axes_avec_sous and nb > 0:
-            # Marquer que ce créneau (axe, weekday, hour) a au moins 1 congestion
-            creneaux_axe[(tid, wd, h)] = 1  # binaire : 1 = congestionné
-
-    # Injecter les occurrences axe-level (sous_troncon_id=None)
-    for (tid, wd, h), _flag in creneaux_axe.items():
-        occurrences[(tid, None, wd, h)] = max(
-            occurrences.get((tid, None, wd, h), 0), 1
-        )
-
-    # ── Passe 2 : agrégation par (troncon, sous_troncon, heure) — règle SEMAINE ──
+    # ── Agrégation par (troncon, sous_troncon, heure) — règle SEMAINE ──
     par_cle_heure: dict[tuple[int, int | None, int], dict[int, int]] = defaultdict(dict)
     for (tid, sid, wd, h), nb in occurrences.items():
         par_cle_heure[(tid, sid, h)][wd] = nb
@@ -690,26 +688,41 @@ def serie_graphique(
     fuseau_local = ZoneInfo(get_settings().tz)
     NOMS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 
-    mesures = list(
-        db.execute(
-            select(Mesure).where(
-                Mesure.troncon_id == troncon_id,
-                Mesure.sous_troncon_id.is_(None),
-                Mesure.source == SourceMesure.google,
-                Mesure.duree_trafic_s.is_not(None),
-                Mesure.aberrante.is_(False),
-                Mesure.horodatage >= debut_utc,
-                Mesure.horodatage <= fin_utc,
-            )
-        ).scalars()
-    )
-
     par_jour: dict[date, list[int]] = defaultdict(list)
-    for m in mesures:
-        local = m.horodatage.astimezone(fuseau_local)
-        if not _dans_plage_horaire(local, heure_debut, heure_fin):
-            continue
-        par_jour[local.date()].append(m.duree_trafic_s)
+
+    if axe_a_sous_troncons(db, troncon_id):
+        # Axe décomposé en sous-tronçons : agrégation SUM par créneau
+        tuples_agg = agreger_durees_par_creneau(
+            db, troncon_id, debut_utc, fin_utc, source_google_only=True
+        )
+        for horodatage, duree_s, _src in tuples_agg:
+            local = (
+                horodatage.astimezone(fuseau_local)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau_local)
+            )
+            if not _dans_plage_horaire(local, heure_debut, heure_fin):
+                continue
+            par_jour[local.date()].append(duree_s)
+    else:
+        mesures = list(
+            db.execute(
+                select(Mesure).where(
+                    Mesure.troncon_id == troncon_id,
+                    Mesure.sous_troncon_id.is_(None),
+                    Mesure.source == SourceMesure.google,
+                    Mesure.duree_trafic_s.is_not(None),
+                    Mesure.aberrante.is_(False),
+                    Mesure.horodatage >= debut_utc,
+                    Mesure.horodatage <= fin_utc,
+                )
+            ).scalars()
+        )
+        for m in mesures:
+            local = m.horodatage.astimezone(fuseau_local)
+            if not _dans_plage_horaire(local, heure_debut, heure_fin):
+                continue
+            par_jour[local.date()].append(m.duree_trafic_s)
 
     resultats: list[PointGraphique] = []
     for d in sorted(par_jour):

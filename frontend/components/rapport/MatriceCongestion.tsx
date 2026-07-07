@@ -98,8 +98,22 @@ export function MatriceCongestion({
   const [erreur, setErreur] = useState<string | null>(null);
   const [fenetre, setFenetre] = useState(0);
 
+  // Auto-sélection du premier sous-tronçon au chargement initial des tronçons
+  useEffect(() => {
+    if (sousTronconId !== null) return;
+    const sous = troncons.flatMap((t) => t.sous_troncons ?? []);
+    if (sous.length === 0) return;
+    const first = sous[0];
+    const parent = troncons.find((a) => (a.sous_troncons ?? []).some((s) => s.id === first.id));
+    if (parent) onTronconChange(parent.id, first.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [troncons.length]);
+
   const charger = useCallback(async () => {
     if (tronconId === null) return;
+    // Si des sous-tronçons existent mais qu'aucun n'est sélectionné, attendre l'auto-sélection
+    const tousSous = troncons.flatMap((t) => t.sous_troncons ?? []);
+    if (tousSous.length > 0 && sousTronconId === null) return;
     setChargement(true);
     setErreur(null);
     try {
@@ -146,21 +160,13 @@ export function MatriceCongestion({
       {/* Sélecteur de tronçon */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <label className="text-fluid-sm font-medium app-text-muted whitespace-nowrap">
-          Axe / Tronçons par axes :
+          Tronçon codifié :
         </label>
         <select
-          value={
-            tronconId === null
-              ? ""
-              : sousTronconId !== null
-                ? `sous-${sousTronconId}`
-                : `axe-${tronconId}`
-          }
+          value={sousTronconId !== null ? `sous-${sousTronconId}` : ""}
           onChange={(e) => {
             const v = e.target.value;
-            if (v.startsWith("axe-")) {
-              onTronconChange(Number(v.slice(4)), null);
-            } else if (v.startsWith("sous-")) {
+            if (v.startsWith("sous-")) {
               const sid = Number(v.slice(5));
               const parent = troncons.find((a) =>
                 (a.sous_troncons ?? []).some((s) => s.id === sid),
@@ -172,23 +178,15 @@ export function MatriceCongestion({
                      text-paa-navy-900 dark:text-paa-blue-100 focus:outline-none
                      focus:ring-2 focus:ring-paa-blue-400 min-w-[260px]"
         >
-          <optgroup label="── Axes ──">
-            {troncons.map((t) => (
-              <option key={`axe-${t.id}`} value={`axe-${t.id}`}>
-                {t.nom}
+          <option value="" disabled>
+            Sélectionnez un tronçon codifié…
+          </option>
+          {troncons.flatMap((a) =>
+            (a.sous_troncons ?? []).map((s) => (
+              <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
+                [{s.code}] {s.nom_court} — {a.nom}
               </option>
-            ))}
-          </optgroup>
-          {troncons.some((t) => (t.sous_troncons?.length ?? 0) > 0) && (
-            <optgroup label="── Tronçons par axes ──">
-              {troncons.flatMap((a) =>
-                (a.sous_troncons ?? []).map((s) => (
-                  <option key={`sous-${s.id}`} value={`sous-${s.id}`}>
-                    {a.nom} : {s.nom_court} ({s.code})
-                  </option>
-                )),
-              )}
-            </optgroup>
+            )),
           )}
         </select>
         {data && !chargement && (
