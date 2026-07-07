@@ -609,8 +609,6 @@ def matrice_temps(
             )
             if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
                 continue
-            if not _creneau_termine(h_local, fuseau):
-                continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour
             dates_set.add(date_str)
@@ -650,8 +648,6 @@ def matrice_temps(
                 else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
             )
             if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
-                continue
-            if not _creneau_termine(h_local, fuseau):
                 continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour

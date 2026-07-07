@@ -221,11 +221,11 @@ export function PagePrediction() {
       {!chargement && (
         <>
           {/* ═══════════════════════════════════════════════════════════════
-              SECTION 1 — GOOGLE MAPS (TEMPS RÉEL) — EN HAUT
+              SECTION 1 — PLAGE DE TEMPS GOOGLE MAPS — EN HAUT
           ═══════════════════════════════════════════════════════════════ */}
           {resume && (
             <div className="flex flex-col gap-4">
-              {/* ── Bloc principal : Min / Moy / Max — dynamique selon source ── */}
+              {/* ── Bloc principal : Nom de l'axe + plage horaire + Min/Moy/Max ── */}
               <section className="paa-card p-fluid-4">
                 {(() => {
                   const h = parseInt(
@@ -236,11 +236,7 @@ export function PagePrediction() {
                     }).format(new Date()),
                     10,
                   );
-                  const minutes = new Date().getMinutes();
-                  const isGoogle = resume.courante.source === "google_routes";
-                  const hPrev = h === 0 ? 23 : h - 1;
-                  const creneauPrecLabel = `${hPrev}h – ${h}h`;
-                  const creneauActuelLabel = `${h}h – ${h + 1}h`;
+                  const creneauLabel = `${h}h – ${h + 1}h`;
 
                   const tj = resume.courante.type_jour;
                   const estOuvrable = tj === "jour_ouvrable";
@@ -248,101 +244,65 @@ export function PagePrediction() {
                     ? (locale === "fr" ? "jours ouvrables" : "weekdays")
                     : (locale === "fr" ? "week-ends" : "weekends");
 
-                  const semStats = estOuvrable ? resume.semaine.jours_ouvrables : resume.semaine.week_ends;
-                  const moisStats = estOuvrable ? resume.mois.jours_ouvrables : resume.mois.week_ends;
-                  const fallback = (semStats?.nb_mesures ?? 0) >= 2 ? semStats : moisStats;
-                  const minMn = resume.courante.bornes_7j?.min_mn
-                    ?? fallback?.min_mn
-                    ?? resume.courante.prediction.min_mn;
-                  const moyMn = resume.courante.prediction.moyen_mn;
-                  const maxMn = resume.courante.bornes_7j?.max_mn
-                    ?? fallback?.max_mn
-                    ?? resume.courante.prediction.max_mn;
+                  const bornes = resume.courante.bornes_7j;
+                  const minMn = bornes?.min_mn ?? resume.courante.prediction.min_mn;
+                  const moyMn = bornes?.moyen_mn ?? resume.courante.prediction.moyen_mn;
+                  const maxMn = bornes?.max_mn ?? resume.courante.prediction.max_mn;
 
                   return (
                     <>
-                      <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100">
-                          {t("prediction.tempsReel")}
+                      {/* Nom de l'axe en gros */}
+                      <div className="text-center mb-3">
+                        <h2 className="text-fluid-lg font-extrabold text-paa-navy-800 dark:text-paa-blue-50 leading-tight">
+                          {resume.troncon_nom}
                         </h2>
-                        <BadgeSource source={resume.courante.source} libelleSource={LIBELLE_SOURCE} />
+                        <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-paa-blue-100 dark:bg-paa-navy-700 px-4 py-1.5">
+                          <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                          <span className="text-fluid-sm font-bold text-paa-navy-700 dark:text-paa-blue-100">
+                            {t("prediction.tempsReel")} — {creneauLabel}
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Explication dynamique de la source des données */}
+                      {/* Explication : basé sur les 7 derniers jours même type */}
                       <div className="mb-4 rounded-lg border app-border bg-slate-50 dark:bg-slate-900/40 px-4 py-2.5">
-                        {isGoogle ? (
-                          <div className="flex items-start gap-2">
-                            <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-green-500 animate-pulse" />
-                            <div>
-                              <p className="text-fluid-xs font-semibold text-paa-navy-800 dark:text-paa-blue-100">
-                                {locale === "fr"
-                                  ? `Mesure Google Maps du créneau ${creneauPrecLabel}`
-                                  : `Google Maps measurement from slot ${creneauPrecLabel}`}
-                              </p>
-                              <p className="text-[11px] app-text-muted mt-0.5">
-                                {locale === "fr"
-                                  ? `La moyenne (Moy.) est la mesure réelle Google. Le Min et le Max sont issus de ce même créneau horaire sur les 7 derniers ${typeJourLabel}.`
-                                  : `Average (Avg.) is the actual Google measurement. Min and Max come from this same time slot over the last 7 ${typeJourLabel}.`}
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-start gap-2">
-                            <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
-                            <div>
-                              <p className="text-fluid-xs font-semibold text-paa-navy-800 dark:text-paa-blue-100">
-                                {locale === "fr"
-                                  ? `Moyenne des 7 derniers ${typeJourLabel} sur le créneau ${creneauActuelLabel}`
-                                  : `Average of the last 7 ${typeJourLabel} on slot ${creneauActuelLabel}`}
-                              </p>
-                              <p className="text-[11px] app-text-muted mt-0.5">
-                                {locale === "fr"
-                                  ? `Aucune mesure Google dans les 15 dernières minutes. Min, Moy. et Max sont calculés à partir des mesures collectées sur ce créneau horaire durant les 7 derniers ${typeJourLabel}.`
-                                  : `No Google measurement in the last 15 minutes. Min, Avg., and Max are computed from measurements collected on this time slot over the last 7 ${typeJourLabel}.`}
-                              </p>
-                            </div>
-                          </div>
-                        )}
+                        <div className="flex items-start gap-2">
+                          <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+                          <p className="text-fluid-xs text-paa-navy-700 dark:text-paa-blue-200">
+                            {locale === "fr"
+                              ? `Min, Moy. et Max calculés sur les 7 derniers ${typeJourLabel} — auto-adaptatif selon le type de jour.`
+                              : `Min, Avg. and Max computed over the last 7 ${typeJourLabel} — auto-adaptive based on day type.`}
+                          </p>
+                        </div>
                       </div>
 
-                      {/* Min / Moy / Max */}
+                      {/* Min / Moy / Max — gros caractères */}
                       <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto text-center">
-                        <div className="rounded-lg border app-border p-3 bg-green-50/50 dark:bg-green-950/10">
-                          <div className="text-[10px] font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-1">
+                        <div className="rounded-xl border app-border p-4 bg-green-50/50 dark:bg-green-950/10">
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-1">
                             {t("prediction.labelMin")}
                           </div>
-                          <div className="text-fluid-xl font-bold text-green-700 dark:text-green-300">
+                          <div className="text-[28px] font-bold text-green-700 dark:text-green-300">
                             {minMn ?? "—"}
                             <span className="text-fluid-xs font-medium ml-0.5">min</span>
                           </div>
-                          <div className="text-[9px] app-text-muted mt-1">
-                            {locale === "fr" ? `7 dern. ${typeJourLabel}` : `last 7 ${typeJourLabel}`}
-                          </div>
                         </div>
-                        <div className="rounded-lg border-2 border-paa-blue-300 dark:border-paa-blue-600 p-3 bg-paa-blue-50/50 dark:bg-slate-800/60 shadow-sm">
-                          <div className="text-[10px] font-semibold uppercase tracking-wider text-paa-blue-600 dark:text-paa-blue-300 mb-1">
+                        <div className="rounded-xl border-2 border-paa-blue-300 dark:border-paa-blue-600 p-4 bg-paa-blue-50/50 dark:bg-slate-800/60 shadow-md">
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-paa-blue-600 dark:text-paa-blue-300 mb-1">
                             {t("prediction.labelMoy")}
                           </div>
-                          <div className="text-[32px] font-extrabold leading-none text-paa-navy-800 dark:text-paa-blue-50">
+                          <div className="text-[36px] font-extrabold leading-none text-paa-navy-800 dark:text-paa-blue-50">
                             {moyMn ?? "—"}
                             <span className="text-fluid-sm font-semibold ml-0.5 text-paa-navy-500 dark:text-paa-blue-300">min</span>
                           </div>
-                          <div className="text-[9px] app-text-muted mt-1">
-                            {isGoogle
-                              ? (locale === "fr" ? "mesure Google" : "Google measurement")
-                              : (locale === "fr" ? `7 dern. ${typeJourLabel}` : `last 7 ${typeJourLabel}`)}
-                          </div>
                         </div>
-                        <div className="rounded-lg border app-border p-3 bg-red-50/50 dark:bg-red-950/10">
-                          <div className="text-[10px] font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1">
+                        <div className="rounded-xl border app-border p-4 bg-red-50/50 dark:bg-red-950/10">
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1">
                             {t("prediction.labelMax")}
                           </div>
-                          <div className="text-fluid-xl font-bold text-red-700 dark:text-red-300">
+                          <div className="text-[28px] font-bold text-red-700 dark:text-red-300">
                             {maxMn ?? "—"}
                             <span className="text-fluid-xs font-medium ml-0.5">min</span>
-                          </div>
-                          <div className="text-[9px] app-text-muted mt-1">
-                            {locale === "fr" ? `7 dern. ${typeJourLabel}` : `last 7 ${typeJourLabel}`}
                           </div>
                         </div>
                       </div>
@@ -350,12 +310,12 @@ export function PagePrediction() {
                       {/* Pastille type de jour */}
                       <div className="mt-3 flex justify-center">
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100
-                                         dark:bg-slate-800 px-3 py-1 text-[10px] font-medium
+                                         dark:bg-slate-800 px-3 py-1 text-[11px] font-medium
                                          text-slate-600 dark:text-slate-300">
                           <span className="h-1.5 w-1.5 rounded-full bg-paa-blue-400" />
                           {locale === "fr"
-                            ? `Aujourd'hui est un ${estOuvrable ? "jour ouvrable" : "jour de week-end"} — Min/Max issus des 7 derniers ${typeJourLabel}`
-                            : `Today is a ${estOuvrable ? "weekday" : "weekend day"} — Min/Max from the last 7 ${typeJourLabel}`}
+                            ? `${estOuvrable ? "Jour ouvrable" : "Week-end"} — 7 derniers ${typeJourLabel}`
+                            : `${estOuvrable ? "Weekday" : "Weekend"} — last 7 ${typeJourLabel}`}
                         </span>
                       </div>
                     </>
@@ -363,51 +323,7 @@ export function PagePrediction() {
                 })()}
               </section>
 
-              {/* ── Bloc inférieur : Créneau horaire précédent ── */}
-              <section className="paa-card p-fluid-4 bg-slate-50 dark:bg-slate-900/30">
-                {(() => {
-                  const h = parseInt(
-                    new Intl.DateTimeFormat("fr-FR", {
-                      hour: "2-digit",
-                      hour12: false,
-                      timeZone: "Africa/Abidjan",
-                    }).format(new Date()),
-                    10,
-                  );
-                  const hPrev = h === 0 ? 23 : h - 1;
-                  const creneauPrecLabel = `${hPrev}h – ${h}h`;
-                  const creneauActuelLabel = `${h}h – ${h + 1}h`;
-                  const isGoogle = resume.courante.source === "google_routes";
-
-                  return (
-                    <div className="flex items-center gap-4">
-                      <div className="flex-shrink-0 flex items-center justify-center h-14 w-14
-                                      rounded-full bg-paa-blue-100 dark:bg-paa-navy-700
-                                      border-2 border-paa-blue-300 dark:border-paa-blue-500">
-                        <span className="text-fluid-base font-bold text-paa-navy-700 dark:text-paa-blue-100 leading-tight text-center">
-                          {resume.courante.prediction.moyen_mn != null
-                            ? <><span className="text-lg">{resume.courante.prediction.moyen_mn}</span><br /><span className="text-[10px]">min</span></>
-                            : "—"}
-                        </span>
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-fluid-xs font-semibold text-paa-navy-800 dark:text-paa-blue-100">
-                          {locale === "fr"
-                            ? `Temps du créneau précédent : ${creneauPrecLabel}`
-                            : `Previous slot time: ${creneauPrecLabel}`}
-                        </p>
-                        <p className="text-[11px] app-text-muted mt-0.5">
-                          {locale === "fr"
-                            ? `Cette mesure est utilisée comme référence durant les 15 premières minutes du créneau suivant (${creneauActuelLabel}), avant qu'une nouvelle mesure Google ne soit collectée.`
-                            : `This measurement is used as reference during the first 15 minutes of the next slot (${creneauActuelLabel}), before a new Google measurement is collected.`}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </section>
-
-              {/* Cette semaine Google — ordre chronologique : semaine d'abord */}
+              {/* Cette semaine Google */}
               <section className="paa-card p-fluid-4">
                 <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
                   {t("prediction.cetteSemaine")}
@@ -421,7 +337,7 @@ export function PagePrediction() {
                 </div>
               </section>
 
-              {/* Ce mois Google — englobe la semaine */}
+              {/* Ce mois Google */}
               <section className="paa-card p-fluid-4">
                 <h2 className="text-fluid-base font-bold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
                   {t("prediction.ceMois")}
