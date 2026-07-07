@@ -264,6 +264,27 @@ export function PagePrediction() {
                         </div>
                       </div>
 
+                      {/* Temps réel capté du créneau courant */}
+                      {resume.courante.source === "google_routes" && resume.courante.prediction.moyen_mn != null && (
+                        <div className="mb-4 rounded-xl border-2 border-green-400 dark:border-green-600 bg-green-50/60 dark:bg-green-950/20 p-4 text-center">
+                          <div className="text-[11px] font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-1">
+                            {locale === "fr"
+                              ? `Temps réel capté — ${creneauLabel}`
+                              : `Real-time captured — ${creneauLabel}`}
+                          </div>
+                          <div className="text-[42px] font-black leading-none text-green-700 dark:text-green-300">
+                            {resume.courante.prediction.moyen_mn}
+                            <span className="text-fluid-base font-semibold ml-1">min</span>
+                          </div>
+                          <div className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-green-600 dark:text-green-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                            {locale === "fr"
+                              ? "Mesure Google Maps (somme des tronçons)"
+                              : "Google Maps measurement (sum of sections)"}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Explication : basé sur les 7 derniers jours même type */}
                       <div className="mb-4 rounded-lg border app-border bg-slate-50 dark:bg-slate-900/40 px-4 py-2.5">
                         <div className="flex items-start gap-2">
@@ -276,7 +297,7 @@ export function PagePrediction() {
                         </div>
                       </div>
 
-                      {/* Min / Moy / Max — gros caractères */}
+                      {/* Min / Moy / Max — plage 7 jours */}
                       <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto text-center">
                         <div className="rounded-xl border app-border p-4 bg-green-50/50 dark:bg-green-950/10">
                           <div className="text-[11px] font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-1">
