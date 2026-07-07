@@ -99,17 +99,23 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 .order_by(SousTroncon.ordre)
             ).scalars()
         )
-        dernieres_par_sous: dict[int, Mesure] = {}
+        # Clé (troncon_id, sous_troncon_id) pour distinguer aller/retour.
+        # Un sous-tronçon partagé entre 2 axes a des mesures distinctes
+        # par axe (le scheduler mesure dans le sens de chaque axe).
+        dernieres_par_axe_sous: dict[tuple[int, int], Mesure] = {}
         if sous_troncons:
             ms_sous = list(
                 session.execute(
                     select(Mesure)
                     .where(Mesure.sous_troncon_id.in_([s.id for s in sous_troncons]))
-                    .distinct(Mesure.sous_troncon_id)
-                    .order_by(Mesure.sous_troncon_id, Mesure.horodatage.desc())
+                    .order_by(Mesure.troncon_id, Mesure.sous_troncon_id, Mesure.horodatage.desc())
                 ).scalars()
             )
-            dernieres_par_sous = {m.sous_troncon_id: m for m in ms_sous if m.sous_troncon_id is not None}
+            for m in ms_sous:
+                if m.sous_troncon_id is not None:
+                    cle = (m.troncon_id, m.sous_troncon_id)
+                    if cle not in dernieres_par_axe_sous:
+                        dernieres_par_axe_sous[cle] = m
 
         # Index des sous-tronçons par parent — un même sous peut apparaître
         # sous plusieurs axes s'il est partagé (multi-parent M2M).
@@ -154,7 +160,8 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
             }
 
         def _carte_sous_troncon(s: SousTroncon, axe_parent: Troncon | None = None) -> dict[str, Any]:
-            m = dernieres_par_sous.get(s.id)
+            axe_id = axe_parent.id if axe_parent else s.troncon_id
+            m = dernieres_par_axe_sous.get((axe_id, s.id))
             pct_rouge = m.pourcentage_rouge if m is not None else None
             pct_orange = m.pourcentage_orange if m is not None else None
             pct_vert = m.pourcentage_vert if m is not None else None
