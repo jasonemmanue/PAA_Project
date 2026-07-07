@@ -828,30 +828,12 @@ def _resume_adoption_collecte(db: Session) -> dict[str, Any]:
     relit la liste des tronçons actifs à chaque tick.
     """
     settings = get_settings()
-    # Granularité réelle de mesure : parents sans sous-tronçon actif
-    # (mesurés en tant qu'axe complet) + une mesure par lien (axe, sous)
-    # dans la table M2M — un sous partagé entre 2 axes = 2 mesures/cycle.
-    axes_couverts_par_sous = {
-        aid for (aid,) in db.execute(
-            select(axe_sous_troncons.c.axe_id).distinct()
-        ).all()
-    }
-    # Repli pour données legacy (sans lien M2M) : le parent principal
-    # d'un sous actif est considéré couvert.
-    for (tid,) in db.execute(
-        select(SousTroncon.troncon_id).where(SousTroncon.actif.is_(True)).distinct()
-    ).all():
-        axes_couverts_par_sous.add(tid)
-    ids_parents_actifs = [
-        tid for (tid,) in db.execute(
-            select(Troncon.id).where(Troncon.actif.is_(True))
-        ).all()
-    ]
-    nb_parents_a_mesurer = sum(
-        1 for tid in ids_parents_actifs if tid not in axes_couverts_par_sous
-    )
-    # Une mesure par lien (axe, sous) actif dans la M2M — un sous partagé
-    # entre 2 axes compte pour 2 requêtes/cycle.
+    # Tous les parents actifs sont mesurés (congestion fiable sur 8-15 km)
+    # + tous les sous-tronçons actifs (ventilation fine des temps).
+    nb_parents = db.execute(
+        select(func.count(Troncon.id)).where(Troncon.actif.is_(True))
+    ).scalar_one() or 0
+    # Une mesure par lien (axe, sous) actif dans la M2M.
     nb_liens_sous = db.execute(
         select(func.count()).select_from(
             axe_sous_troncons.join(
@@ -860,7 +842,6 @@ def _resume_adoption_collecte(db: Session) -> dict[str, Any]:
             )
         ).where(SousTroncon.actif.is_(True))
     ).scalar_one() or 0
-    # Repli pour sous sans lien M2M (donnée legacy).
     nb_sous_orphelins = db.execute(
         select(func.count(SousTroncon.id))
         .where(
@@ -868,7 +849,7 @@ def _resume_adoption_collecte(db: Session) -> dict[str, Any]:
             ~SousTroncon.id.in_(select(axe_sous_troncons.c.sous_troncon_id)),
         )
     ).scalar_one() or 0
-    nb_actifs = nb_parents_a_mesurer + nb_liens_sous + nb_sous_orphelins
+    nb_actifs = nb_parents + nb_liens_sous + nb_sous_orphelins
     estimation = estimer_requetes_par_jour(settings, nb_actifs)
     avertissement: str | None = None
     if estimation > QUOTA_GOOGLE_JOUR_MAX:
