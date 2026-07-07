@@ -395,8 +395,6 @@ def troncons_congestionnes(
         local = m.horodatage.astimezone(fuseau_local)
         if not _dans_plage_horaire(local, heure_debut, heure_fin):
             continue
-        if not _creneau_termine(local, fuseau_local):
-            continue
         occurrences[
             (m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)
         ] += 1
@@ -482,8 +480,6 @@ def matrice_congestion(
             )
             if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
                 continue
-            if not _creneau_termine(h_local, fuseau):
-                continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour
             dates_set.add(date_str)
@@ -525,8 +521,6 @@ def matrice_congestion(
                 else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
             )
             if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
-                continue
-            if not _creneau_termine(h_local, fuseau):
                 continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour
