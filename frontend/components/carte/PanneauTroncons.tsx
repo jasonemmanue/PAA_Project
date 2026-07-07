@@ -90,19 +90,13 @@ export function PanneauTroncons({
   }
 
   const composerLibelle = (locale: "fr" | "en"): string => {
-    const partAxes =
-      locale === "fr"
-        ? `${nbAxes} axe${nbAxes > 1 ? "s" : ""}`
-        : `${nbAxes} ax${nbAxes > 1 ? "es" : "is"}`;
-    const partTroncons =
-      locale === "fr"
-        ? `${nbTroncons} tronçon${nbTroncons > 1 ? "s" : ""}`
-        : `${nbTroncons} segment${nbTroncons > 1 ? "s" : ""}`;
-    if (nbTroncons === 0) return partAxes;
-    if (nbAxes === 0) return partTroncons;
-    return locale === "fr"
-      ? `${partAxes} et ${partTroncons}`
-      : `${partAxes} and ${partTroncons}`;
+    const n = nbTroncons > 0 ? nbTroncons : nbAxes;
+    if (locale === "fr") {
+      const unite = nbTroncons > 0 ? `tronçon${n > 1 ? "s" : ""}` : `axe${n > 1 ? "s" : ""}`;
+      return `${n} ${unite}`;
+    }
+    const unite = nbTroncons > 0 ? `segment${n > 1 ? "s" : ""}` : `ax${n > 1 ? "es" : "is"}`;
+    return `${n} ${unite}`;
   };
 
   // Tri stable par nom (les axes n'ont plus de gravité propre quand ils ont

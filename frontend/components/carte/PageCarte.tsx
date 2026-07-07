@@ -68,17 +68,17 @@ export function PageCarte() {
       0,
     );
     if (locale === "fr") {
-      const partAxes = `${nbAxes} axe${nbAxes > 1 ? "s" : ""}`;
-      const partTroncons = `${nbTroncons} tronçon${nbTroncons > 1 ? "s" : ""}`;
-      const libelle =
-        nbTroncons === 0 ? partAxes : `${partAxes} et ${partTroncons}`;
-      return `État instantané des ${libelle} surveillés.`;
+      const n = nbTroncons > 0 ? nbTroncons : nbAxes;
+      const unite = nbTroncons > 0
+        ? `tronçon${n > 1 ? "s" : ""}`
+        : `axe${n > 1 ? "s" : ""}`;
+      return `${n} ${unite} surveillé${n > 1 ? "s" : ""} en temps réel.`;
     }
-    const partAxes = `${nbAxes} ax${nbAxes > 1 ? "es" : "is"}`;
-    const partTroncons = `${nbTroncons} segment${nbTroncons > 1 ? "s" : ""}`;
-    const libelle =
-      nbTroncons === 0 ? partAxes : `${partAxes} and ${partTroncons}`;
-    return `Real-time snapshot of ${libelle} monitored.`;
+    const n = nbTroncons > 0 ? nbTroncons : nbAxes;
+    const unite = nbTroncons > 0
+      ? `segment${n > 1 ? "s" : ""}`
+      : `ax${n > 1 ? "es" : "is"}`;
+    return `${n} ${unite} monitored in real time.`;
   })();
 
   // Bloquer le scroll de la page — seul le panneau latéral défile
