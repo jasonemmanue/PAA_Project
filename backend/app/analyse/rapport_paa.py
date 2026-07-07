@@ -120,7 +120,7 @@ def temps_theoriques(db: Session) -> list[TempsTheorique]:
         temps_s = int(round(t.temps_reference_s()))
         resultats.append(TempsTheorique(
             axe=nom,
-            distance_km=round(t.distance_m / 1000.0, 1),
+            distance_km=round(t.distance_ref_m / 1000.0, 1),
             temps_50kmh_s=temps_s,
             temps_50kmh_str=_format_mn_s(temps_s),
         ))

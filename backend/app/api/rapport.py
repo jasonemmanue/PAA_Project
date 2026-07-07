@@ -886,7 +886,7 @@ async def get_matrice_temps(
         heure_debut=heure_debut, heure_fin=heure_fin,
         sous_troncon_id=sous_troncon_id,
     )
-    ref_dist = sous.distance_m if sous is not None else troncon.distance_m
+    ref_dist = sous.distance_m if sous is not None else troncon.distance_ref_m
     ref_vit = 50.0 if sous is not None else troncon.vitesse_ref_kmh
     nom_affichage = (
         f"{troncon.nom} : {sous.nom_court} ({sous.code})"

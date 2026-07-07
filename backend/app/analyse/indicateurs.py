@@ -176,7 +176,7 @@ def calcul_indicateurs(
         ref_dist = distance_ref_sous_troncons(db, troncon_id)
         ref_vit = troncon.vitesse_ref_kmh
     else:
-        ref_dist = troncon.distance_m
+        ref_dist = troncon.distance_ref_m
         ref_vit = troncon.vitesse_ref_kmh
     t_ref_50 = ref_dist / (ref_vit / 3.6)
 
@@ -314,7 +314,7 @@ def detecter_heures_pointe(
     if troncon is None:
         raise LookupError(f"Tronçon id={troncon_id} introuvable.")
 
-    t_ref_50 = troncon.distance_m / (troncon.vitesse_ref_kmh / 3.6)
+    t_ref_50 = troncon.distance_ref_m / (troncon.vitesse_ref_kmh / 3.6)
     seuil_pointe_s = facteur_pointe * t_ref_50
 
     profils: list[ProfilHoraire] = list(
@@ -395,7 +395,7 @@ def serie_temporelle(
         ref_dist = distance_ref_sous_troncons(db, troncon_id)
         ref_vit = troncon.vitesse_ref_kmh
     else:
-        ref_dist = troncon.distance_m
+        ref_dist = troncon.distance_ref_m
         ref_vit = troncon.vitesse_ref_kmh
     t_ref_50 = ref_dist / (ref_vit / 3.6)
     fuseau_local = ZoneInfo(get_settings().tz)

@@ -62,6 +62,20 @@ class SourceMesure(str, enum.Enum):
 
 
 # ---------------------------------------------------------------------------
+# Distances officielles DEESP (rapport DEESP/DEEF oct. 2025 — § 1.1 CLAUDE.md)
+# Utilisées comme référence pour le calcul du T_ref à 50 km/h.
+# Ne jamais écraser avec la valeur OSRM : OSRM peut calculer un tracé plus
+# court que la distance officielle mesurée sur le terrain.
+# ---------------------------------------------------------------------------
+
+_DISTANCES_DEESP_M: dict[int, int] = {
+    1: 14900, 2: 14900,  # CARENA (Plateau) ↔ Pharmacie Palm Beach
+    3: 8000,  4: 8000,   # Toyota CFAO (Treichville) ↔ Pharmacie Palm Beach
+    5: 8300,  6: 8300,   # Agence SODECI (Zone 4) ↔ Pharmacie Palm Beach
+}
+
+
+# ---------------------------------------------------------------------------
 # Table : troncons
 # ---------------------------------------------------------------------------
 
@@ -125,9 +139,20 @@ class Troncon(Base):
         viewonly=True,
     )
 
+    @property
+    def distance_ref_m(self) -> int:
+        """Distance officielle DEESP pour le calcul du T_ref à 50 km/h.
+
+        Pour les 6 axes officiels (id 1-6), retourne la distance du rapport DEESP
+        (mesurée sur le terrain). Pour les autres tronçons, retourne distance_m.
+        La distance OSRM peut différer de la distance officielle si le moteur de
+        routage choisit un tracé différent de la route physiquement mesurée.
+        """
+        return _DISTANCES_DEESP_M.get(self.id or 0, self.distance_m)
+
     def temps_reference_s(self) -> float:
         """Temps de parcours théorique à vitesse de référence, en secondes."""
-        return (self.distance_m / 1000.0) / self.vitesse_ref_kmh * 3600.0
+        return (self.distance_ref_m / 1000.0) / self.vitesse_ref_kmh * 3600.0
 
     def __repr__(self) -> str:
         return f"<Troncon id={self.id} nom={self.nom!r} actif={self.actif}>"
