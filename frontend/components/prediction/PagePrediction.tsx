@@ -19,6 +19,7 @@ import { Card } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
 import { api } from "@/lib/api";
+import { formaterDuree } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import type {
   EstimationSession,
@@ -245,9 +246,28 @@ export function PagePrediction() {
                     : (locale === "fr" ? "week-ends" : "weekends");
 
                   const bornes = resume.courante.bornes_7j;
-                  const minMn = bornes?.min_mn ?? resume.courante.prediction.min_mn;
-                  const moyMn = bornes?.moyen_mn ?? resume.courante.prediction.moyen_mn;
-                  const maxMn = bornes?.max_mn ?? resume.courante.prediction.max_mn;
+                  // fallback sur les stats semaine / mois si bornes_7j et prediction sont null
+                  const fallbackJo = estOuvrable ? resume.semaine.jours_ouvrables : resume.semaine.week_ends;
+                  const fallbackMois = estOuvrable ? resume.mois.jours_ouvrables : resume.mois.week_ends;
+                  const minS = bornes?.min_s
+                    ?? resume.courante.prediction.min_s
+                    ?? (fallbackJo?.min_s ?? (fallbackJo?.min_mn != null ? Math.round(fallbackJo.min_mn * 60) : null))
+                    ?? (fallbackMois?.min_s ?? (fallbackMois?.min_mn != null ? Math.round(fallbackMois.min_mn * 60) : null));
+                  const moyS = bornes?.moyen_s
+                    ?? resume.courante.prediction.moyen_s
+                    ?? (fallbackJo?.moyen_s ?? (fallbackJo?.moyen_mn != null ? Math.round(fallbackJo.moyen_mn * 60) : null))
+                    ?? (fallbackMois?.moyen_s ?? (fallbackMois?.moyen_mn != null ? Math.round(fallbackMois.moyen_mn * 60) : null));
+                  const maxS = bornes?.max_s
+                    ?? resume.courante.prediction.max_s
+                    ?? (fallbackJo?.max_s ?? (fallbackJo?.max_mn != null ? Math.round(fallbackJo.max_mn * 60) : null))
+                    ?? (fallbackMois?.max_s ?? (fallbackMois?.max_mn != null ? Math.round(fallbackMois.max_mn * 60) : null));
+                  const noteSource = bornes
+                    ? (locale === "fr" ? `7 derniers ${typeJourLabel}` : `last 7 ${typeJourLabel}`)
+                    : (fallbackJo?.nb_mesures ?? 0) > 0
+                      ? (locale === "fr" ? `semaine en cours — ${typeJourLabel}` : `current week — ${typeJourLabel}`)
+                      : (fallbackMois?.nb_mesures ?? 0) > 0
+                        ? (locale === "fr" ? `mois en cours — ${typeJourLabel}` : `current month — ${typeJourLabel}`)
+                        : (locale === "fr" ? "référence 50 km/h" : "50 km/h reference");
 
                   return (
                     <>
@@ -264,35 +284,52 @@ export function PagePrediction() {
                         </div>
                       </div>
 
-                      {/* Temps réel capté du créneau courant */}
-                      {resume.courante.source === "google_routes" && resume.courante.prediction.moyen_mn != null && (
-                        <div className="mb-4 rounded-xl border-2 border-green-400 dark:border-green-600 bg-green-50/60 dark:bg-green-950/20 p-4 text-center">
-                          <div className="text-[11px] font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-1">
+                      {/* Bande temps actuel — visible quelle que soit la source */}
+                      {(resume.courante.prediction.moyen_s != null || moyS != null) && (
+                        <div className={`mb-4 rounded-xl border-2 p-4 text-center ${
+                          resume.courante.source === "google_routes"
+                            ? "border-green-400 dark:border-green-600 bg-green-50/60 dark:bg-green-950/20"
+                            : resume.courante.source === "mesures_jour_type_7j"
+                              ? "border-paa-blue-400 dark:border-paa-blue-600 bg-paa-blue-50/60 dark:bg-paa-navy-800/40"
+                              : "border-slate-300 dark:border-slate-600 bg-slate-50/40 dark:bg-slate-800/30"
+                        }`}>
+                          <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${
+                            resume.courante.source === "google_routes"
+                              ? "text-green-600 dark:text-green-400"
+                              : resume.courante.source === "mesures_jour_type_7j"
+                                ? "text-paa-blue-600 dark:text-paa-blue-400"
+                                : "text-slate-500 dark:text-slate-400"
+                          }`}>
                             {locale === "fr"
-                              ? `Temps réel capté — ${creneauLabel}`
-                              : `Real-time captured — ${creneauLabel}`}
+                              ? `Temps actuel — ${creneauLabel}`
+                              : `Current time — ${creneauLabel}`}
                           </div>
-                          <div className="text-[42px] font-black leading-none text-green-700 dark:text-green-300">
-                            {resume.courante.prediction.moyen_mn}
-                            <span className="text-fluid-base font-semibold ml-1">min</span>
+                          <div className={`text-[42px] font-black leading-none ${
+                            resume.courante.source === "google_routes"
+                              ? "text-green-700 dark:text-green-300"
+                              : resume.courante.source === "mesures_jour_type_7j"
+                                ? "text-paa-navy-800 dark:text-paa-blue-50"
+                                : "text-slate-600 dark:text-slate-300"
+                          }`}>
+                            {formaterDuree(resume.courante.prediction.moyen_s ?? moyS)}
                           </div>
-                          <div className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-green-600 dark:text-green-400">
-                            <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                            {locale === "fr"
-                              ? "Mesure Google Maps (somme des tronçons)"
-                              : "Google Maps measurement (sum of sections)"}
+                          <div className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+                            {resume.courante.source === "google_routes" && (
+                              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                            )}
+                            {LIBELLE_SOURCE[resume.courante.source]}
                           </div>
                         </div>
                       )}
 
-                      {/* Explication : basé sur les 7 derniers jours même type */}
+                      {/* Note source des statistiques MIN / MOY / MAX */}
                       <div className="mb-4 rounded-lg border app-border bg-slate-50 dark:bg-slate-900/40 px-4 py-2.5">
                         <div className="flex items-start gap-2">
                           <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
                           <p className="text-fluid-xs text-paa-navy-700 dark:text-paa-blue-200">
                             {locale === "fr"
-                              ? `Min, Moy. et Max calculés sur les 7 derniers ${typeJourLabel} — auto-adaptatif selon le type de jour.`
-                              : `Min, Avg. and Max computed over the last 7 ${typeJourLabel} — auto-adaptive based on day type.`}
+                              ? `Min, Moy. et Max — ${noteSource}.`
+                              : `Min, Avg. and Max — ${noteSource}.`}
                           </p>
                         </div>
                       </div>
@@ -304,8 +341,7 @@ export function PagePrediction() {
                             {t("prediction.labelMin")}
                           </div>
                           <div className="text-[28px] font-bold text-green-700 dark:text-green-300">
-                            {minMn ?? "—"}
-                            <span className="text-fluid-xs font-medium ml-0.5">min</span>
+                            {formaterDuree(minS)}
                           </div>
                         </div>
                         <div className="rounded-xl border-2 border-paa-blue-300 dark:border-paa-blue-600 p-4 bg-paa-blue-50/50 dark:bg-slate-800/60 shadow-md">
@@ -313,8 +349,7 @@ export function PagePrediction() {
                             {t("prediction.labelMoy")}
                           </div>
                           <div className="text-[36px] font-extrabold leading-none text-paa-navy-800 dark:text-paa-blue-50">
-                            {moyMn ?? "—"}
-                            <span className="text-fluid-sm font-semibold ml-0.5 text-paa-navy-500 dark:text-paa-blue-300">min</span>
+                            {formaterDuree(moyS)}
                           </div>
                         </div>
                         <div className="rounded-xl border app-border p-4 bg-red-50/50 dark:bg-red-950/10">
@@ -322,8 +357,7 @@ export function PagePrediction() {
                             {t("prediction.labelMax")}
                           </div>
                           <div className="text-[28px] font-bold text-red-700 dark:text-red-300">
-                            {maxMn ?? "—"}
-                            <span className="text-fluid-xs font-medium ml-0.5">min</span>
+                            {formaterDuree(maxS)}
                           </div>
                         </div>
                       </div>
@@ -581,9 +615,9 @@ function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax, unite }: {
         <p className="text-fluid-xs app-text-muted italic">—</p>
       ) : (
         <div className="grid grid-cols-3 gap-1 text-center">
-          <div><div className="text-fluid-xs app-text-muted">{labelMin}</div><div className="font-bold text-statut-fluide">{stats.min_mn} {unite}</div></div>
-          <div><div className="text-fluid-xs app-text-muted">{labelMoy}</div><div className="font-bold text-paa-blue-500">{stats.moyen_mn} {unite}</div></div>
-          <div><div className="text-fluid-xs app-text-muted">{labelMax}</div><div className="font-bold text-statut-congestionne">{stats.max_mn} {unite}</div></div>
+          <div><div className="text-fluid-xs app-text-muted">{labelMin}</div><div className="font-bold text-statut-fluide">{formaterDuree(stats.min_s ?? (stats.min_mn != null ? stats.min_mn * 60 : null))}</div></div>
+          <div><div className="text-fluid-xs app-text-muted">{labelMoy}</div><div className="font-bold text-paa-blue-500">{formaterDuree(stats.moyen_s ?? (stats.moyen_mn != null ? stats.moyen_mn * 60 : null))}</div></div>
+          <div><div className="text-fluid-xs app-text-muted">{labelMax}</div><div className="font-bold text-statut-congestionne">{formaterDuree(stats.max_s ?? (stats.max_mn != null ? stats.max_mn * 60 : null))}</div></div>
         </div>
       )}
     </div>

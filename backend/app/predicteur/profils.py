@@ -73,6 +73,9 @@ class Prediction:
     max_mn: int | None
     p95_mn: int | None
     fourchette_p25_p75_mn: tuple[int, int] | None
+    min_s: int | None
+    moyen_s: int | None
+    max_s: int | None
     source: SourcePrediction
     confiance: float
     calibration_appliquee: float
@@ -236,7 +239,8 @@ def _prediction_google(
         best = min(mesures_agg, key=lambda m: abs(
             (m.horodatage - instant_utc).total_seconds()
         ))
-        duree_mn = int(round(best.duree_trafic_s / 60))
+        duree_s_raw = best.duree_trafic_s
+        duree_mn = int(round(duree_s_raw / 60))
     else:
         mesure = db.execute(
             select(Mesure)
@@ -256,7 +260,8 @@ def _prediction_google(
         ).scalar_one_or_none()
         if mesure is None or not mesure.duree_trafic_s:
             return None
-        duree_mn = int(round(mesure.duree_trafic_s / 60))
+        duree_s_raw = mesure.duree_trafic_s
+        duree_mn = int(round(duree_s_raw / 60))
     fuseau = ZoneInfo(get_settings().tz)
     instant_local = instant_utc.astimezone(fuseau)
     return Prediction(
@@ -270,6 +275,9 @@ def _prediction_google(
         max_mn=duree_mn,
         p95_mn=duree_mn,
         fourchette_p25_p75_mn=(duree_mn, duree_mn),
+        min_s=int(round(duree_s_raw)),
+        moyen_s=int(round(duree_s_raw)),
+        max_s=int(round(duree_s_raw)),
         source="google_routes",
         confiance=1.0,
         calibration_appliquee=0.0,
@@ -364,6 +372,9 @@ def _prediction_jour_type(
         if len(durees_s) >= 20 else max_s
     )
 
+    def to_s(secondes: float) -> int:
+        return int(round(secondes * facteur))
+
     return Prediction(
         troncon_id=troncon.id,
         troncon_nom=troncon.nom,
@@ -375,6 +386,9 @@ def _prediction_jour_type(
         max_mn=to_mn(max_s),
         p95_mn=to_mn(p95_s),
         fourchette_p25_p75_mn=(to_mn(min_s), to_mn(p95_s)),
+        min_s=to_s(min_s),
+        moyen_s=to_s(moyenne_s),
+        max_s=to_s(max_s),
         source="mesures_jour_type_7j",
         confiance=_confiance_depuis_nb(len(durees_s)),
         calibration_appliquee=round(calibration, 4),
@@ -399,6 +413,9 @@ def _prediction_50kmh(troncon: Troncon, instant_utc: datetime) -> Prediction:
         max_mn=t_ref_mn,
         p95_mn=t_ref_mn,
         fourchette_p25_p75_mn=(t_ref_mn, t_ref_mn),
+        min_s=int(round(t_ref_s)),
+        moyen_s=int(round(t_ref_s)),
+        max_s=int(round(t_ref_s)),
         source="vitesse_ref_50kmh",
         confiance=0.3,
         calibration_appliquee=0.0,
@@ -525,16 +542,19 @@ def _stats_mesures_periode(
             if filtrer_heure and not (heure_debut <= horodatage_local.hour < heure_fin):
                 continue
             tj = _type_jour(horodatage_local.date())
-            par_type[tj].append(duree_s / 60.0)
+            par_type[tj].append(float(duree_s))
 
-    def _calc(valeurs: list[float]) -> dict | None:
-        if not valeurs:
+    def _calc(valeurs_s: list[float]) -> dict | None:
+        if not valeurs_s:
             return None
         return {
-            "min_mn": int(round(min(valeurs))),
-            "moyen_mn": int(round(statistics.fmean(valeurs))),
-            "max_mn": int(round(max(valeurs))),
-            "nb_mesures": len(valeurs),
+            "min_mn": int(round(min(valeurs_s) / 60)),
+            "moyen_mn": int(round(statistics.fmean(valeurs_s) / 60)),
+            "max_mn": int(round(max(valeurs_s) / 60)),
+            "min_s": int(round(min(valeurs_s))),
+            "moyen_s": int(round(statistics.fmean(valeurs_s))),
+            "max_s": int(round(max(valeurs_s))),
+            "nb_mesures": len(valeurs_s),
         }
 
     return {
