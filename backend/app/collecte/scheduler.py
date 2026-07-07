@@ -368,13 +368,18 @@ async def cycle_de_collecte() -> dict[str, int]:
             "nb_troncons": 0, "nb_sous_troncons": 0, "nb_appels": 0,
         }
 
-    # TOUS les axes parents sont mesurés — même ceux qui ont des sous-tronçons.
-    # Les sous-tronçons courts (< 2 km) ne permettent pas à Google de détecter
-    # la congestion fiablement (speedReadingIntervals renvoie souvent NORMAL sur
-    # 500 m même quand l'axe complet de 14 km est congestionné).
-    # La mesure de l'axe parent sert à la détection de congestion globale ;
-    # les sous-tronçons servent à la ventilation fine des temps.
-    troncons_a_mesurer = list(troncons_actifs)
+    # Axes couverts par au moins un sous-tronçon actif : exclus de la mesure
+    # "axe complet" (granularité fine prime). Le temps de l'axe est reconstitué
+    # par somme des sous-tronçons (module aggregation.py).
+    axes_avec_sous_couvert: set[int] = set()
+    for sous_id, axes_ids in axes_par_sous.items():
+        axes_avec_sous_couvert.update(axes_ids)
+    for st in sous_troncons_actifs:
+        if st.id not in axes_par_sous:
+            axes_avec_sous_couvert.add(st.troncon_id)
+    troncons_a_mesurer = [
+        t for t in troncons_actifs if t.id not in axes_avec_sous_couvert
+    ]
 
     # 2. Décision des sources interrogées
     sources_actives: list[SourceMesure] = []
@@ -497,21 +502,22 @@ def _verifier_quota_au_demarrage() -> None:
     settings = get_settings()
     session = SessionLocal()
     try:
-        # Tous les parents actifs sont mesurés (congestion fiable sur 8-15 km)
-        # + tous les sous-tronçons actifs (ventilation fine des temps).
-        nb_parents = session.scalar(
-            select(func.count(Troncon.id)).where(Troncon.actif.is_(True))
-        ) or 0
+        # Parents sans sous-tronçon actif + tous les sous-tronçons actifs
+        parents_avec_sous = {
+            tid for (tid,) in session.execute(
+                select(SousTroncon.troncon_id).where(SousTroncon.actif.is_(True)).distinct()
+            ).all()
+        }
+        ids_parents_actifs = [
+            tid for (tid,) in session.execute(
+                select(Troncon.id).where(Troncon.actif.is_(True))
+            ).all()
+        ]
+        nb_parents_a_mesurer = sum(1 for t in ids_parents_actifs if t not in parents_avec_sous)
         nb_sous_actifs = session.scalar(
             select(func.count(SousTroncon.id)).where(SousTroncon.actif.is_(True))
         ) or 0
-        # Sous-tronçons multi-parent : compter les liens M2M (1 req Google par lien)
-        from app.models.models import axe_sous_troncons as m2m_table
-        nb_liens_m2m = session.scalar(
-            select(func.count()).select_from(m2m_table)
-        ) or 0
-        nb_sous_mesures = max(nb_sous_actifs, nb_liens_m2m)
-        nb_actifs = nb_parents + nb_sous_mesures
+        nb_actifs = nb_parents_a_mesurer + nb_sous_actifs
     finally:
         session.close()
 

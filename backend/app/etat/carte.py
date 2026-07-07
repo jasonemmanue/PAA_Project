@@ -232,15 +232,10 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
 
             sous_serialises = [_carte_sous_troncon(s, troncon) for s in sous_du_parent]
 
-            # Congestion de l'axe : on préfère la mesure DIRECTE de l'axe parent
-            # (sous_troncon_id IS NULL), car Google détecte fiablement la
-            # congestion sur 8-15 km via speedReadingIntervals. Les sous-tronçons
-            # courts (< 2 km) renvoient souvent NORMAL même en heure de pointe.
-            # Repli sur l'agrégation des sous-tronçons uniquement si l'axe
-            # parent n'a pas de mesure récente.
-            if derniere is not None and pct_rouge is not None:
-                verdict = classer_congestion(pct_rouge, pct_orange, pct_vert)
-            elif sous_serialises:
+            # Congestion de l'axe = dérivée des sous-tronçons quand ils existent.
+            # Congestionné si AU MOINS UN sous l'est, fluide si AU MOINS UN
+            # est fluide, sinon indéterminé.
+            if sous_serialises:
                 classes_sous = [s["classe_congestion"] for s in sous_serialises]
                 if "congestionne" in classes_sous:
                     verdict = classer_congestion(1.0, 0.0, 99.0)
