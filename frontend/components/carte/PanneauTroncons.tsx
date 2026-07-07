@@ -12,10 +12,9 @@
  *      le plus dégradé du moment. Critère : « congestionné » selon la
  *      couleur Google Maps (rouge ou orange long).
  *
- *   3. **Liste des tronçons surveillés** — triée du plus dégradé au plus fluide,
- *      chaque ligne cliquable déclenche un recentrage animé de la carte.
- *      Affiche pour chaque tronçon les pourcentages de rouge / orange / vert
- *      (lecture directe des couleurs Google Maps).
+ *   3. **Liste des tronçons surveillés** — chaque axe dans son propre cadre
+ *      (card arrondie) contenant à la fois l'en-tête axe cliquable et la
+ *      liste de ses sous-tronçons codifiés, aussi cliquables pour un zoom fin.
  */
 
 import clsx from "clsx";
@@ -61,10 +60,6 @@ export function PanneauTroncons({
     );
   }
 
-  // Un axe = entrée dans `troncons` (les 6 axes DEESP principaux).
-  // Un tronçon = sous_tronçon codifié enfant d'un axe (table `sous_troncons`).
-  // On ignore volontairement les entrées est_axe=false — orphelins archivés
-  // dans le cadre du refactor 2026-07-04 (migration vers sous_troncons).
   const troncsAxes = etat.troncons.filter((tr) => tr.est_axe !== false);
   const nbAxes = troncsAxes.length;
   const nbTroncons = troncsAxes.reduce(
@@ -72,9 +67,6 @@ export function PanneauTroncons({
     0,
   );
 
-  // KPI counts (3 classes DEESP) — un axe avec sous-tronçons est remplacé
-  // par la granularité fine (cf. règle scheduler § 4.8 : on ne mesure pas
-  // l'axe parent quand il a des sous-tronçons actifs).
   const compteurs: Record<ClasseCongestion, number> = {
     fluide: 0,
     congestionne: 0,
@@ -99,11 +91,8 @@ export function PanneauTroncons({
     return `${n} ${unite}`;
   };
 
-  // Tri stable par nom (les axes n'ont plus de gravité propre quand ils ont
-  // des sous-tronçons — la congestion se lit au niveau sous-tronçon).
   const tronconsTries = troncsAxes.slice().sort((a, b) => a.id - b.id);
 
-  // Point chaud = sous-tronçon le plus congestionné (pas un axe).
   const tousLesSous = troncsAxes.flatMap((tr) =>
     (tr.sous_troncons ?? []).map((s) => ({ ...s, parentId: tr.id, parentNom: tr.nom })),
   );
@@ -139,7 +128,7 @@ export function PanneauTroncons({
         </div>
       </div>
 
-      {/* ── Point chaud — affiché uniquement s'il y en a un ── */}
+      {/* ── Point chaud ── */}
       {pointChaud && (
         <button
           type="button"
@@ -149,23 +138,25 @@ export function PanneauTroncons({
             borderLeft: `4px solid ${couleurClasseCongestion(pointChaud.classe_congestion)}`,
           }}
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-               style={{
-                 backgroundColor: `${couleurClasseCongestion(pointChaud.classe_congestion)}22`,
-               }}>
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+            style={{
+              backgroundColor: `${couleurClasseCongestion(pointChaud.classe_congestion)}22`,
+            }}
+          >
             <span className="text-lg" aria-hidden>⚠</span>
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-fluid-xs font-medium uppercase tracking-wide"
-               style={{ color: couleurClasseCongestion(pointChaud.classe_congestion) }}>
+            <p
+              className="text-fluid-xs font-medium uppercase tracking-wide"
+              style={{ color: couleurClasseCongestion(pointChaud.classe_congestion) }}
+            >
               {locale === "fr" ? "Point chaud actuel" : "Current hotspot"}
             </p>
             <p className="text-fluid-sm font-semibold text-paa-navy-900 dark:text-paa-blue-100 truncate">
               [{pointChaud.code}] {pointChaud.nom_court}
             </p>
-            <p className="text-fluid-xs app-text-muted truncate">
-              {pointChaud.parentNom}
-            </p>
+            <p className="text-fluid-xs app-text-muted truncate">{pointChaud.parentNom}</p>
             <p className="text-fluid-xs app-text-muted">
               {pointChaud.couleur_google?.pourcentage_rouge !== null &&
                 pointChaud.couleur_google?.pourcentage_rouge !== undefined &&
@@ -180,15 +171,20 @@ export function PanneauTroncons({
         </button>
       )}
 
-      {/* ── Liste triée des tronçons ── */}
-      <div className="paa-card overflow-hidden">
-        <div className="border-b app-border bg-paa-blue-100 px-4 py-2 text-fluid-sm font-semibold
-                        text-paa-navy-900 dark:bg-paa-navy-700 dark:text-paa-blue-100">
-          {locale === "fr"
-            ? `${composerLibelle("fr")} surveillés`
-            : `${composerLibelle("en")} monitored`}
+      {/* ── Liste des axes — chaque axe dans son propre cadre ── */}
+      <div className="flex flex-col gap-2">
+        {/* En-tête de section */}
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-fluid-xs font-semibold uppercase tracking-wider text-paa-navy-600 dark:text-paa-blue-300">
+            {locale === "fr"
+              ? `${composerLibelle("fr")} surveillés`
+              : `${composerLibelle("en")} monitored`}
+          </span>
+          <span className="flex-1 border-t border-slate-200 dark:border-paa-navy-600" />
         </div>
-        <ul className="divide-y divide-[rgb(var(--app-border))]">
+
+        {/* Cards par axe */}
+        <ul className="flex flex-col gap-2">
           {tronconsTries.map((tr) => {
             const aSousTroncons = (tr.sous_troncons ?? []).length > 0;
             const couleur = aSousTroncons
@@ -199,56 +195,79 @@ export function PanneauTroncons({
             const pctR = tr.couleur_google?.pourcentage_rouge;
             const pctO = tr.couleur_google?.pourcentage_orange;
             const pctV = tr.couleur_google?.pourcentage_vert;
-            const horoMesure = tr.derniere_mesure?.horodatage_local
-              ?? tr.derniere_mesure?.horodatage_utc
-              ?? tr.derniere_mesure?.horodatage;
+            const horoMesure =
+              tr.derniere_mesure?.horodatage_local ??
+              tr.derniere_mesure?.horodatage_utc ??
+              tr.derniere_mesure?.horodatage;
 
             return (
               <li key={tr.id}>
-                <button
-                  type="button"
-                  onClick={() => onSelectionner(tr.id)}
-                  aria-pressed={actif}
+                {/* ─── Cadre unique axe + sous-tronçons ─── */}
+                <div
                   className={clsx(
-                    "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
+                    "overflow-hidden rounded-xl border transition-all duration-200",
                     actif
-                      ? "bg-paa-blue-50 dark:bg-paa-navy-700"
-                      : "hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800",
+                      ? "border-paa-blue-400 shadow-lg ring-2 ring-paa-blue-200/60 dark:border-paa-blue-500 dark:ring-paa-blue-700/40"
+                      : "border-slate-200 shadow-sm hover:border-paa-blue-200 hover:shadow-md dark:border-paa-navy-600 dark:hover:border-paa-blue-700",
                   )}
-                  style={actif ? { borderLeft: `4px solid ${couleur}` } : undefined}
+                  style={{
+                    borderLeftWidth: 4,
+                    borderLeftStyle: "solid",
+                    borderLeftColor: couleur,
+                  }}
                 >
-                  <span
-                    className="mt-1 inline-block h-3 w-3 shrink-0 rounded-full"
-                    style={{ backgroundColor: couleur }}
-                    aria-hidden
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-fluid-sm font-medium text-paa-navy-900 dark:text-paa-blue-100 truncate">
-                      {tr.nom}
+                  {/* En-tête axe — cliquable */}
+                  <button
+                    type="button"
+                    onClick={() => onSelectionner(tr.id)}
+                    aria-pressed={actif}
+                    className={clsx(
+                      "flex w-full flex-col px-4 py-3 text-left transition-colors",
+                      actif
+                        ? "bg-gradient-to-r from-paa-blue-50 to-white dark:from-paa-navy-700 dark:to-paa-navy-800"
+                        : "bg-white hover:bg-paa-blue-50/40 dark:bg-paa-navy-800 dark:hover:bg-paa-navy-750",
+                    )}
+                  >
+                    {/* Ligne : pastille + nom */}
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="inline-block h-3.5 w-3.5 shrink-0 rounded-full shadow-sm ring-2 ring-white dark:ring-paa-navy-900"
+                        style={{ backgroundColor: couleur }}
+                        aria-hidden
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-fluid-sm font-bold text-paa-navy-900 dark:text-paa-blue-50">
+                          {tr.nom}
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Contenu sous le nom */}
                     {aSousTroncons ? (
-                      /* Axe avec sous-tronçons : temps total uniquement */
-                      <div className="mt-0.5 text-fluid-xs app-text-muted">
-                        <span>
-                          {locale === "fr" ? "Temps total " : "Total time "}
-                          <span className="font-semibold text-paa-navy-900 dark:text-paa-blue-100">
-                            {dureeTrafic}
-                          </span>
+                      <div className="ml-6 mt-1.5 flex items-baseline gap-2">
+                        <span className="text-fluid-xs app-text-muted">
+                          {locale === "fr" ? "Temps total" : "Total time"}
                         </span>
-                        <span className="ml-2">
+                        <span className="text-fluid-base font-extrabold text-paa-navy-800 dark:text-paa-blue-100">
+                          {dureeTrafic}
+                        </span>
+                        <span className="text-[10px] app-text-muted">
                           ({locale === "fr" ? "somme des tronçons" : "sum of segments"})
                         </span>
                       </div>
                     ) : (
-                      /* Axe sans sous-tronçons : affichage classique avec congestion */
-                      <>
-                        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-fluid-xs app-text-muted">
-                          <span className="font-semibold" style={{ color: couleur }}>
-                            {tr.libelle_classe ?? libelleClasseCongestion(tr.classe_congestion ?? "indetermine", locale)}
+                      <div className="ml-6 mt-2">
+                        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-fluid-xs app-text-muted">
+                          <span className="font-bold" style={{ color: couleur }}>
+                            {tr.libelle_classe ??
+                              libelleClasseCongestion(
+                                tr.classe_congestion ?? "indetermine",
+                                locale,
+                              )}
                           </span>
                           <span>
                             {locale === "fr" ? "Temps actuel " : "Current "}
-                            <span className="font-semibold text-paa-navy-900 dark:text-paa-blue-100">
+                            <span className="font-extrabold text-paa-navy-900 dark:text-paa-blue-100">
                               {dureeTrafic}
                             </span>
                           </span>
@@ -256,14 +275,17 @@ export function PanneauTroncons({
                         {(pctR !== null && pctR !== undefined) ||
                         (pctO !== null && pctO !== undefined) ? (
                           <>
-                            <div className="mt-1.5 flex h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                            <div className="mt-2 flex h-2 w-full overflow-hidden rounded-full bg-gray-200 shadow-inner dark:bg-slate-700">
                               <div
+                                className="transition-all duration-500"
                                 style={{ width: `${pctR ?? 0}%`, backgroundColor: "#E74C3C" }}
                               />
                               <div
+                                className="transition-all duration-500"
                                 style={{ width: `${pctO ?? 0}%`, backgroundColor: "#F39C12" }}
                               />
                               <div
+                                className="transition-all duration-500"
                                 style={{ width: `${pctV ?? 0}%`, backgroundColor: "#16a34a" }}
                               />
                             </div>
@@ -280,80 +302,76 @@ export function PanneauTroncons({
                             </div>
                           </>
                         ) : null}
-                        <div className="mt-1 text-fluid-xs app-text-muted truncate">
+                        <div className="mt-1 truncate text-fluid-xs app-text-muted">
                           {libelleSource(tr.derniere_mesure?.source)} ·{" "}
                           {formaterHeureAbidjan(horoMesure)}
                         </div>
-                      </>
+                      </div>
                     )}
-                  </div>
-                </button>
+                  </button>
 
-                {/* Sous-tronçons codifiés (T1A, T2A…) — cliquables pour zoomer
-                    sur leur portion précise de l'axe parent. */}
-                {(tr.sous_troncons ?? []).length > 0 && (
-                  <ul className="ml-6 border-l-2 border-paa-blue-100 dark:border-paa-navy-700">
-                    {(tr.sous_troncons ?? []).map((sous) => {
-                      const couleurSous = couleurClasseCongestion(
-                        sous.classe_congestion,
-                      );
-                      const actifSous = selectionSousId === sous.id;
-                      const dureeSous = formaterDuree(
-                        sous.derniere_mesure?.duree_trafic_s,
-                      );
-                      return (
-                        <li key={`sous-${sous.id}`}>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onSelectionnerSous?.(sous.id, tr.id)
-                            }
-                            aria-pressed={actifSous}
-                            className={clsx(
-                              "flex w-full items-center gap-3 px-4 py-2 text-left text-fluid-xs transition-colors",
-                              actifSous
-                                ? "bg-paa-blue-50 dark:bg-paa-navy-700"
-                                : "hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800",
-                            )}
-                            style={
-                              actifSous
-                                ? { borderLeft: `3px solid ${couleurSous}` }
-                                : undefined
-                            }
+                  {/* Sous-tronçons codifiés — à l'intérieur du même cadre */}
+                  {(tr.sous_troncons ?? []).length > 0 && (
+                    <ul className="border-t border-slate-100 bg-slate-50/60 dark:border-paa-navy-700 dark:bg-paa-navy-900/30">
+                      {(tr.sous_troncons ?? []).map((sous) => {
+                        const couleurSous = couleurClasseCongestion(sous.classe_congestion);
+                        const actifSous = selectionSousId === sous.id;
+                        const dureeSous = formaterDuree(sous.derniere_mesure?.duree_trafic_s);
+                        return (
+                          <li
+                            key={`sous-${sous.id}`}
+                            className="border-b border-slate-100 last:border-b-0 dark:border-paa-navy-700/60"
                           >
-                            {sous.sens_symbole && (
-                              <span className="shrink-0 text-base text-paa-navy-600 dark:text-paa-blue-300">
-                                {sous.sens_symbole}
-                              </span>
-                            )}
-                            <span
-                              className="inline-flex h-6 min-w-[2rem] shrink-0 items-center justify-center rounded px-1.5 text-[0.65rem] font-bold text-white"
-                              style={{ backgroundColor: couleurSous }}
+                            <button
+                              type="button"
+                              onClick={() => onSelectionnerSous?.(sous.id, tr.id)}
+                              aria-pressed={actifSous}
+                              className={clsx(
+                                "flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-fluid-xs transition-colors",
+                                actifSous
+                                  ? "bg-paa-blue-50 dark:bg-paa-navy-700"
+                                  : "hover:bg-paa-blue-50/70 dark:hover:bg-paa-navy-800",
+                              )}
+                              style={
+                                actifSous
+                                  ? { borderLeft: `3px solid ${couleurSous}` }
+                                  : undefined
+                              }
                             >
-                              {sous.code}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate text-paa-navy-900 dark:text-paa-blue-100">
-                              {sous.nom_court}
-                            </span>
-                            {sous.distance_km !== undefined && (
-                              <span className="shrink-0 app-text-muted">
-                                {sous.distance_km.toFixed(2)} km
-                              </span>
-                            )}
-                            {sous.derniere_mesure?.duree_trafic_s != null && (
+                              {sous.sens_symbole && (
+                                <span className="shrink-0 text-sm text-paa-navy-400 dark:text-paa-blue-400">
+                                  {sous.sens_symbole}
+                                </span>
+                              )}
                               <span
-                                className="shrink-0 font-semibold"
-                                style={{ color: couleurSous }}
+                                className="inline-flex h-6 min-w-[2.5rem] shrink-0 items-center justify-center rounded px-1.5 text-[0.65rem] font-bold text-white"
+                                style={{ backgroundColor: couleurSous }}
                               >
-                                {dureeSous}
+                                {sous.code}
                               </span>
-                            )}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                              <span className="min-w-0 flex-1 truncate text-paa-navy-800 dark:text-paa-blue-100">
+                                {sous.nom_court}
+                              </span>
+                              {sous.distance_km !== undefined && (
+                                <span className="shrink-0 text-[0.65rem] app-text-muted">
+                                  {sous.distance_km.toFixed(2)} km
+                                </span>
+                              )}
+                              {sous.derniere_mesure?.duree_trafic_s != null && (
+                                <span
+                                  className="shrink-0 text-[0.7rem] font-semibold"
+                                  style={{ color: couleurSous }}
+                                >
+                                  {dureeSous}
+                                </span>
+                              )}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
               </li>
             );
           })}
