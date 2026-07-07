@@ -106,6 +106,7 @@ export function PageCarte() {
             selectionSeq={selectionSeq}
             onEtatChange={handleEtat}
             onSelectionner={handleSelectionner}
+            onSelectionnerSous={handleSelectionnerSous}
           />
           <LegendeCarte />
         </div>

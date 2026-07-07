@@ -78,6 +78,8 @@ type Props = {
   onEtatChange?: (etat: CarteEtat) => void;
   /** Callback de sélection (popup ou clic). */
   onSelectionner?: (tronconId: number) => void;
+  /** Callback de sélection d'un sous-tronçon (clic sur sa polyline). */
+  onSelectionnerSous?: (sousId: number, parentId: number) => void;
 };
 
 export function CarteLeaflet({
@@ -86,6 +88,7 @@ export function CarteLeaflet({
   selectionSeq = 0,
   onEtatChange,
   onSelectionner,
+  onSelectionnerSous,
 }: Props) {
   const { t, locale } = useI18n();
   const conteneurRef = useRef<HTMLDivElement | null>(null);
@@ -97,6 +100,8 @@ export function CarteLeaflet({
   const LRef = useRef<typeof import("leaflet") | null>(null);
   const onSelectionnerRef = useRef(onSelectionner);
   onSelectionnerRef.current = onSelectionner;
+  const onSelectionnerSousRef = useRef(onSelectionnerSous);
+  onSelectionnerSousRef.current = onSelectionnerSous;
   const poiMarkersRef = useRef<LeafletMarker[]>([]);
   // CircleMarkers des incidents actifs (mis à jour à chaque changement d'état)
   const incidentMarkersRef = useRef<any[]>([]);
@@ -253,11 +258,9 @@ export function CarteLeaflet({
             ...styleSous, lineCap: "round", lineJoin: "round",
           });
           ligneS.on("click", (e: L.LeafletMouseEvent) => {
-            // Superposition axe + sous-tronçon : la polyline cliquée passe
-            // au-dessus pour que SA couleur DEESP s'affiche.
             L.DomEvent.stopPropagation(e);
             ligneS.bringToFront();
-            onSelectionnerRef.current?.(troncon.id);
+            onSelectionnerSousRef.current?.(sous.id, troncon.id);
           });
           ligneS.bindPopup(
             () => construirePopupSousTroncon(troncon.nom, sous, locale),
@@ -456,14 +459,30 @@ export function CarteLeaflet({
     if (sousTronconSelectionneId !== null) {
       let sousTrouve: EtatSousTronconCarte | null = null;
       let parentTrouve: EtatTronconCarte | null = null;
-      for (const parent of etat.troncons) {
-        const found = (parent.sous_troncons ?? []).find(
+      // Chercher dans l'axe parent sélectionné en priorité (aller vs retour)
+      const axeCible = tronconSelectionneId !== null
+        ? etat.troncons.find((t) => t.id === tronconSelectionneId)
+        : null;
+      if (axeCible) {
+        const found = (axeCible.sous_troncons ?? []).find(
           (s) => s.id === sousTronconSelectionneId,
         );
         if (found) {
           sousTrouve = found;
-          parentTrouve = parent;
-          break;
+          parentTrouve = axeCible;
+        }
+      }
+      // Repli : chercher dans tous les axes
+      if (!sousTrouve) {
+        for (const parent of etat.troncons) {
+          const found = (parent.sous_troncons ?? []).find(
+            (s) => s.id === sousTronconSelectionneId,
+          );
+          if (found) {
+            sousTrouve = found;
+            parentTrouve = parent;
+            break;
+          }
         }
       }
       if (!sousTrouve || !parentTrouve) return;
