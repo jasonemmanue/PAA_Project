@@ -69,6 +69,16 @@ def _dans_plage_horaire(horodatage_local, heure_debut: int = DEESP_HEURE_DEBUT, 
     return heure_debut <= horodatage_local.hour < heure_fin
 
 
+def _creneau_termine(horodatage_local, fuseau) -> bool:
+    """True si le créneau horaire de cette mesure est terminé (pas en cours)."""
+    maintenant = datetime.now(tz=timezone.utc).astimezone(fuseau)
+    # Même jour + même heure = créneau en cours → exclure
+    if (horodatage_local.date() == maintenant.date()
+            and horodatage_local.hour == maintenant.hour):
+        return False
+    return True
+
+
 def _type_jour(d: date) -> TypeJour:
     """Lundi-vendredi → jour_ouvrable ; samedi-dimanche → week_end."""
     return "jour_ouvrable" if d.weekday() < 5 else "week_end"
@@ -385,6 +395,8 @@ def troncons_congestionnes(
         local = m.horodatage.astimezone(fuseau_local)
         if not _dans_plage_horaire(local, heure_debut, heure_fin):
             continue
+        if not _creneau_termine(local, fuseau_local):
+            continue
         occurrences[
             (m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)
         ] += 1
@@ -470,6 +482,8 @@ def matrice_congestion(
             )
             if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
                 continue
+            if not _creneau_termine(h_local, fuseau):
+                continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour
             dates_set.add(date_str)
@@ -511,6 +525,8 @@ def matrice_congestion(
                 else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
             )
             if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
+                continue
+            if not _creneau_termine(h_local, fuseau):
                 continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour
@@ -593,6 +609,8 @@ def matrice_temps(
             )
             if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
                 continue
+            if not _creneau_termine(h_local, fuseau):
+                continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour
             dates_set.add(date_str)
@@ -632,6 +650,8 @@ def matrice_temps(
                 else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
             )
             if not _dans_plage_horaire(h_local, heure_debut, heure_fin):
+                continue
+            if not _creneau_termine(h_local, fuseau):
                 continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour
