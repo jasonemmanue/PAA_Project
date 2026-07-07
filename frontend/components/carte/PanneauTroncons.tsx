@@ -84,7 +84,7 @@ export function PanneauTroncons({
     const sous = tr.sous_troncons ?? [];
     if (sous.length > 0) {
       for (const s of sous) compteurs[s.classe_congestion]++;
-    } else {
+    } else if (tr.classe_congestion) {
       compteurs[tr.classe_congestion]++;
     }
   }
@@ -105,23 +105,17 @@ export function PanneauTroncons({
       : `${partAxes} and ${partTroncons}`;
   };
 
-  // Tri par gravité décroissante : congestionnés (worst rouge%) en tête.
-  // On n'affiche que les axes — les orphelins est_axe=false n'ont plus vocation
-  // à figurer dans la liste (soit sous-tronçons, soit à archiver).
-  const tronconsTries = troncsAxes.slice().sort((a, b) => {
-    const ga = ORDRE_GRAVITE[a.classe_congestion];
-    const gb = ORDRE_GRAVITE[b.classe_congestion];
-    if (ga !== gb) return gb - ga;
-    const ra = a.couleur_google?.pourcentage_rouge ?? 0;
-    const rb = b.couleur_google?.pourcentage_rouge ?? 0;
-    if (ra !== rb) return rb - ra;
-    const oa = a.couleur_google?.pourcentage_orange ?? 0;
-    const ob = b.couleur_google?.pourcentage_orange ?? 0;
-    return ob - oa;
-  });
-  const pointChaud = tronconsTries.find(
-    (tr) => tr.classe_congestion === "congestionne",
+  // Tri stable par nom (les axes n'ont plus de gravité propre quand ils ont
+  // des sous-tronçons — la congestion se lit au niveau sous-tronçon).
+  const tronconsTries = troncsAxes.slice().sort((a, b) => a.id - b.id);
+
+  // Point chaud = sous-tronçon le plus congestionné (pas un axe).
+  const tousLesSous = troncsAxes.flatMap((tr) =>
+    (tr.sous_troncons ?? []).map((s) => ({ ...s, parentId: tr.id, parentNom: tr.nom })),
   );
+  const pointChaud = tousLesSous
+    .filter((s) => s.classe_congestion === "congestionne")
+    .sort((a, b) => (b.couleur_google?.pourcentage_rouge ?? 0) - (a.couleur_google?.pourcentage_rouge ?? 0))[0] ?? null;
 
   return (
     <div className="flex flex-col gap-fluid-4">
@@ -155,7 +149,7 @@ export function PanneauTroncons({
       {pointChaud && (
         <button
           type="button"
-          onClick={() => onSelectionner(pointChaud.id)}
+          onClick={() => onSelectionnerSous?.(pointChaud.id, pointChaud.parentId)}
           className="paa-card flex items-start gap-3 p-3 text-left transition-colors hover:bg-paa-blue-50 dark:hover:bg-paa-navy-700"
           style={{
             borderLeft: `4px solid ${couleurClasseCongestion(pointChaud.classe_congestion)}`,
@@ -173,7 +167,10 @@ export function PanneauTroncons({
               {locale === "fr" ? "Point chaud actuel" : "Current hotspot"}
             </p>
             <p className="text-fluid-sm font-semibold text-paa-navy-900 dark:text-paa-blue-100 truncate">
-              {pointChaud.nom}
+              [{pointChaud.code}] {pointChaud.nom_court}
+            </p>
+            <p className="text-fluid-xs app-text-muted truncate">
+              {pointChaud.parentNom}
             </p>
             <p className="text-fluid-xs app-text-muted">
               {pointChaud.couleur_google?.pourcentage_rouge !== null &&
@@ -182,7 +179,7 @@ export function PanneauTroncons({
               {pointChaud.couleur_google?.pourcentage_orange !== null &&
                 pointChaud.couleur_google?.pourcentage_orange !== undefined &&
                 `· 🟠 ${pointChaud.couleur_google.pourcentage_orange.toFixed(1)}% `}
-              {pointChaud.derniere_mesure?.duree_trafic_s &&
+              {pointChaud.derniere_mesure?.duree_trafic_s != null &&
                 `· ${formaterDuree(pointChaud.derniere_mesure.duree_trafic_s)}`}
             </p>
           </div>
@@ -199,7 +196,10 @@ export function PanneauTroncons({
         </div>
         <ul className="divide-y divide-[rgb(var(--app-border))]">
           {tronconsTries.map((tr) => {
-            const couleur = couleurClasseCongestion(tr.classe_congestion);
+            const aSousTroncons = (tr.sous_troncons ?? []).length > 0;
+            const couleur = aSousTroncons
+              ? "#1F4E79"
+              : couleurClasseCongestion(tr.classe_congestion ?? "indetermine");
             const dureeTrafic = formaterDuree(tr.derniere_mesure?.duree_trafic_s);
             const actif = selectionId === tr.id;
             const pctR = tr.couleur_google?.pourcentage_rouge;
@@ -232,49 +232,66 @@ export function PanneauTroncons({
                     <div className="text-fluid-sm font-medium text-paa-navy-900 dark:text-paa-blue-100 truncate">
                       {tr.nom}
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-fluid-xs app-text-muted">
-                      <span className="font-semibold" style={{ color: couleur }}>
-                        {tr.libelle_classe ?? libelleClasseCongestion(tr.classe_congestion, locale)}
-                      </span>
-                      <span>
-                        {locale === "fr" ? "Temps actuel " : "Current "}
-                        <span className="font-semibold text-paa-navy-900 dark:text-paa-blue-100">
-                          {dureeTrafic}
+                    {aSousTroncons ? (
+                      /* Axe avec sous-tronçons : temps total uniquement */
+                      <div className="mt-0.5 text-fluid-xs app-text-muted">
+                        <span>
+                          {locale === "fr" ? "Temps total " : "Total time "}
+                          <span className="font-semibold text-paa-navy-900 dark:text-paa-blue-100">
+                            {dureeTrafic}
+                          </span>
                         </span>
-                      </span>
-                    </div>
-                    {/* Barre couleur Google Maps : rouge / orange / vert */}
-                    {(pctR !== null && pctR !== undefined) ||
-                    (pctO !== null && pctO !== undefined) ? (
+                        <span className="ml-2">
+                          ({locale === "fr" ? "somme des tronçons" : "sum of segments"})
+                        </span>
+                      </div>
+                    ) : (
+                      /* Axe sans sous-tronçons : affichage classique avec congestion */
                       <>
-                        <div className="mt-1.5 flex h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
-                          <div
-                            style={{ width: `${pctR ?? 0}%`, backgroundColor: "#E74C3C" }}
-                          />
-                          <div
-                            style={{ width: `${pctO ?? 0}%`, backgroundColor: "#F39C12" }}
-                          />
-                          <div
-                            style={{ width: `${pctV ?? 0}%`, backgroundColor: "#16a34a" }}
-                          />
+                        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-fluid-xs app-text-muted">
+                          <span className="font-semibold" style={{ color: couleur }}>
+                            {tr.libelle_classe ?? libelleClasseCongestion(tr.classe_congestion ?? "indetermine", locale)}
+                          </span>
+                          <span>
+                            {locale === "fr" ? "Temps actuel " : "Current "}
+                            <span className="font-semibold text-paa-navy-900 dark:text-paa-blue-100">
+                              {dureeTrafic}
+                            </span>
+                          </span>
                         </div>
-                        <div className="mt-1 flex gap-2 text-fluid-xs app-text-muted">
-                          {pctR !== null && pctR !== undefined && (
-                            <span style={{ color: "#E74C3C" }}>🔴 {pctR.toFixed(1)}%</span>
-                          )}
-                          {pctO !== null && pctO !== undefined && (
-                            <span style={{ color: "#F39C12" }}>🟠 {pctO.toFixed(1)}%</span>
-                          )}
-                          {pctV !== null && pctV !== undefined && (
-                            <span style={{ color: "#16a34a" }}>🟢 {pctV.toFixed(1)}%</span>
-                          )}
+                        {(pctR !== null && pctR !== undefined) ||
+                        (pctO !== null && pctO !== undefined) ? (
+                          <>
+                            <div className="mt-1.5 flex h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                              <div
+                                style={{ width: `${pctR ?? 0}%`, backgroundColor: "#E74C3C" }}
+                              />
+                              <div
+                                style={{ width: `${pctO ?? 0}%`, backgroundColor: "#F39C12" }}
+                              />
+                              <div
+                                style={{ width: `${pctV ?? 0}%`, backgroundColor: "#16a34a" }}
+                              />
+                            </div>
+                            <div className="mt-1 flex gap-2 text-fluid-xs app-text-muted">
+                              {pctR !== null && pctR !== undefined && (
+                                <span style={{ color: "#E74C3C" }}>🔴 {pctR.toFixed(1)}%</span>
+                              )}
+                              {pctO !== null && pctO !== undefined && (
+                                <span style={{ color: "#F39C12" }}>🟠 {pctO.toFixed(1)}%</span>
+                              )}
+                              {pctV !== null && pctV !== undefined && (
+                                <span style={{ color: "#16a34a" }}>🟢 {pctV.toFixed(1)}%</span>
+                              )}
+                            </div>
+                          </>
+                        ) : null}
+                        <div className="mt-1 text-fluid-xs app-text-muted truncate">
+                          {libelleSource(tr.derniere_mesure?.source)} ·{" "}
+                          {formaterHeureAbidjan(horoMesure)}
                         </div>
                       </>
-                    ) : null}
-                    <div className="mt-1 text-fluid-xs app-text-muted truncate">
-                      {libelleSource(tr.derniere_mesure?.source)} ·{" "}
-                      {formaterHeureAbidjan(horoMesure)}
-                    </div>
+                    )}
                   </div>
                 </button>
 

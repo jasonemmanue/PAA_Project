@@ -239,64 +239,107 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
 
             sous_serialises = [_carte_sous_troncon(s, troncon) for s in sous_du_parent]
 
-            # Congestion de l'axe = dérivée des sous-tronçons quand ils existent.
-            # Congestionné si AU MOINS UN sous l'est, fluide si AU MOINS UN
-            # est fluide, sinon indéterminé.
             if sous_serialises:
-                classes_sous = [s["classe_congestion"] for s in sous_serialises]
-                if "congestionne" in classes_sous:
-                    verdict = classer_congestion(1.0, 0.0, 99.0)
-                elif "fluide" in classes_sous:
-                    verdict = classer_congestion(0.0, 0.0, 100.0)
-                else:
-                    verdict = classer_congestion(None, None, None)
+                # Axe avec sous-tronçons : le temps est la somme des temps
+                # des sous-tronçons. Pas de congestion ni de couleurs Google
+                # au niveau axe — seuls les sous-tronçons portent ces infos.
+                somme_duree_s: int | None = None
+                horodatage_plus_recent: str | None = None
+                horodatage_plus_recent_local: str | None = None
+                tous_ont_mesure = True
+                for ss in sous_serialises:
+                    sm = ss.get("derniere_mesure")
+                    if sm and sm.get("duree_trafic_s") is not None:
+                        somme_duree_s = (somme_duree_s or 0) + sm["duree_trafic_s"]
+                        h = sm.get("horodatage_local") or sm.get("horodatage_utc")
+                        if h and (horodatage_plus_recent is None or h > horodatage_plus_recent):
+                            horodatage_plus_recent = sm.get("horodatage_utc")
+                            horodatage_plus_recent_local = sm.get("horodatage_local")
+                    else:
+                        tous_ont_mesure = False
+
+                statut_axe = "mesure_disponible" if somme_duree_s is not None else "sans_mesure"
+                dist_axe = sum(ss.get("distance_m", 0) or 0 for ss in sous_serialises)
+                vitesse_axe = round(dist_axe / somme_duree_s * 3.6, 1) if somme_duree_s else None
+
+                etat_troncons.append({
+                    "id": troncon.id,
+                    "nom": troncon.nom,
+                    "est_axe": getattr(troncon, "est_axe", True),
+                    "distance_m": troncon.distance_m,
+                    "distance_km": round(troncon.distance_m / 1000.0, 2),
+                    "vitesse_ref_kmh": troncon.vitesse_ref_kmh,
+                    "couleur_base": troncon.couleur,
+                    "couleur_etat": troncon.couleur,
+                    "polyline": troncon.polyline,
+                    "sous_troncons": sous_serialises,
+                    "geometrie": {
+                        "lat_origine": troncon.lat_origine,
+                        "lon_origine": troncon.lon_origine,
+                        "lat_destination": troncon.lat_destination,
+                        "lon_destination": troncon.lon_destination,
+                    },
+                    "temps_reference_50kmh_s": round(troncon.temps_reference_s(), 1),
+                    "statut": statut_axe,
+                    "derniere_mesure": {
+                        "horodatage_utc": horodatage_plus_recent,
+                        "horodatage_local": horodatage_plus_recent_local,
+                        "duree_trafic_s": somme_duree_s,
+                        "vitesse_moyenne_kmh": vitesse_axe,
+                        "source": "somme_troncons",
+                    } if somme_duree_s is not None else None,
+                    "classe_congestion": None,
+                    "libelle_classe": None,
+                    "motif_congestion": None,
+                    "couleur_google": {
+                        "pourcentage_rouge": None,
+                        "pourcentage_orange": None,
+                        "pourcentage_vert": None,
+                    },
+                })
             else:
                 verdict = classer_congestion(pct_rouge, pct_orange, pct_vert)
-            couleur_etat = COULEURS_DEESP[verdict.classe]
+                couleur_etat = COULEURS_DEESP[verdict.classe]
 
-            etat_troncons.append({
-                "id": troncon.id,
-                "nom": troncon.nom,
-                # True = axe, False = tronçon codifié enfant d'un axe (migration 0013)
-                "est_axe": getattr(troncon, "est_axe", True),
-                "distance_m": troncon.distance_m,
-                "distance_km": round(troncon.distance_m / 1000.0, 2),
-                "vitesse_ref_kmh": troncon.vitesse_ref_kmh,
-                "couleur_base": troncon.couleur,
-                "couleur_etat": couleur_etat,
-                "polyline": troncon.polyline,
-                "sous_troncons": sous_serialises,
-                "geometrie": {
-                    "lat_origine": troncon.lat_origine,
-                    "lon_origine": troncon.lon_origine,
-                    "lat_destination": troncon.lat_destination,
-                    "lon_destination": troncon.lon_destination,
-                },
-                "temps_reference_50kmh_s": round(troncon.temps_reference_s(), 1),
-                "statut": statut,
-                "derniere_mesure": (
-                    {
-                        "horodatage_utc": horodatage_iso,
-                        "horodatage_local": horodatage_local_iso,
-                        # Temps observé — informatif uniquement, ne sert pas
-                        # à la qualification congestionné/fluide.
-                        "duree_trafic_s": duree_mesuree,
-                        "vitesse_moyenne_kmh": vitesse_kmh,
-                        "source": source_mesure,
-                    }
-                    if derniere is not None
-                    else None
-                ),
-                # Critère DEESP — la qualification
-                "classe_congestion": verdict.classe,
-                "libelle_classe": LIBELLES_DEESP_FR[verdict.classe],
-                "motif_congestion": verdict.motif,
-                "couleur_google": {
-                    "pourcentage_rouge": pct_rouge,
-                    "pourcentage_orange": pct_orange,
-                    "pourcentage_vert": pct_vert,
-                },
-            })
+                etat_troncons.append({
+                    "id": troncon.id,
+                    "nom": troncon.nom,
+                    "est_axe": getattr(troncon, "est_axe", True),
+                    "distance_m": troncon.distance_m,
+                    "distance_km": round(troncon.distance_m / 1000.0, 2),
+                    "vitesse_ref_kmh": troncon.vitesse_ref_kmh,
+                    "couleur_base": troncon.couleur,
+                    "couleur_etat": couleur_etat,
+                    "polyline": troncon.polyline,
+                    "sous_troncons": sous_serialises,
+                    "geometrie": {
+                        "lat_origine": troncon.lat_origine,
+                        "lon_origine": troncon.lon_origine,
+                        "lat_destination": troncon.lat_destination,
+                        "lon_destination": troncon.lon_destination,
+                    },
+                    "temps_reference_50kmh_s": round(troncon.temps_reference_s(), 1),
+                    "statut": statut,
+                    "derniere_mesure": (
+                        {
+                            "horodatage_utc": horodatage_iso,
+                            "horodatage_local": horodatage_local_iso,
+                            "duree_trafic_s": duree_mesuree,
+                            "vitesse_moyenne_kmh": vitesse_kmh,
+                            "source": source_mesure,
+                        }
+                        if derniere is not None
+                        else None
+                    ),
+                    "classe_congestion": verdict.classe,
+                    "libelle_classe": LIBELLES_DEESP_FR[verdict.classe],
+                    "motif_congestion": verdict.motif,
+                    "couleur_google": {
+                        "pourcentage_rouge": pct_rouge,
+                        "pourcentage_orange": pct_orange,
+                        "pourcentage_vert": pct_vert,
+                    },
+                })
 
         # 4. Incidents actifs géolocalisés — max 20 les plus récents
         seuil_actif = instant_utc - timedelta(hours=settings.incident_actif_heures)

@@ -134,9 +134,9 @@ export interface EtatTronconCarte {
   lat_destination?: number | null;
   lon_destination?: number | null;
   couleur_etat: string;
-  classe_congestion: ClasseCongestion;
-  libelle_classe?: string;
-  motif_congestion?: string;
+  classe_congestion: ClasseCongestion | null;
+  libelle_classe?: string | null;
+  motif_congestion?: string | null;
   couleur_google?: CouleurGoogle;
   statut?: string;
   derniere_mesure: Mesure | null;

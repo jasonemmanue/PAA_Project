@@ -214,10 +214,11 @@ export function CarteLeaflet({
       if (points.length < 2) continue;
 
       const aDesSous = (troncon.sous_troncons?.length ?? 0) > 0;
-      // La couleur du tronçon suit STRICTEMENT la légende (fluide vert
-      // #16a34a, congestionné rouge #E74C3C, indéterminé gris #95A5A6).
-      // Cf. `couleurClasseCongestion` (lib/format.ts) et LegendeCarte.tsx.
-      const couleur = couleurClasseCongestion(troncon.classe_congestion);
+      // Axes avec sous-tronçons : couleur de base de l'axe (pas de congestion propre).
+      // Axes sans sous-tronçons : couleur selon la classe DEESP.
+      const couleur = aDesSous
+        ? (troncon.couleur_etat || "#1F4E79")
+        : couleurClasseCongestion(troncon.classe_congestion ?? "indetermine");
 
       const existante = lignesRef.current.get(troncon.id);
       const style = { color: couleur, weight: 6, opacity: 0.95 };
@@ -401,8 +402,8 @@ export function CarteLeaflet({
     if (!zoomInitialFaitRef.current && etat.troncons.length > 0) {
       const troncons = etat.troncons.slice();
       troncons.sort((a, b) => {
-        const ga = ORDRE_GRAVITE[a.classe_congestion] ?? 0;
-        const gb = ORDRE_GRAVITE[b.classe_congestion] ?? 0;
+        const ga = a.classe_congestion ? (ORDRE_GRAVITE[a.classe_congestion] ?? 0) : 0;
+        const gb = b.classe_congestion ? (ORDRE_GRAVITE[b.classe_congestion] ?? 0) : 0;
         if (ga !== gb) return gb - ga;
         const ra = a.couleur_google?.pourcentage_rouge ?? 0;
         const rb = b.couleur_google?.pourcentage_rouge ?? 0;
@@ -670,10 +671,41 @@ export function CarteLeaflet({
 // HTMLElement, on retourne une string formatée (le rendu reste léger).
 // ---------------------------------------------------------------------------
 function construirePopup(t: EtatTronconCarte, locale: "fr" | "en"): string {
-  const couleur = couleurClasseCongestion(t.classe_congestion);
-  const classe = libelleClasseCongestion(t.classe_congestion, locale);
+  const aSousTroncons = (t.sous_troncons ?? []).length > 0;
   const m = t.derniere_mesure;
   const dureeTrafic = formaterDuree(m?.duree_trafic_s);
+  const ficheUrl = `/indicateurs?troncon=${t.id}`;
+  const labelFiche = locale === "fr" ? "Voir la fiche détaillée →" : "View details →";
+
+  if (aSousTroncons) {
+    const labelTemps = locale === "fr" ? "Temps total" : "Total time";
+    const labelNote = locale === "fr" ? "Somme des tronçons codifiés" : "Sum of coded segments";
+    const nbSous = t.sous_troncons!.length;
+    const labelNb = locale === "fr"
+      ? `${nbSous} tronçon${nbSous > 1 ? "s" : ""} codifié${nbSous > 1 ? "s" : ""}`
+      : `${nbSous} coded segment${nbSous > 1 ? "s" : ""}`;
+    return `
+      <div style="font-family: Inter, sans-serif; min-width: 220px;">
+        <div style="font-weight: 600; font-size: 14px; color: #0B2545; margin-bottom: 6px;">
+          ${escapeHtml(t.nom)}
+        </div>
+        <table style="width: 100%; font-size: 12px; color: #1F2937;">
+          <tr><td style="padding: 2px 0; color: #6B7280;">${labelTemps}</td><td style="text-align: right; font-weight: 600;">${dureeTrafic}</td></tr>
+          <tr><td style="padding: 2px 0; color: #6B7280;">${locale === "fr" ? "Distance" : "Distance"}</td><td style="text-align: right;">${t.distance_km} km</td></tr>
+        </table>
+        <div style="margin-top: 6px; padding: 4px 8px; background: #F0F9FF;
+                    font-size: 11px; color: #475569; border-radius: 3px;">
+          ${escapeHtml(labelNote)} (${escapeHtml(labelNb)})
+        </div>
+        <a href="${ficheUrl}" style="display: block; margin-top: 8px;
+                  font-size: 12px; font-weight: 600; color: #1F4E79;
+                  text-decoration: none;">${labelFiche}</a>
+      </div>
+    `;
+  }
+
+  const couleur = couleurClasseCongestion(t.classe_congestion ?? "indetermine");
+  const classe = libelleClasseCongestion(t.classe_congestion ?? "indetermine", locale);
   const heure = formaterHeureAbidjan(
     m?.horodatage_local ?? m?.horodatage_utc ?? m?.horodatage,
   );
@@ -685,8 +717,6 @@ function construirePopup(t: EtatTronconCarte, locale: "fr" | "en"): string {
   const fmtPct = (v: number | null | undefined): string =>
     v !== null && v !== undefined ? `${v.toFixed(1)} %` : "—";
 
-  const ficheUrl = `/indicateurs?troncon=${t.id}`;
-  const labelFiche = locale === "fr" ? "Voir la fiche détaillée →" : "View details →";
   const labelMesure = locale === "fr" ? "Temps actuel" : "Current time";
   const labelHeure = locale === "fr" ? "Mesurée à" : "Measured at";
   const labelSource = locale === "fr" ? "Source" : "Source";
