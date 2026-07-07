@@ -384,6 +384,9 @@ export interface LigneTempsTraversee {
   temps_min_mn: number | null;
   temps_moyen_mn: number | null;
   temps_max_mn: number | null;
+  temps_min_s?: number | null;
+  temps_moyen_s?: number | null;
+  temps_max_s?: number | null;
 }
 
 export interface RapportTempsTraversee {
@@ -450,6 +453,9 @@ export interface StatsPeriode {
   min_mn: number;
   moyen_mn: number;
   max_mn: number;
+  min_s?: number;
+  moyen_s?: number;
+  max_s?: number;
   nb_mesures: number;
 }
 
@@ -459,8 +465,10 @@ export interface ResumePrediction {
   courante: {
     instant_local: string;
     type_jour: "jour_ouvrable" | "week_end";
-    prediction: { min_mn: number | null; moyen_mn: number | null; max_mn: number | null };
-    bornes_7j: { min_mn: number | null; moyen_mn: number | null; max_mn: number | null } | null;
+    prediction: { min_mn: number | null; moyen_mn: number | null; max_mn: number | null; min_s?: number | null; moyen_s?: number | null; max_s?: number | null };
+    bornes_7j: { min_mn: number | null; moyen_mn: number | null; max_mn: number | null; min_s?: number | null; moyen_s?: number | null; max_s?: number | null } | null;
+    /** Mesure Google brute du créneau courant (fenêtre 65 min) — null si aucune mesure disponible. */
+    mesure_creneau_actuel: { duree_s: number; duree_mn: number } | null;
     source: SourcePrediction;
     confiance: number;
     calibration_appliquee: number;

@@ -32,6 +32,7 @@ from app.analyse.aggregation import (
 from app.predicteur.profils import (
     predire,
     _stats_mesures_periode,
+    _prediction_google,
     _prediction_jour_type,
 )
 
@@ -112,6 +113,7 @@ async def get_resume(
     # (min/max stables même quand le moyen vient de la mesure Google instantanée)
     troncon = db.get(Troncon, troncon_id)
     bornes_7j = None
+    google_creneau = None
     if troncon is not None:
         pred_n2 = _prediction_jour_type(db, troncon, maintenant_utc)
         if pred_n2 is not None:
@@ -119,7 +121,13 @@ async def get_resume(
                 "min_mn": pred_n2.min_mn,
                 "moyen_mn": pred_n2.moyen_mn,
                 "max_mn": pred_n2.max_mn,
+                "min_s": pred_n2.min_s,
+                "moyen_s": pred_n2.moyen_s,
+                "max_s": pred_n2.max_s,
             }
+        # Mesure Google brute du créneau courant (fenêtre 65 min = heure entière + marge)
+        # Indépendante de la cascade — correspond exactement à la cellule de la MatriceCongestion
+        google_creneau = _prediction_google(db, troncon, maintenant_utc, fenetre_minutes=65)
 
     nom_affichage = pred.troncon_nom
     if sous_troncon_id is not None:
@@ -138,8 +146,15 @@ async def get_resume(
                 "min_mn": pred.min_mn,
                 "moyen_mn": pred.moyen_mn,
                 "max_mn": pred.max_mn,
+                "min_s": pred.min_s,
+                "moyen_s": pred.moyen_s,
+                "max_s": pred.max_s,
             },
             "bornes_7j": bornes_7j,
+            "mesure_creneau_actuel": {
+                "duree_s": google_creneau.moyen_s,
+                "duree_mn": google_creneau.moyen_mn,
+            } if google_creneau is not None else None,
             "source": pred.source,
             "confiance": round(pred.confiance, 3),
             "calibration_appliquee": pred.calibration_appliquee,

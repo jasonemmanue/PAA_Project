@@ -284,43 +284,39 @@ export function PagePrediction() {
                         </div>
                       </div>
 
-                      {/* Bande temps actuel — visible quelle que soit la source */}
-                      {(resume.courante.prediction.moyen_s != null || moyS != null) && (
-                        <div className={`mb-4 rounded-xl border-2 p-4 text-center ${
-                          resume.courante.source === "google_routes"
-                            ? "border-green-400 dark:border-green-600 bg-green-50/60 dark:bg-green-950/20"
-                            : resume.courante.source === "mesures_jour_type_7j"
-                              ? "border-paa-blue-400 dark:border-paa-blue-600 bg-paa-blue-50/60 dark:bg-paa-navy-800/40"
-                              : "border-slate-300 dark:border-slate-600 bg-slate-50/40 dark:bg-slate-800/30"
+                      {/* Bande temps actuel — mesure Google brute du créneau courant uniquement */}
+                      <div className={`mb-4 rounded-xl border-2 p-4 text-center ${
+                        resume.courante.mesure_creneau_actuel
+                          ? "border-green-400 dark:border-green-600 bg-green-50/60 dark:bg-green-950/20"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-800/20"
+                      }`}>
+                        <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${
+                          resume.courante.mesure_creneau_actuel
+                            ? "text-green-600 dark:text-green-400"
+                            : "text-slate-400 dark:text-slate-500"
                         }`}>
-                          <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${
-                            resume.courante.source === "google_routes"
-                              ? "text-green-600 dark:text-green-400"
-                              : resume.courante.source === "mesures_jour_type_7j"
-                                ? "text-paa-blue-600 dark:text-paa-blue-400"
-                                : "text-slate-500 dark:text-slate-400"
-                          }`}>
-                            {locale === "fr"
-                              ? `Temps actuel — ${creneauLabel}`
-                              : `Current time — ${creneauLabel}`}
-                          </div>
-                          <div className={`text-[42px] font-black leading-none ${
-                            resume.courante.source === "google_routes"
-                              ? "text-green-700 dark:text-green-300"
-                              : resume.courante.source === "mesures_jour_type_7j"
-                                ? "text-paa-navy-800 dark:text-paa-blue-50"
-                                : "text-slate-600 dark:text-slate-300"
-                          }`}>
-                            {formaterDuree(resume.courante.prediction.moyen_s ?? moyS)}
-                          </div>
-                          <div className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
-                            {resume.courante.source === "google_routes" && (
-                              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                            )}
-                            {LIBELLE_SOURCE[resume.courante.source]}
-                          </div>
+                          {locale === "fr"
+                            ? `Temps actuel — ${creneauLabel}`
+                            : `Current time — ${creneauLabel}`}
                         </div>
-                      )}
+                        {resume.courante.mesure_creneau_actuel ? (
+                          <>
+                            <div className="text-[42px] font-black leading-none text-green-700 dark:text-green-300">
+                              {formaterDuree(resume.courante.mesure_creneau_actuel.duree_s)}
+                            </div>
+                            <div className="mt-1 inline-flex items-center gap-1.5 text-[10px] text-green-600 dark:text-green-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                              {LIBELLE_SOURCE["google_routes"]}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="py-2 text-[16px] font-medium text-slate-400 dark:text-slate-500">
+                            {locale === "fr"
+                              ? "En attente de mesure Google Maps"
+                              : "Awaiting Google Maps measurement"}
+                          </div>
+                        )}
+                      </div>
 
                       {/* Note source des statistiques MIN / MOY / MAX */}
                       <div className="mb-4 rounded-lg border app-border bg-slate-50 dark:bg-slate-900/40 px-4 py-2.5">
