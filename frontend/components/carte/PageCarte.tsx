@@ -9,7 +9,7 @@
  */
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { LegendeCarte } from "@/components/carte/LegendeCarte";
 import { PanneauTroncons } from "@/components/carte/PanneauTroncons";
@@ -37,17 +37,24 @@ export function PageCarte() {
   // pour zoomer sur sa portion précise de l'axe parent.
   const [selectionSousId, setSelectionSousId] = useState<number | null>(null);
 
+  // Compteur incrémenté à chaque clic pour forcer le re-trigger de l'effet
+  // même quand on reclique sur le même tronçon (ex. aller → retour du même axe).
+  const selectionSeqRef = useRef(0);
+  const [selectionSeq, setSelectionSeq] = useState(0);
+
   const handleEtat = useCallback((e: CarteEtat) => setEtat(e), []);
   const handleSelectionner = useCallback((id: number) => {
     setSelectionSousId(null);
     setSelectionId(id);
+    selectionSeqRef.current += 1;
+    setSelectionSeq(selectionSeqRef.current);
   }, []);
   const handleSelectionnerSous = useCallback(
     (sousId: number, parentId: number) => {
-      // On garde la sélection axe pour la surbrillance, mais la priorité
-      // de zoom bascule sur le sous-tronçon.
       setSelectionId(parentId);
       setSelectionSousId(sousId);
+      selectionSeqRef.current += 1;
+      setSelectionSeq(selectionSeqRef.current);
     },
     [],
   );
@@ -96,6 +103,7 @@ export function PageCarte() {
           <CarteLeaflet
             tronconSelectionneId={selectionId}
             sousTronconSelectionneId={selectionSousId}
+            selectionSeq={selectionSeq}
             onEtatChange={handleEtat}
             onSelectionner={handleSelectionner}
           />

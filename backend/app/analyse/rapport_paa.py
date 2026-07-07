@@ -315,8 +315,14 @@ def seuils_congestion(debut_utc: datetime, fin_utc: datetime) -> tuple[int, int]
     Référence DEESP : 28 jours → seuil_jour=3, seuil_semaine=4.
     En-dessous de 28 jours, les seuils sont proratisés pour que le tableau
     reste utilisable sur des plages courtes tout en restant proportionnel.
+
+    fin_utc est cappée à maintenant — on ne peut pas avoir de données du
+    futur, donc utiliser juillet complet (31 j) alors qu'on est au 7 juillet
+    produirait des seuils inatteignables.
     """
-    nb_jours = max(1, (fin_utc - debut_utc).days + 1)
+    maintenant = datetime.now(timezone.utc)
+    fin_effective = min(fin_utc, maintenant)
+    nb_jours = max(1, (fin_effective - debut_utc).days + 1)
     facteur = nb_jours / 28
     seuil_jour = max(1, round(3 * facteur))
     seuil_semaine = max(2, round(4 * facteur))
@@ -469,8 +475,8 @@ def matrice_congestion(
             dates_set.add(date_str)
             par_date_heure.setdefault(date_str, {})[heure] = {
                 "est_congestionne": m.est_congestionne,
-                "pct_rouge": round(m.pourcentage_rouge * 100) if m.pourcentage_rouge is not None else None,
-                "pct_orange": round(m.pourcentage_orange * 100) if m.pourcentage_orange is not None else None,
+                "pct_rouge": round(m.pourcentage_rouge, 1) if m.pourcentage_rouge is not None else None,
+                "pct_orange": round(m.pourcentage_orange, 1) if m.pourcentage_orange is not None else None,
             }
     else:
         conds = [
@@ -511,8 +517,8 @@ def matrice_congestion(
             dates_set.add(date_str)
             par_date_heure.setdefault(date_str, {})[heure] = {
                 "est_congestionne": est_cong,
-                "pct_rouge": round(pct_rouge * 100) if pct_rouge is not None else None,
-                "pct_orange": round(pct_orange * 100) if pct_orange is not None else None,
+                "pct_rouge": round(pct_rouge, 1) if pct_rouge is not None else None,
+                "pct_orange": round(pct_orange, 1) if pct_orange is not None else None,
             }
 
     dates_list = sorted(dates_set)

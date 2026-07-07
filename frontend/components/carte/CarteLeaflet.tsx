@@ -71,6 +71,9 @@ type Props = {
   /** Sous-tronçon (T1A, T2A…) à mettre en surbrillance et vers lequel zoomer.
    *  Prioritaire sur `tronconSelectionneId` pour le zoom quand défini. */
   sousTronconSelectionneId?: number | null;
+  /** Compteur incrémenté à chaque clic pour forcer le re-trigger de l'effet
+   *  même quand on reclique sur le même tronçon. */
+  selectionSeq?: number;
   /** Callback déclenché lorsque l'état de la carte change (chargement initial ou màj WS). */
   onEtatChange?: (etat: CarteEtat) => void;
   /** Callback de sélection (popup ou clic). */
@@ -80,6 +83,7 @@ type Props = {
 export function CarteLeaflet({
   tronconSelectionneId,
   sousTronconSelectionneId = null,
+  selectionSeq = 0,
   onEtatChange,
   onSelectionner,
 }: Props) {
@@ -510,9 +514,9 @@ export function CarteLeaflet({
       lignesRef.current.get(parentTrouve.id)?.bringToFront();
       const cle = `p${parentTrouve.id}_s${sousTronconSelectionneId}`;
       const ligneSous = lignesSousRef.current.get(cle);
-      // Puis le sous-tronçon au-dessus de tout
       ligneSous?.bringToFront();
-      ligneSous?.openPopup();
+      // Ouvrir le popup après la fin de l'animation flyToBounds
+      setTimeout(() => ligneSous?.openPopup(), 850);
       return;
     }
 
@@ -567,8 +571,9 @@ export function CarteLeaflet({
     }
 
     const ligne = lignesRef.current.get(tronconSelectionneId);
-    ligne?.openPopup();
-  }, [tronconSelectionneId, sousTronconSelectionneId, etat]);
+    // Ouvrir le popup après la fin de l'animation flyToBounds
+    setTimeout(() => ligne?.openPopup(), 850);
+  }, [tronconSelectionneId, sousTronconSelectionneId, selectionSeq, etat]);
 
   // ---- Indicateur d'état WebSocket
   const libelleEtatWs = useMemo(() => {
@@ -843,26 +848,23 @@ function construirePopupSousTroncon(
   const couleur = s.couleur_etat;
   const libelle = s.libelle_classe ?? s.classe_congestion;
   const km = s.distance_km ?? (s.distance_m ? Math.round(s.distance_m / 10) / 100 : null);
-  const tempsRef = s.temps_reference_50kmh_s
-    ? Math.round(s.temps_reference_50kmh_s / 60)
-    : null;
-  const tempsObs = s.derniere_mesure?.duree_trafic_s
-    ? Math.round(s.derniere_mesure.duree_trafic_s / 60)
-    : null;
+  const tempsRef = formaterDuree(s.temps_reference_50kmh_s);
+  const tempsObs = formaterDuree(s.derniere_mesure?.duree_trafic_s);
   const motif = s.motif_congestion ? `<div class="text-xs opacity-80 mt-1">${s.motif_congestion}</div>` : "";
   const labelTempsRef = locale === "fr" ? "Référence 50 km/h" : "Reference 50 km/h";
   const labelTempsObs = locale === "fr" ? "Temps actuel" : "Current time";
+  const sensSymbole = s.sens_symbole ? ` ${s.sens_symbole}` : "";
   return `
     <div class="font-sans">
       <div class="text-xs opacity-70">${nomParent}</div>
-      <div class="font-bold text-base">${s.code} — ${s.nom_court}</div>
+      <div class="font-bold text-base">${sensSymbole} ${s.code} — ${s.nom_court}</div>
       <div class="mt-1 inline-block px-2 py-0.5 rounded text-white text-xs" style="background:${couleur}">${libelle}</div>
       ${motif}
       <div class="mt-2 text-xs">
         ${km !== null ? `${km} km · ` : ""}
-        ${tempsRef !== null ? `${labelTempsRef} : ${tempsRef} min` : ""}
+        ${tempsRef ? `${labelTempsRef} : ${tempsRef}` : ""}
       </div>
-      ${tempsObs !== null ? `<div class="text-xs">${labelTempsObs} : <strong>${tempsObs} min</strong></div>` : ""}
+      ${tempsObs ? `<div class="text-xs">${labelTempsObs} : <strong>${tempsObs}</strong></div>` : ""}
     </div>
   `;
 }

@@ -422,7 +422,7 @@ async def get_matrice_congestion(
     sous_troncon_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    from app.models.models import SousTroncon, Troncon
+    from app.models.models import SousTroncon, Troncon, axe_sous_troncons as m2m
     logger.info(
         "GET /rapport/matrice-congestion — troncon_id=%d sous=%s campagne=%r",
         troncon_id, sous_troncon_id, campagne,
@@ -433,8 +433,19 @@ async def get_matrice_congestion(
     sous = None
     if sous_troncon_id is not None:
         sous = db.get(SousTroncon, sous_troncon_id)
-        if sous is None or sous.troncon_id != troncon_id:
+        if sous is None:
             raise HTTPException(status_code=404, detail="Sous-tronçon introuvable.")
+        # Vérifier parent principal OU rattachement M2M (multi-parent)
+        if sous.troncon_id != troncon_id:
+            from sqlalchemy import select as sa_select
+            lien = db.execute(
+                sa_select(m2m.c.axe_id).where(
+                    m2m.c.axe_id == troncon_id,
+                    m2m.c.sous_troncon_id == sous_troncon_id,
+                )
+            ).first()
+            if lien is None:
+                raise HTTPException(status_code=404, detail="Sous-tronçon introuvable.")
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
     result = rapport_paa.matrice_congestion(
         db, troncon_id, debut_utc, fin_utc,
@@ -845,7 +856,7 @@ async def get_matrice_temps(
     sous_troncon_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    from app.models.models import SousTroncon, Troncon
+    from app.models.models import SousTroncon, Troncon, axe_sous_troncons as m2m
     logger.info(
         "GET /rapport/matrice-temps — troncon_id=%d sous=%s campagne=%r",
         troncon_id, sous_troncon_id, campagne,
@@ -856,8 +867,19 @@ async def get_matrice_temps(
     sous = None
     if sous_troncon_id is not None:
         sous = db.get(SousTroncon, sous_troncon_id)
-        if sous is None or sous.troncon_id != troncon_id:
+        if sous is None:
             raise HTTPException(status_code=404, detail="Sous-tronçon introuvable.")
+        # Vérifier parent principal OU rattachement M2M (multi-parent)
+        if sous.troncon_id != troncon_id:
+            from sqlalchemy import select as sa_select
+            lien = db.execute(
+                sa_select(m2m.c.axe_id).where(
+                    m2m.c.axe_id == troncon_id,
+                    m2m.c.sous_troncon_id == sous_troncon_id,
+                )
+            ).first()
+            if lien is None:
+                raise HTTPException(status_code=404, detail="Sous-tronçon introuvable.")
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
     result = rapport_paa.matrice_temps(
         db, troncon_id, debut_utc, fin_utc,

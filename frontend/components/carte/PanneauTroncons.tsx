@@ -310,6 +310,11 @@ export function PanneauTroncons({
                                 : undefined
                             }
                           >
+                            {sous.sens_symbole && (
+                              <span className="shrink-0 text-base text-paa-navy-600 dark:text-paa-blue-300">
+                                {sous.sens_symbole}
+                              </span>
+                            )}
                             <span
                               className="inline-flex h-6 min-w-[2rem] shrink-0 items-center justify-center rounded px-1.5 text-[0.65rem] font-bold text-white"
                               style={{ backgroundColor: couleurSous }}
