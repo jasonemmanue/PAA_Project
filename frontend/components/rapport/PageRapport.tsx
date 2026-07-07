@@ -61,6 +61,9 @@ export function PageRapport() {
   const [troncons, setTroncons] = useState<Troncon[]>([]);
   const [tronconId, setTronconId] = useState<number | null>(null);
   const [sousTronconId, setSousTronconId] = useState<number | null>(null);
+  // État indépendant pour MatriceTemps — toujours au niveau axe par défaut (pas de sous-tronçon pré-sélectionné)
+  const [tempsTronconId, setTempsTronconId] = useState<number | null>(null);
+  const [tempsSousId, setTempsSousId] = useState<number | null>(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -78,6 +81,7 @@ export function PageRapport() {
       setTroncons(liste);
       // Initialise le tronçon sélectionné la première fois uniquement
       setTronconId((prev) => (prev === null && liste.length > 0 ? liste[0].id : prev));
+      setTempsTronconId((prev) => (prev === null && liste.length > 0 ? liste[0].id : prev));
       setTheoriques(tt);
       setTraversee(ttv);
       setZones(zc);
@@ -219,15 +223,18 @@ export function PageRapport() {
         heureFin={heureFin}
       />
 
-      {/* Matrice temps de traversée — durées réelles (mm:ss) par créneau × date */}
+      {/* Matrice temps de traversée — durées réelles (mm:ss) par créneau × date.
+          État propre (tempsTronconId/tempsSousId) indépendant de MatriceCongestion :
+          le sélecteur de MatriceCongestion auto-sélectionne un sous-tronçon sans
+          polluer la sélection d'axe global de cette matrice. */}
       <MatriceTemps
         campagne={campagne}
         debutRange={debutRange}
         finRange={finRange}
-        tronconId={tronconId}
-        sousTronconId={sousTronconId}
+        tronconId={tempsTronconId}
+        sousTronconId={tempsSousId}
         troncons={troncons}
-        onTronconChange={(id, sid) => { setTronconId(id); setSousTronconId(sid); }}
+        onTronconChange={(id, sid) => { setTempsTronconId(id); setTempsSousId(sid); }}
         heureDebut={heureDebut}
         heureFin={heureFin}
       />
