@@ -26,17 +26,20 @@ function telechargerPdf(campagne: string, debut?: string, fin?: string, heureDeb
   document.body.removeChild(a);
 }
 
-function exporterCsv(entrees: EntreeCongestion[], nomFichier: string, typeLabel: string): void {
+function exporterCsv(entrees: EntreeCongestion[], nomFichier: string, typeLabel: string, seuil_j: number, seuil_s: number): void {
   const headers = [typeLabel, "TRANCHE HORAIRE", "NB / SEMAINE", "RÈGLE DÉCLENCHÉE", "RÉPARTITION PAR JOUR"];
   const lignes = entrees.map((e) => {
     const nom = e.sous_troncon_code
       ? `${e.sous_troncon_code} - ${e.sous_troncon_nom ?? ""}`
       : e.troncon_nom;
     const regles: string[] = [];
-    if (e.regle_jour_indicatif) regles.push("≥ 3 / jour");
-    if (e.regle_semaine) regles.push("≥ 4 / semaine");
+    if (e.regle_jour_indicatif) regles.push(`>= ${seuil_j} / jour`);
+    if (e.regle_semaine) regles.push(`>= ${seuil_s} / semaine`);
     const repartition = Object.entries(e.nb_par_jour_semaine)
-      .map(([jour, nb]) => `${jour}: ${nb}`)
+      .map(([jour, nb]) => {
+        const dispo = e.nb_jours_disponibles?.[jour];
+        return dispo != null ? `${jour}: ${nb}/${dispo}` : `${jour}: ${nb}`;
+      })
       .join(", ");
     return [nom, e.tranche, String(e.nb_total_semaine), regles.join(" | "), repartition];
   });
@@ -68,13 +71,15 @@ export function TableauZonesCongestionnees({
   // Seuls les tronçons codifiés (sous-tronçons) sont affichés — conformément
   // à la méthodologie DEESP : la congestion s'évalue au niveau tronçon.
   const entrees = (rapport?.entrees ?? []).filter((e) => e.sous_troncon_id !== null);
+  const seuil_j = rapport?.regles?.seuil_jour_effectif ?? 3;
+  const seuil_s = rapport?.regles?.seuil_semaine_effectif ?? 4;
 
   return (
     <Card
       titre="Tableau 16 — Tronçons congestionnés (règles DEESP)"
       description={
-        "Tronçon congestionné si : (a) ≥ 3 occurrences sur un jour-indicatif " +
-        "à la même heure, OU (b) ≥ 4 occurrences à la même heure dans la semaine. " +
+        `Tronçon congestionné si : (a) ≥ ${seuil_j} occurrence(s) sur un jour-indicatif ` +
+        `à la même heure, OU (b) ≥ ${seuil_s} occurrence(s) à la même heure dans la semaine. ` +
         "Critère DEESP par mesure : couleur Google Maps — rouge présent OU orange ≥ 50 % du tronçon."
       }
     >
@@ -103,7 +108,7 @@ export function TableauZonesCongestionnees({
           </thead>
           <tbody>
             {entrees.map((e) => (
-              <LigneTroncon key={`${e.sous_troncon_id}-${e.troncon_id}-${e.heure}`} e={e} />
+              <LigneTroncon key={`${e.sous_troncon_id}-${e.troncon_id}-${e.heure}`} e={e} seuil_jour={seuil_j} seuil_semaine={seuil_s} />
             ))}
             {entrees.length === 0 && (
               <tr>
@@ -125,7 +130,7 @@ export function TableauZonesCongestionnees({
           <BoutonExportCsv
             label="Exporter CSV"
             onClick={() =>
-              exporterCsv(entrees, `congestion_troncons_${rapport?.campagne ?? "export"}.csv`, "TRONÇON")
+              exporterCsv(entrees, `congestion_troncons_${rapport?.campagne ?? "export"}.csv`, "TRONÇON", seuil_j, seuil_s)
             }
           />
         </div>
@@ -146,7 +151,7 @@ export function TableauZonesCongestionnees({
   );
 }
 
-function LigneTroncon({ e }: { e: EntreeCongestion }) {
+function LigneTroncon({ e, seuil_jour, seuil_semaine }: { e: EntreeCongestion; seuil_jour: number; seuil_semaine: number }) {
   return (
     <tr className="border-t app-border">
       <Td>
@@ -161,43 +166,52 @@ function LigneTroncon({ e }: { e: EntreeCongestion }) {
       <Td className="font-mono">{e.tranche}</Td>
       <Td className="text-right font-semibold">{e.nb_total_semaine}</Td>
       <Td>
-        <Regles e={e} />
+        <Regles e={e} seuil_jour={seuil_jour} seuil_semaine={seuil_semaine} />
       </Td>
       <Td>
-        <Repartition e={e} />
+        <Repartition e={e} seuil_jour={seuil_jour} />
       </Td>
     </tr>
   );
 }
 
-function Regles({ e }: { e: EntreeCongestion }) {
+function Regles({ e, seuil_jour, seuil_semaine }: { e: EntreeCongestion; seuil_jour: number; seuil_semaine: number }) {
   return (
     <>
       {e.regle_jour_indicatif && (
         <span className="mr-2 inline-block rounded bg-statut-congestionne/20 px-2 py-0.5 text-xs text-statut-congestionne">
-          ≥ 3 / jour
+          ≥ {seuil_jour} / jour
         </span>
       )}
       {e.regle_semaine && (
         <span className="inline-block rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
-          ≥ 4 / semaine
+          ≥ {seuil_semaine} / semaine
         </span>
       )}
     </>
   );
 }
 
-function Repartition({ e }: { e: EntreeCongestion }) {
+function Repartition({ e, seuil_jour }: { e: EntreeCongestion; seuil_jour: number }) {
   return (
     <div className="flex flex-wrap gap-1 text-fluid-xs">
-      {Object.entries(e.nb_par_jour_semaine).map(([jour, nb]) => (
-        <span
-          key={jour}
-          className="rounded bg-paa-blue-50 px-1.5 py-0.5 dark:bg-paa-navy-800"
-        >
-          {jour}: {nb}
-        </span>
-      ))}
+      {Object.entries(e.nb_par_jour_semaine).map(([jour, nb]) => {
+        const dispo = e.nb_jours_disponibles?.[jour];
+        const ratio = dispo != null ? `${nb}/${dispo}` : `${nb}`;
+        const estDeclencheur = nb >= seuil_jour;
+        return (
+          <span
+            key={jour}
+            className={`rounded px-1.5 py-0.5 ${
+              estDeclencheur
+                ? "bg-statut-congestionne/20 text-statut-congestionne font-medium"
+                : "bg-paa-blue-50 dark:bg-paa-navy-800"
+            }`}
+          >
+            {jour}: {ratio}
+          </span>
+        );
+      })}
     </div>
   );
 }

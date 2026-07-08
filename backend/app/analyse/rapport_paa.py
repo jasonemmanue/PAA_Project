@@ -181,6 +181,9 @@ class TempsTraverseeStat:
     temps_min_mn: int | None
     temps_moyen_mn: int | None
     temps_max_mn: int | None
+    temps_min_s: int | None
+    temps_moyen_s: int | None
+    temps_max_s: int | None
 
 
 def temps_traversee_par_troncon(
@@ -283,6 +286,7 @@ def temps_traversee_par_troncon(
                     troncon_id=t.id, troncon_nom=t.nom, type_jour=tj,
                     nb_mesures=0,
                     temps_min_mn=None, temps_moyen_mn=None, temps_max_mn=None,
+                    temps_min_s=None, temps_moyen_s=None, temps_max_s=None,
                 ))
                 continue
             moyenne_des_moyennes = statistics.fmean(moyennes_par_jour[cle])
@@ -294,6 +298,9 @@ def temps_traversee_par_troncon(
                 temps_min_mn=int(round(mins[cle] / 60)),
                 temps_moyen_mn=int(round(moyenne_des_moyennes)),
                 temps_max_mn=int(round(maxs[cle] / 60)),
+                temps_min_s=int(round(mins[cle])),
+                temps_moyen_s=int(round(moyenne_des_moyennes * 60)),
+                temps_max_s=int(round(maxs[cle])),
             ))
     return resultats
 
@@ -309,9 +316,10 @@ class CongestionHoraire:
     troncon_nom: str
     heure: int  # 7..18
     nb_jours_congestionnes_par_type: dict[str, int]  # weekday name → nb fois congestionné à cette heure
+    nb_jours_disponibles_par_type: dict[str, int]  # weekday name → nb de ce jour dans la période
     nb_total_semaine: int  # toutes occurrences toutes journées confondues
-    regle_jour_indicatif: bool  # ≥ 3 fois sur un jour-type donné
-    regle_semaine: bool  # ≥ 4 fois la même heure n'importe quel jour
+    regle_jour_indicatif: bool  # ≥ seuil_jour fois sur un jour-type donné
+    regle_semaine: bool  # ≥ seuil_semaine fois la même heure n'importe quel jour
     # Renseignés UNIQUEMENT si la mesure portait sur un sous-tronçon
     # (codification DEESP T1A, T1B…). Sinon None.
     sous_troncon_id: int | None = None
@@ -362,6 +370,19 @@ def troncons_congestionnes(
     from app.models.models import SousTroncon  # import paresseux pour éviter cycle
 
     fuseau_local = ZoneInfo(get_settings().tz)
+    NOMS_JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+
+    # Nombre de jours disponibles de chaque type dans la période (cappée à maintenant)
+    # Sert au dénominateur DEESP : "3 fois sur les 4 lundis" → nb_disponibles["lundi"] = 4
+    maintenant_dispo = datetime.now(timezone.utc)
+    fin_effective_dispo = min(fin_utc, maintenant_dispo)
+    _nb_dispo: dict[str, int] = defaultdict(int)
+    _d_iter = debut_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    while _d_iter.date() <= fin_effective_dispo.date():
+        _wd_local = _d_iter.astimezone(fuseau_local).weekday()
+        _nb_dispo[NOMS_JOURS_FR[_wd_local]] += 1
+        _d_iter += timedelta(days=1)
+    nb_disponibles_dict = dict(_nb_dispo)
 
     troncons = {
         t.id: t for t in db.execute(
@@ -405,7 +426,6 @@ def troncons_congestionnes(
         par_cle_heure[(tid, sid, h)][wd] = nb
 
     seuil_jour, seuil_semaine = seuils_congestion(debut_utc, fin_utc)
-    NOMS_JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
     resultats: list[CongestionHoraire] = []
     for (tid, sid, h), par_jour in par_cle_heure.items():
         regle_jour = any(nb >= seuil_jour for nb in par_jour.values())
@@ -422,6 +442,7 @@ def troncons_congestionnes(
             nb_jours_congestionnes_par_type={
                 NOMS_JOURS_FR[wd]: nb for wd, nb in par_jour.items()
             },
+            nb_jours_disponibles_par_type=nb_disponibles_dict,
             nb_total_semaine=nb_total,
             regle_jour_indicatif=regle_jour,
             regle_semaine=regle_sem,

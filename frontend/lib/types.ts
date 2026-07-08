@@ -406,6 +406,7 @@ export interface EntreeCongestion {
   heure: number;
   tranche: string;
   nb_par_jour_semaine: Record<string, number>;
+  nb_jours_disponibles: Record<string, number>;
   nb_total_semaine: number;
   regle_jour_indicatif: boolean;
   regle_semaine: boolean;

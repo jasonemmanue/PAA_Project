@@ -180,6 +180,9 @@ async def get_temps_traversee(
                 "temps_min_mn": s.temps_min_mn,
                 "temps_moyen_mn": s.temps_moyen_mn,
                 "temps_max_mn": s.temps_max_mn,
+                "temps_min_s": s.temps_min_s,
+                "temps_moyen_s": s.temps_moyen_s,
+                "temps_max_s": s.temps_max_s,
             }
             for s in stats
         ],
@@ -243,6 +246,7 @@ async def get_zones_congestionnees(
                 "heure": c.heure,
                 "tranche": f"{c.heure:02d}h-{c.heure + 1:02d}h",
                 "nb_par_jour_semaine": c.nb_jours_congestionnes_par_type,
+                "nb_jours_disponibles": c.nb_jours_disponibles_par_type,
                 "nb_total_semaine": c.nb_total_semaine,
                 "regle_jour_indicatif": c.regle_jour_indicatif,
                 "regle_semaine": c.regle_semaine,
