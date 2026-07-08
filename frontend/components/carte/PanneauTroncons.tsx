@@ -101,7 +101,7 @@ export function PanneauTroncons({
     .sort((a, b) => (b.couleur_google?.pourcentage_rouge ?? 0) - (a.couleur_google?.pourcentage_rouge ?? 0))[0] ?? null;
 
   return (
-    <div className="flex flex-col gap-fluid-4">
+    <div className="flex flex-col gap-fluid-4 pb-20">
       {/* ── Bandeau KPI ── */}
       <div className="paa-card p-3">
         <p className="mb-2 text-fluid-xs font-medium app-text-muted">
