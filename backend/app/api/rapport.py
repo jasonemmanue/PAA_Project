@@ -202,7 +202,7 @@ async def get_temps_traversee(
         "- **Règle JOUR** : tronçon congestionné si ≥ 3 fois sur un même "
         "  jour-indicatif (ex. 3 lundis sur 4) à la même heure.\n"
         "- **Règle SEMAINE** : tronçon congestionné si ≥ 4 fois à la même "
-        "  heure dans la semaine, tous jours confondus.\n\n"
+        "  heure dans une fenêtre glissante de 7 jours, tous jours confondus.\n\n"
         "Le critère de congestion d'une mesure individuelle est "
         "Couleur Google Maps lue par tronçon : ROUGE OU ORANGE ≥ 50 % → "
         "congestionné (cf. rapport DEESP/DEEF oct. 2025, section "
@@ -229,9 +229,9 @@ async def get_zones_congestionnees(
                 "Couleur Google Maps : ROUGE OU ORANGE sur ≥ 50 % du tronçon"
             ),
             "seuil_orange_long_pct": 50.0,
-            "seuil_semaine_effectif": 4,
-            "seuil_jour_effectif": 3,
-            "regle_1_semaine": "Congestionné si le même créneau revient ≥ 4 fois dans une seule semaine calendaire (lun–dim)",
+            "seuil_semaine_effectif": rapport_paa.SEUIL_SEMAINE_DEESP,
+            "seuil_jour_effectif": rapport_paa.SEUIL_JOUR_DEESP,
+            "regle_1_semaine": "Congestionné si le même créneau revient ≥ 4 fois dans une fenêtre glissante de 7 jours",
             "regle_2_jour_indicatif": "Congestionné si ce jour indicatif est congestionné ≥ 3 fois dans le mois (même type de jour)",
         },
         "entrees": [
@@ -298,7 +298,7 @@ async def get_zones_congestionnees_pdf(
         logger.error("Erreur récupération données congestion : %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur données : {exc}")
 
-    seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
+    seuil_j, seuil_s = rapport_paa.SEUIL_JOUR_DEESP, rapport_paa.SEUIL_SEMAINE_DEESP
     nb_jours = max(1, (fin_utc - debut_utc).days + 1)
 
     pdf = FPDF(orientation="L", unit="mm", format="A4")
@@ -555,11 +555,11 @@ async def export_rapport_word(
 
     try:
         cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
-        seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
+        seuil_j, seuil_s = rapport_paa.SEUIL_JOUR_DEESP, rapport_paa.SEUIL_SEMAINE_DEESP
         logger.info("troncons_congestionnes OK — %d entree(s), seuils jour=%s semaine=%s",
                     len(cong) if cong else 0, seuil_j, seuil_s)
     except Exception:
-        logger.exception("Echec rapport_paa.troncons_congestionnes/seuils_congestion.")
+        logger.exception("Echec rapport_paa.troncons_congestionnes.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Echec calcul Tableau 16 (zones congestionnees) — voir logs serveur.",

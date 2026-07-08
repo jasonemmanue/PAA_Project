@@ -5473,3 +5473,84 @@ que les sites ivoiriens (fraternitematin.ci, abidjan.net, koaci.com, etc.) sont
 bloqués par le DNS des serveurs Railway (hébergés aux USA). Seules les sources
 internationales fonctionnent : Google News CI, RFI Afrique, AIP.
 
+
+---
+
+## 32. Tableau 16 — Règle SEMAINE sur fenêtre glissante de 7 jours (2026-07-08)
+
+### 32.1 Problème
+
+La MatriceCongestion affichait le badge `≥4×` sur le créneau 17h-18h du tronçon
+T5 (4 occurrences congestionnées : dim 05/07 + lun 06/07 + mar 07/07 + mer 08/07)
+mais le Tableau 16 restait vide (« Aucun tronçon codifié congestionné »).
+
+**Cause racine — double divergence :**
+
+1. **Backend** (`troncons_congestionnes()`) : la règle SEMAINE comptait les
+   occurrences par **semaine calendaire ISO (lundi–dimanche)**. Les 4
+   congestions se répartissaient 1 (dimanche 05/07, fin de semaine ISO) + 3
+   (lun-mer 06-08/07, semaine ISO suivante) → max 3 < 4 dans une seule semaine
+   calendaire → règle jamais déclenchée. La règle JOUR (≥ 3× le même jour de
+   semaine) ne pouvait pas non plus se déclencher (1 occurrence par jour-type).
+2. **Frontend** (`MatriceCongestion.tsx`) : le badge `≥4×` comptait le total
+   sur **toute la période** — critère plus permissif que le backend.
+
+### 32.2 Correction — fenêtre glissante de 7 jours des deux côtés
+
+La règle SEMAINE est désormais évaluée sur une **fenêtre glissante de 7 jours**
+(algorithme deux-pointeurs sur les dates locales triées : la fenêtre
+`[dates[i]..dates[j]]` est valide tant que l'écart ≤ 6 jours). Cette lecture est
+fidèle au texte DEESP (« ≥ 4 fois à la même tranche horaire au cours de la
+semaine ») et supprime l'artefact de frontière dimanche/lundi : 4 congestions
+consécutives dim→mer déclenchent la règle même à cheval sur deux semaines
+calendaires.
+
+**Backend** (`backend/app/analyse/rapport_paa.py`) :
+
+- `troncons_congestionnes()` : le compteur `par_semaine_iso` (clé année/semaine
+  ISO) est remplacé par `dates_par_creneau[(tid, sid, heure)] → list[date]` +
+  calcul du max en fenêtre glissante 7 j (deux pointeurs, O(n log n)).
+- Les seuils stricts sont promus **constantes de module** : `SEUIL_JOUR_DEESP=3`
+  et `SEUIL_SEMAINE_DEESP=4` — l'API les référence pour l'affichage.
+- La fonction `seuils_congestion()` (seuils proratisés § 27.1) est **supprimée** :
+  elle n'était plus utilisée par le calcul (les seuils réels étaient hardcodés
+  3/4 depuis un commit ultérieur) et son affichage dans le PDF/Word mentait sur
+  les seuils réellement appliqués.
+
+**Backend** (`backend/app/api/rapport.py`) :
+
+- `GET /rapport/zones-congestionnees` : `regle_1_semaine` et la description
+  Swagger disent désormais « fenêtre glissante de 7 jours » ; les
+  `seuil_*_effectif` référencent les constantes de module.
+- PDF Tableau 16 + rapport Word : affichent les seuils réels (3 / 4) au lieu
+  des seuils proratisés supprimés.
+
+**Frontend** :
+
+- `MatriceCongestion.tsx` : nouveau helper `maxCongestionsFenetre7j(parDate)`
+  (même algorithme deux-pointeurs) — le badge `≥4×` se déclenche sur le max en
+  fenêtre glissante 7 j, exactement comme le backend. Tooltip mis à jour.
+- `TableauZonesCongestionnees.tsx` : description « fenêtre glissante de
+  7 jours » au lieu de « semaine calendaire (lundi–dimanche) ».
+
+### 32.3 Vérification
+
+```python
+# Cas utilisateur : dim 05/07 + lun/mar/mer 06-08/07 → 4 dans la fenêtre → règle OK
+# Écart exactement 6 jours (01/07 + 07/07) → même fenêtre (2)
+# Écart 7 jours (01/07 + 08/07) → fenêtres séparées (1)
+```
+
+```bash
+# Après déploiement, le créneau doit apparaître :
+curl -s "https://backend-production-6cbf.up.railway.app/rapport/zones-congestionnees?campagne=2026-07" | jq ".nb_entrees"
+```
+
+### 32.4 Règle pour les futurs développements
+
+- Le badge `≥4×` de la MatriceCongestion et la règle SEMAINE du Tableau 16
+  doivent rester alignés sur la **même définition** (fenêtre glissante 7 j,
+  seuil `SEUIL_SEMAINE_DEESP`). Toute modification de l'un impose l'autre.
+- Les seuils DEESP sont les constantes `SEUIL_JOUR_DEESP` / `SEUIL_SEMAINE_DEESP`
+  de `rapport_paa.py` — ne jamais les redéfinir localement ni afficher d'autres
+  valeurs dans les exports PDF/Word.

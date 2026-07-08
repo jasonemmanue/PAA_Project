@@ -40,6 +40,27 @@ function estWeekend(dateStr: string): boolean {
   return j === 0 || j === 6;
 }
 
+/**
+ * Maximum d'occurrences congestionnées dans une fenêtre glissante de 7 jours
+ * — même règle SEMAINE que le Tableau 16 backend (troncons_congestionnes).
+ * La fenêtre glissante (et non la semaine calendaire lun–dim) évite
+ * l'artefact de frontière dimanche/lundi.
+ */
+function maxCongestionsFenetre7j(parDate: Record<string, CellData | null>): number {
+  const datesCong = Object.entries(parDate)
+    .filter(([, c]) => c?.est_congestionne === true)
+    .map(([d]) => Date.parse(d + "T12:00:00"))
+    .sort((a, b) => a - b);
+  const SIX_JOURS_MS = 6 * 24 * 3600 * 1000;
+  let meilleur = 0;
+  let i = 0;
+  for (let j = 0; j < datesCong.length; j++) {
+    while (datesCong[j] - datesCong[i] > SIX_JOURS_MS) i++;
+    meilleur = Math.max(meilleur, j - i + 1);
+  }
+  return meilleur;
+}
+
 function Cellule({ cell }: { cell: CellData | null | undefined }) {
   if (cell === null || cell === undefined) {
     return <span className="text-gray-300 dark:text-gray-600 select-none">—</span>;
@@ -280,10 +301,9 @@ export function MatriceCongestion({
                 const nbCong = datesVisibles.filter(
                   (d) => tr.par_date[d]?.est_congestionne === true,
                 ).length;
-                // Total sur TOUTES les dates (pour le badge ≥4× représentatif)
-                const nbCongTotal = Object.values(tr.par_date).filter(
-                  (c) => c?.est_congestionne === true,
-                ).length;
+                // Badge ≥4× : max d'occurrences dans une fenêtre glissante de
+                // 7 jours — aligné sur la règle SEMAINE du Tableau 16 backend
+                const nbCongFenetre7j = maxCongestionsFenetre7j(tr.par_date);
                 const rowHighlight = nbCong >= 4 ? "bg-red-50 dark:bg-red-950/20" : "";
                 return (
                   <tr
@@ -297,9 +317,9 @@ export function MatriceCongestion({
                                  text-paa-navy-900 dark:text-paa-blue-100 text-[11px]"
                     >
                       {tr.tranche}
-                      {nbCongTotal >= 4 && (
+                      {nbCongFenetre7j >= 4 && (
                         <span
-                          title="≥ 4 occurrences congestionnées sur l'ensemble de la période (règle DEESP)"
+                          title="≥ 4 occurrences congestionnées dans une fenêtre glissante de 7 jours (règle DEESP semaine — Tableau 16)"
                           className="ml-2 inline-block rounded bg-red-100 dark:bg-red-900/40
                                      px-1 text-[9px] text-red-700 dark:text-red-300 font-semibold"
                         >

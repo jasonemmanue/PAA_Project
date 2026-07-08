@@ -309,6 +309,12 @@ def temps_traversee_par_troncon(
 # Tableau 16 — Tronçons congestionnés selon règles DEESP
 # ---------------------------------------------------------------------------
 
+# Règles DEESP officielles (§ 4.5.3) — seuils stricts du rapport octobre 2025.
+# Exposés au niveau module pour que l'API (JSON, PDF, Word) affiche exactement
+# les seuils appliqués par le calcul.
+SEUIL_JOUR_DEESP = 3     # ≥ 3 occurrences sur le même jour indicatif (ex. 3 lundis)
+SEUIL_SEMAINE_DEESP = 4  # ≥ 4 occurrences dans une fenêtre glissante de 7 jours
+
 
 @dataclass(frozen=True)
 class CongestionHoraire:
@@ -325,26 +331,6 @@ class CongestionHoraire:
     sous_troncon_id: int | None = None
     sous_troncon_code: str | None = None
     sous_troncon_nom: str | None = None
-
-
-def seuils_congestion(debut_utc: datetime, fin_utc: datetime) -> tuple[int, int]:
-    """Retourne (seuil_jour, seuil_semaine) adaptés à la durée de la plage.
-
-    Référence DEESP : 28 jours → seuil_jour=3, seuil_semaine=4.
-    En-dessous de 28 jours, les seuils sont proratisés pour que le tableau
-    reste utilisable sur des plages courtes tout en restant proportionnel.
-
-    fin_utc est cappée à maintenant — on ne peut pas avoir de données du
-    futur, donc utiliser juillet complet (31 j) alors qu'on est au 7 juillet
-    produirait des seuils inatteignables.
-    """
-    maintenant = datetime.now(timezone.utc)
-    fin_effective = min(fin_utc, maintenant)
-    nb_jours = max(1, (fin_effective - debut_utc).days + 1)
-    facteur = nb_jours / 28
-    seuil_jour = max(1, round(3 * facteur))
-    seuil_semaine = max(2, round(4 * facteur))
-    return seuil_jour, seuil_semaine
 
 
 def troncons_congestionnes(
@@ -364,8 +350,12 @@ def troncons_congestionnes(
       2. Granularité : si la mesure porte sur un sous-tronçon (T1A, T1B…),
          on évalue les règles AU NIVEAU SOUS-TRONÇON. Sinon au niveau axe.
       3. Règle JOUR : congestionné si ≥ 3 fois sur les lundis (ou mardis…)
-      4. Règle SEMAINE : congestionné si ≥ 4 fois à cette heure dans la
-         semaine, peu importe le jour.
+      4. Règle SEMAINE : congestionné si ≥ 4 fois à cette heure dans une
+         **fenêtre glissante de 7 jours**, peu importe le jour. La fenêtre
+         glissante (et non la semaine calendaire ISO lundi–dimanche) évite
+         l'artefact de frontière : 4 congestions consécutives dim→mer
+         doivent déclencher la règle même si elles chevauchent deux
+         semaines calendaires.
     """
     from app.models.models import SousTroncon  # import paresseux pour éviter cycle
 
@@ -408,14 +398,11 @@ def troncons_congestionnes(
         ).scalars()
     )
 
-    # Règles DEESP officielles (§ 4.5.3) — strictes, appliquées par période fixe
-    SEUIL_JOUR_DEESP = 3     # ≥ 3 occurrences sur le même jour indicatif (ex. 3 lundis)
-    SEUIL_SEMAINE_DEESP = 4  # ≥ 4 occurrences dans une seule semaine calendaire (lun-dim)
-
     # Compteur par (tid, sid, weekday, heure) → nb total dans la période (règle jour)
     occurrences: dict[tuple[int, int | None, int, int], int] = defaultdict(int)
-    # Compteur par (tid, sid, heure, année_iso, semaine_iso) → nb dans cette semaine (règle semaine)
-    par_semaine_iso: dict[tuple[int, int | None, int, int, int], int] = defaultdict(int)
+    # Dates locales congestionnées par (tid, sid, heure) — alimente la règle
+    # semaine sur fenêtre glissante de 7 jours
+    dates_par_creneau: dict[tuple[int, int | None, int], list[date]] = defaultdict(list)
 
     for m in mesures:
         if m.troncon_id not in troncons:
@@ -423,20 +410,27 @@ def troncons_congestionnes(
         local = m.horodatage.astimezone(fuseau_local)
         if not _dans_plage_horaire(local, heure_debut, heure_fin):
             continue
-        iy, iw, _ = local.isocalendar()
         occurrences[(m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)] += 1
-        par_semaine_iso[(m.troncon_id, m.sous_troncon_id, local.hour, iy, iw)] += 1
+        dates_par_creneau[(m.troncon_id, m.sous_troncon_id, local.hour)].append(local.date())
 
     # Agrégation par (troncon, sous, heure) — comptages par jour indicatif
     par_cle_heure: dict[tuple[int, int | None, int], dict[int, int]] = defaultdict(dict)
     for (tid, sid, wd, h), nb in occurrences.items():
         par_cle_heure[(tid, sid, h)][wd] = nb
 
-    # Maximum d'occurrences dans une seule semaine calendaire, par créneau
+    # Maximum d'occurrences dans une fenêtre glissante de 7 jours, par créneau.
+    # Deux pointeurs sur les dates triées : la fenêtre [dates[i]..dates[j]]
+    # reste valide tant que l'écart entre extrémités est ≤ 6 jours.
     max_par_semaine: dict[tuple[int, int | None, int], int] = defaultdict(int)
-    for (tid, sid, h, iy, iw), nb in par_semaine_iso.items():
-        if nb > max_par_semaine[(tid, sid, h)]:
-            max_par_semaine[(tid, sid, h)] = nb
+    for cle, dates_creneau in dates_par_creneau.items():
+        dates_triees = sorted(dates_creneau)
+        i = 0
+        meilleur = 0
+        for j in range(len(dates_triees)):
+            while (dates_triees[j] - dates_triees[i]).days > 6:
+                i += 1
+            meilleur = max(meilleur, j - i + 1)
+        max_par_semaine[cle] = meilleur
 
     resultats: list[CongestionHoraire] = []
     for (tid, sid, h), par_jour in par_cle_heure.items():
