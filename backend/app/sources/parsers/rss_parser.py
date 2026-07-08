@@ -109,9 +109,15 @@ SOURCES_RSS: list[dict[str, str]] = [
         "url": "https://news.abidjan.net/rss.php",
         "nom": "abidjan_net",
     },
+    # AIP — Agence Ivoirienne de Presse (source officielle, stable)
     {
-        "url": "https://koaci.com/rss.xml",
-        "nom": "koaci",
+        "url": "https://www.aip.ci/feed/",
+        "nom": "aip_ci",
+    },
+    # RFI Afrique — couvre les incidents majeurs à Abidjan
+    {
+        "url": "https://www.rfi.fr/fr/afrique/rss",
+        "nom": "rfi_afrique",
     },
 ]
 
@@ -119,6 +125,8 @@ SOURCES_RSS: list[dict[str, str]] = [
 _FIABILITE_SOURCE: dict[str, float] = {
     "fraternite_matin": 0.9,
     "abidjan_net": 0.8,
+    "aip_ci": 0.85,
+    "rfi_afrique": 0.75,
     "koaci": 0.75,
     "linfodrome": 0.7,
     "soir_info": 0.7,

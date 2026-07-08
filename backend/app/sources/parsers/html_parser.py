@@ -56,21 +56,17 @@ logger = logging.getLogger("paa.incidents.html")
 # ---------------------------------------------------------------------------
 
 SOURCES_HTML: list[dict] = [
+    # abidjan.net — section transports (URL valide contrairement à /trafic/)
     {
-        "url": "https://news.abidjan.net/trafic/",
-        "nom": "abidjan_net_trafic",
+        "url": "https://news.abidjan.net/t/transports",
+        "nom": "abidjan_net_transport",
         "fiabilite": 0.80,
         "strategies": ["abidjan_net"],
     },
+    # connectionivoirienne.net — fait-divers / sécurité routière
     {
-        "url": "https://www.soir-info.ci/",
-        "nom": "soir_info",
-        "fiabilite": 0.70,
-        "strategies": ["generic"],
-    },
-    {
-        "url": "https://www.linfodrome.ci/vie-pratique/",
-        "nom": "linfodrome",
+        "url": "https://www.connectionivoirienne.net/category/faits-divers/",
+        "nom": "connectionivoirienne",
         "fiabilite": 0.70,
         "strategies": ["generic"],
     },
