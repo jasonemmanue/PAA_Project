@@ -99,6 +99,19 @@ LIEUX_ABIDJAN: dict[str, str] = {
     "entrée du port": "Port d'Abidjan",
     "petit-bassam": "Petit-Bassam",
     "petit bassam": "Petit-Bassam",
+    # Communes adjacentes présentes dans les mots-clés ZONE mais absentes du dict
+    # → géocodage possible dans la bbox Abidjan ; bbox filter rejettera l'extérieur
+    "adjamé": "Adjamé",
+    "adjame": "Adjamé",
+    "cocody": "Cocody",
+    "yopougon": "Yopougon",
+    "abobo": "Abobo",
+    "attécoubé": "Attécoubé",
+    "attecoube": "Attécoubé",
+    "grand-bassam": "Grand-Bassam",
+    "grand bassam": "Grand-Bassam",
+    # Fallback générique : "abidjan" seul → point d'entrée port (dans la bbox)
+    "abidjan": "Port d'Abidjan",
 }
 
 # ---------------------------------------------------------------------------
