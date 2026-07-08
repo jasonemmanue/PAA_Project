@@ -425,12 +425,21 @@ def troncons_congestionnes(
     for (tid, sid, wd, h), nb in occurrences.items():
         par_cle_heure[(tid, sid, h)][wd] = nb
 
-    seuil_jour, seuil_semaine = seuils_congestion(debut_utc, fin_utc)
+    # Règles DEESP officielles (§ 4.5.3) — fixes, sans adaptation
+    SEUIL_SEMAINE_DEESP = 4       # ≥ 4 fois à la même heure dans la semaine
+    RATIO_JOUR_DEESP = 3 / 4     # ≥ 75 % des jours du même type (ex. 3 lundis sur 4)
+
     resultats: list[CongestionHoraire] = []
     for (tid, sid, h), par_jour in par_cle_heure.items():
-        regle_jour = any(nb >= seuil_jour for nb in par_jour.values())
+        # Règle 2 — jour indicatif : le ratio occurrences / jours disponibles ≥ 75 %
+        regle_jour = any(
+            nb_disponibles_dict.get(NOMS_JOURS_FR[wd], 0) > 0
+            and nb / nb_disponibles_dict[NOMS_JOURS_FR[wd]] >= RATIO_JOUR_DEESP
+            for wd, nb in par_jour.items()
+        )
         nb_total = sum(par_jour.values())
-        regle_sem = nb_total >= seuil_semaine
+        # Règle 1 — semaine : ≥ 4 occurrences totales sur n'importe quel jour
+        regle_sem = nb_total >= SEUIL_SEMAINE_DEESP
         if not (regle_jour or regle_sem):
             continue
         t = troncons[tid]

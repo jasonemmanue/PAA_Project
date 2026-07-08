@@ -417,11 +417,13 @@ export interface RapportZonesCongestionnees {
   nb_jours_plage: number;
   nb_entrees: number;
   regles: {
-    seuil_jour_effectif: number;
     seuil_semaine_effectif: number;
-    regle_jour_indicatif: string;
-    regle_semaine: string;
-    adaptatif: boolean;
+    ratio_jour_effectif: number;
+    regle_1_semaine: string;
+    regle_2_jour_indicatif: string;
+    // champs hérités conservés optionnels pour rétro-compat
+    seuil_jour_effectif?: number;
+    adaptatif?: boolean;
   };
   entrees: EntreeCongestion[];
 }

@@ -220,7 +220,6 @@ async def get_zones_congestionnees(
     debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
     cong = rapport_paa.troncons_congestionnes(db, debut_utc, fin_utc, heure_debut=heure_debut, heure_fin=heure_fin)
     nb_jours = max(1, (fin_utc - debut_utc).days + 1)
-    seuil_j, seuil_s = rapport_paa.seuils_congestion(debut_utc, fin_utc)
     return {
         "campagne": campagne,
         "nb_jours_plage": nb_jours,
@@ -230,11 +229,10 @@ async def get_zones_congestionnees(
                 "Couleur Google Maps : ROUGE OU ORANGE sur ≥ 50 % du tronçon"
             ),
             "seuil_orange_long_pct": 50.0,
-            "seuil_jour_effectif": seuil_j,
-            "seuil_semaine_effectif": seuil_s,
-            "regle_jour_indicatif": f"≥ {seuil_j} occurrence(s) sur le même jour de la semaine",
-            "regle_semaine": f"≥ {seuil_s} occurrence(s) à la même heure dans la semaine",
-            "adaptatif": nb_jours < 28,
+            "seuil_semaine_effectif": 4,
+            "ratio_jour_effectif": 0.75,
+            "regle_1_semaine": "Congestionné si le même créneau revient ≥ 4 fois dans la semaine (tous jours confondus)",
+            "regle_2_jour_indicatif": "Congestionné si ce jour indicatif revient ≥ 3 fois sur 4 dans le mois (≥ 75 %)",
         },
         "entrees": [
             {
