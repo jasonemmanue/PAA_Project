@@ -152,21 +152,30 @@ export function PagePrediction() {
   useEffect(() => {
     if (tronconId === null) return;
     let annule = false;
+
+    const charger = () => {
+      Promise.all([
+        api.resumePrediction(tronconId, heureDebut, heureFin, sousTronconId),
+        api.segmentsResumeTroncon(tronconId),
+      ])
+        .then(([r, s]) => {
+          if (annule) return;
+          setResume(r);
+          setSegments(s);
+        })
+        .catch((e) => { if (!annule) setErreur(e instanceof Error ? e.message : String(e)); })
+        .finally(() => { if (!annule) setChargement(false); });
+    };
+
     setChargement(true);
     setErreur(null);
     setSegments(null);
-    Promise.all([
-      api.resumePrediction(tronconId, heureDebut, heureFin, sousTronconId),
-      api.segmentsResumeTroncon(tronconId),
-    ])
-      .then(([r, s]) => {
-        if (annule) return;
-        setResume(r);
-        setSegments(s);
-      })
-      .catch((e) => { if (!annule) setErreur(e instanceof Error ? e.message : String(e)); })
-      .finally(() => { if (!annule) setChargement(false); });
-    return () => { annule = true; };
+    charger();
+
+    // Rafraîchissement automatique toutes les 5 min — les données Google et les
+    // week-ends apparaissent sans rechargement manuel de la page.
+    const intervalle = setInterval(charger, 5 * 60 * 1000);
+    return () => { annule = true; clearInterval(intervalle); };
   }, [tronconId, sousTronconId, heureDebut, heureFin]);
 
   // Calculs GPX filtrés par période
@@ -393,7 +402,8 @@ export function PagePrediction() {
                 </h2>
                 <div className="grid gap-3 md:grid-cols-2">
                   <BlocTypeJour titre={t("prediction.joursOuvrables")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.semaine.jours_ouvrables} />
-                  <BlocTypeJour titre={t("prediction.weekEnds")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.semaine.week_ends} />
+                  <BlocTypeJour titre={t("prediction.weekEnds")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.semaine.week_ends}
+                    messageVide={locale === "fr" ? "Pas encore de week-end cette semaine — disponible samedi" : "No weekend yet this week — available Saturday"} />
                 </div>
               </section>
 
@@ -407,7 +417,8 @@ export function PagePrediction() {
                 </h2>
                 <div className="grid gap-3 md:grid-cols-2">
                   <BlocTypeJour titre={t("prediction.joursOuvrables")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.mois.jours_ouvrables} />
-                  <BlocTypeJour titre={t("prediction.weekEnds")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.mois.week_ends} />
+                  <BlocTypeJour titre={t("prediction.weekEnds")} labelMin={t("prediction.labelMin")} labelMoy={t("prediction.labelMoy")} labelMax={t("prediction.labelMax")} unite={t("prediction.uniteMn")} stats={resume.mois.week_ends}
+                    messageVide={locale === "fr" ? "Pas encore de week-end ce mois — mis à jour automatiquement à chaque samedi collecté" : "No weekend yet this month — updated automatically each Saturday"} />
                 </div>
               </section>
             </div>
@@ -632,9 +643,10 @@ function KpiMn({ label, mn, couleur, dominante = false }: { label: string; mn: n
   );
 }
 
-function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax }: {
+function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax, messageVide }: {
   titre: string; stats: import("@/lib/types").StatsPeriode | null;
   labelMin: string; labelMoy: string; labelMax: string; unite?: string;
+  messageVide?: string;
 }) {
   const toS = (s: number | null | undefined, mn: number | null | undefined): number | null =>
     s != null ? s : mn != null ? Math.round(mn * 60) : null;
@@ -642,7 +654,9 @@ function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax }: {
     <div className="paa-card p-3">
       <div className="text-fluid-xs font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-2">{titre}</div>
       {stats === null ? (
-        <p className="text-fluid-xs app-text-muted italic">—</p>
+        <p className="text-fluid-xs app-text-muted italic">
+          {messageVide ?? "—"}
+        </p>
       ) : (
         <div className="grid grid-cols-3 gap-1 text-center">
           <div>
