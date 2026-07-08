@@ -5292,3 +5292,131 @@ La note source s'adapte dynamiquement : « 7 derniers jours ouvrables » /
 - Si `mesure_creneau_actuel` est `null`, l'UI préfère un message explicite à
   une valeur de substitution (règle d'or § 5.3 : aucune donnée inventée).
 
+---
+
+## 30. Page Temps de traversée — refonte affichage + polling auto (2026-07-08)
+
+Cinq correctifs livrés le 2026-07-08 sur la page
+[`frontend/components/prediction/PagePrediction.tsx`](frontend/components/prediction/PagePrediction.tsx).
+
+### 30.1 Tableau 16 — seuils DEESP recalculés sur la période effective
+
+**Problème :** `seuils_congestion()` calculait les seuils (`seuil_jour`, `seuil_semaine`)
+sur la plage demandée complète (ex. juillet entier = 31 jours). En début de mois, seuls
+7 jours étaient collectés, rendant les seuils inatteignables (`seuil_jour=3` avec un seul
+lundi).
+
+**Correction** (`backend/app/analyse/rapport_paa.py`) : `fin_utc = min(fin_utc, now())`.
+Les seuils sont calculés sur la durée effective des données collectées. Au 7 juillet :
+`nb_jours=7`, `seuil_jour=1`, `seuil_semaine=2` — le Tableau 16 affiche des résultats
+dès la première semaine.
+
+**Correction CORS PDF** (`backend/app/api/rapport.py`) : le bouton « Exporter PDF »
+utilise désormais une navigation directe (`a.href = url; a.click()`) au lieu de `fetch`
+pour contourner les restrictions CORS cross-origin sur le téléchargement binaire.
+
+**TableauZonesCongestionnees.tsx** : Suppression du bloc « Congestion par axe » (Passe 1
+backend supprimée — § 25.1). La table n'affiche plus que les tronçons codifiés.
+
+### 30.2 Bandeau d'écart Google ↔ Terrain restauré + précision décimale
+
+**Problème :** `googleMoyenMnMois()` utilisait `Math.round()` sur des valeurs en minutes
+décimales (ex. 0,42 min = 25 s). `Math.round(0.42) = 0` → la vérification `!googleMoyen`
+retournait `true` → le bandeau `BandeauEcart` ne s'affichait jamais.
+
+**Corrections** (`PagePrediction.tsx`) :
+- Suppression de `Math.round()` dans `googleMoyenMnMois()`.
+- Remplacement du test `!gpxMoyenS` par `gpxMoyenS == null || gpxMoyenS === 0` pour
+  distinguer les zéros légitimes des valeurs manquantes.
+- `BandeauEcart` visible dès que données GPX **et** Google mois disponibles.
+
+### 30.3 Composant `DureeDeuxLignes` — affichage deux lignes min/moy/max
+
+Nouveau composant fonctionnel interne à `PagePrediction.tsx` :
+
+```tsx
+function DureeDeuxLignes({ s, classMin, classSec }: {
+  s: number | null; classMin: string; classSec?: string;
+}) {
+  if (s == null) return <div className={classMin}>—</div>;
+  const mn = Math.floor(s / 60);
+  const sec = Math.round(s % 60);
+  if (mn === 0) return <div className={classMin}>{sec} s</div>;
+  return (
+    <>
+      <div className={classMin}>{mn} min</div>
+      {sec > 0 && <div className={classSec ?? classMin}>{sec} s</div>}
+    </>
+  );
+}
+```
+
+- **Cartes MIN / MOY / MAX** (section « 7 derniers jours ») utilisent `DureeDeuxLignes`
+  avec une typographie sur deux lignes : grande police `text-[28-36px]` pour les minutes,
+  police intermédiaire pour les secondes.
+- **`BandeauEcart` cadre rouge :** `border-2 border-statut-congestionne` (pleine opacité)
+  quand `terrain > Google` — visible et distinctif.
+
+### 30.4 `BlocTypeJour` — secondes réelles au lieu du format horloge
+
+**Problème :** `BlocTypeJour` (blocs « Cette semaine » et « Ce mois ») utilisait
+`formaterMn()` qui affichait `"17:44 min"` (format horloge) au lieu des vraies secondes.
+Le backend fournit déjà `min_s`/`moyen_s`/`max_s` dans `StatsPeriode` (endpoint
+`GET /predire/resume` via `_stats_mesures_periode`).
+
+**Correction :** remplacement de la fonction `aff()` + `formaterMn` par `DureeDeuxLignes`
+avec les champs `_s` :
+
+```tsx
+// Avant
+{aff(stats.min_mn, stats.min_s)}  // → "17:44 min"
+
+// Après — priorité aux secondes brutes, fallback sur _mn * 60
+<DureeDeuxLignes
+  s={stats.min_s ?? Math.round(stats.min_mn * 60)}
+  classMin="font-bold text-fluid-sm text-statut-fluide"
+  classSec="text-fluid-xs font-semibold text-statut-fluide"
+/>
+```
+
+Résultat : `"17 min"` (gras) + `"44 s"` (dessous) — cohérent avec les grandes cartes.
+
+### 30.5 Polling automatique 5 min + message week-end en attente
+
+**Problème :** la page ne se rafraîchissait jamais après le chargement initial. En début
+de semaine/mois, les blocs week-end restaient vides (`—`) sans explication.
+
+**Corrections** (`PagePrediction.tsx`) :
+
+1. **Polling `setInterval(5 min)`** dans le `useEffect` principal — recharge
+   `api.resumePrediction()` + `api.segmentsResumeTroncon()` toutes les 5 minutes.
+   Le `clearInterval` est appelé dans le cleanup → aucune fuite mémoire à la navigation.
+
+2. **Prop `messageVide`** sur `BlocTypeJour` — affiche un texte explicatif quand
+   `stats === null` au lieu du simple `—` :
+   - Cette semaine → *« Pas encore de week-end cette semaine — disponible samedi »*
+   - Ce mois → *« Pas encore de week-end ce mois — mis à jour automatiquement à chaque
+     samedi collecté »*
+   - Dès qu'un samedi ou dimanche est collecté, le bloc se remplit automatiquement au
+     prochain cycle de polling (≤ 5 min).
+
+### 30.6 Champs `_s` exposés par le backend
+
+`backend/app/api/evolution.py` expose désormais `min_s`, `moyen_s`, `max_s`
+(secondes entières) en plus de `min_mn`, `moyen_mn`, `max_mn` dans les réponses
+`GET /evolution/troncon/{id}`. Permet aux composants frontend d'afficher les secondes
+exactes sans reconvertir depuis les minutes arrondies.
+
+### 30.7 Précision `formaterDuree()` propagée
+
+Les composants suivants utilisent maintenant `formaterDuree()` (ex. `"17 min 44 s"`)
+au lieu de conversions approximatives :
+
+| Composant | Champs |
+|-----------|--------|
+| `CourbeJournee.tsx` | Tooltips + valeurs de la courbe journée |
+| `EvolutionPluriannuelle.tsx` | Labels des barres du graphique |
+| `PageHeureOptimale.tsx` | Cartes Top-3 + tableau des créneaux |
+| `GraphiquesParAxe.tsx` | Tooltips des graphiques Rapport DEESP |
+| `TableauTempsTraversee.tsx` | Cellules min/moy/max des Tableaux 3-15 |
+
