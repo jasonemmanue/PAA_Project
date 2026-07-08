@@ -111,8 +111,13 @@ export function PageCarte() {
           <LegendeCarte />
         </div>
 
-        {/* Panneau liste — colonne droite scrollable (hauteur calée sur la carte) */}
-        <div className="h-[55vh] overflow-y-auto lg:h-[70vh]">
+        {/* Panneau liste — colonne droite scrollable (hauteur calée sur la carte).
+            touch-pan-y + overscroll-contain + WebkitOverflowScrolling : contournement
+            du bug iOS Safari où overflow-y:auto est bloqué quand body.overflow='hidden'. */}
+        <div
+          className="h-[55vh] overflow-y-auto touch-pan-y overscroll-contain lg:h-[70vh]"
+          style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+        >
           <PanneauTroncons
             etat={etat}
             selectionId={selectionId}
