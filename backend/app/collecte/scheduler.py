@@ -48,6 +48,7 @@ from app.sources import google_routes
 from app.sources.coordonnees import PointGPS
 from app.analyse.incidents_nlp import enrichir_incidents
 from app.sources.parsers.rss_parser import scraper_toutes_sources
+from app.sources.parsers.html_parser import scraper_toutes_sources_html
 
 
 logger = logging.getLogger("paa.collecte")
@@ -621,10 +622,13 @@ def _ajouter_job_incidents(scheduler: AsyncIOScheduler, settings: Settings) -> N
     async def _tache():
         session = SessionLocal()
         try:
-            nb = await scraper_toutes_sources(session)
-            logger.info("Collecte incidents : %d nouvel(s) incident(s).", nb)
-            # Enrichissement NLP immédiatement après le scraping :
-            # extraction lieu, classification type/sévérité, géocodage Nominatim.
+            # Technique 1 — RSS (feedparser)
+            nb_rss = await scraper_toutes_sources(session)
+            logger.info("Collecte incidents RSS : %d nouvel(s) incident(s).", nb_rss)
+            # Technique 2+3 — JSON embed + BeautifulSoup HTML
+            nb_html = await scraper_toutes_sources_html(session)
+            logger.info("Collecte incidents HTML : %d nouvel(s) incident(s).", nb_html)
+            # Enrichissement NLP : extraction lieu, classification type/sévérité, géocodage.
             nb_enrichis = await enrichir_incidents(session)
             logger.info("Enrichissement incidents : %d incident(s) traité(s).", nb_enrichis)
         except Exception:

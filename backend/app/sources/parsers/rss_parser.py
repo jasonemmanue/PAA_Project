@@ -52,14 +52,22 @@ MOTS_CLES_TYPE: list[str] = [
     "travaux", "chantier", "réfection",
 ]
 
-# Mots-clés de LOCALISATION dans la zone portuaire d'Abidjan
+# Mots-clés de LOCALISATION — zone portuaire étendue
+# (axes DEESP + Zone industrielle de Vridi + Port-Bouët)
 MOTS_CLES_ZONE: list[str] = [
+    # Axes surveillés DEESP
     "Treichville", "Plateau", "Zone 4",
     "Port d'Abidjan", "port autonome", "CARENA",
     "Palm Beach", "pont HB", "Houphouët",
     "pont Félix", "Seamen", "Boulevard de Marseille",
     "Avenue Christiani", "Grand Moulin", "Toyota CFAO",
     "SODECI", "Marcory", "Koumassi",
+    # Zone industrielle de Vridi / Canal de Vridi / Port-Bouët
+    "Vridi", "canal de Vridi", "zone industrielle de Vridi",
+    "pont de Vridi", "Port-Bouët", "Gonzagueville",
+    "terminal à conteneurs", "terminal portuaire",
+    "accès au port", "entrée du port", "route de Vridi",
+    "Petit-Bassam", "zone franche",
 ]
 
 _RE_TYPE = re.compile(

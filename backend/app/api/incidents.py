@@ -5,7 +5,7 @@ Endpoints :
   GET  /incidents/stats         — KPI globaux (compteurs + dernière collecte)
   GET  /incidents/export        — export CSV (P8.5)
   GET  /incidents/{id}          — détail d'un incident
-  POST /incidents/scraper-now   — déclenchement manuel du scraping RSS
+  POST /incidents/scraper-now   — déclenchement manuel scraping RSS + HTML
   POST /incidents/enrichir      — déclenchement manuel NLP + géocodage (P8.2)
 
 Tag Swagger : "incidents"
@@ -387,75 +387,20 @@ async def scraper_maintenant(
             detail="Clé API invalide ou absente.",
         )
 
+    from app.sources.parsers.html_parser import scraper_toutes_sources_html
+
     async def _scraper():
-        nb = await scraper_toutes_sources(db)
+        nb_rss = await scraper_toutes_sources(db)
+        nb_html = await scraper_toutes_sources_html(db)
         nb_enrichis = await enrichir_incidents(db)
         db.close()
+        logger.info(
+            "Scraping manuel : %d RSS + %d HTML → %d enrichis.",
+            nb_rss, nb_html, nb_enrichis,
+        )
 
     background_tasks.add_task(_scraper)
-    return {"message": "Scraping RSS lancé en arrière-plan."}
-
-
-# ---------------------------------------------------------------------------
-# POST /incidents/inserer-demo — restaure 3 incidents démo zone portuaire
-# ---------------------------------------------------------------------------
-
-
-@router.post(
-    "/inserer-demo",
-    summary="Insère (ou rafraîchit) 3 incidents démo dans la zone portuaire",
-    description=(
-        "Idempotent — les 3 incidents ont des `source_url` en "
-        "`demo.fluidis.paa/...`. Une re-exécution met à jour leur "
-        "horodatage sans dupliquer. Sécurisé par header `X-API-Key`."
-    ),
-    status_code=status.HTTP_200_OK,
-)
-async def inserer_incidents_demo(
-    x_api_key: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-) -> dict[str, int]:
-    settings = get_settings()
-    if x_api_key != settings.api_secret_key:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Clé API invalide ou absente.",
-        )
-    from scripts.inserer_incidents_demo import INCIDENTS_DEMO
-
-    maintenant = datetime.now(tz=timezone.utc)
-    decalages = [timedelta(hours=2), timedelta(hours=8), timedelta(hours=18)]
-    inseres = 0
-    rafraichis = 0
-    for demo, decalage in zip(INCIDENTS_DEMO, decalages):
-        existant = (
-            db.query(Incident)
-            .filter(Incident.source_url == demo["source_url"])
-            .one_or_none()
-        )
-        if existant is not None:
-            existant.horodatage_publication = maintenant - decalage
-            rafraichis += 1
-            continue
-        inc = Incident(
-            titre=demo["titre"],
-            resume=demo["resume"],
-            source_url=demo["source_url"],
-            source_nom=demo["source_nom"],
-            horodatage_publication=maintenant - decalage,
-            lat=demo["lat"],
-            lon=demo["lon"],
-            lieu_extrait=demo["lieu_extrait"],
-            troncon_id=demo["troncon_id"],
-            type_incident=demo["type_incident"],
-            severite=demo["severite"],
-            fiabilite_source=demo["fiabilite_source"],
-            verifie=False,
-        )
-        db.add(inc)
-        inseres += 1
-    db.commit()
-    return {"inseres": inseres, "rafraichis": rafraichis}
+    return {"message": "Scraping RSS + HTML lancé en arrière-plan."}
 
 
 # ---------------------------------------------------------------------------

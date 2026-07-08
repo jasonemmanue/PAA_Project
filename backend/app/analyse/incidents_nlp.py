@@ -38,7 +38,7 @@ logger = logging.getLogger("paa.incidents.nlp")
 # Bounding box portuaire (CLAUDE.md § 10.1)
 # ---------------------------------------------------------------------------
 
-_BBOX_LAT_MIN = 5.24
+_BBOX_LAT_MIN = 5.20   # étendu vers le sud pour couvrir Vridi / Port-Bouët
 _BBOX_LAT_MAX = 5.37
 _BBOX_LON_MIN = -4.05
 _BBOX_LON_MAX = -3.96
@@ -84,6 +84,21 @@ LIEUX_ABIDJAN: dict[str, str] = {
     "marcory": "Marcory",
     "koumassi": "Koumassi",
     "autoroute du nord": "Autoroute du Nord",
+    # Zone industrielle de Vridi / Port-Bouët
+    "vridi": "Vridi",
+    "canal de vridi": "Canal de Vridi",
+    "zone industrielle de vridi": "Zone industrielle de Vridi",
+    "pont de vridi": "Pont de Vridi",
+    "route de vridi": "Route de Vridi",
+    "port-bouët": "Port-Bouët",
+    "port bouet": "Port-Bouët",
+    "gonzagueville": "Gonzagueville",
+    "terminal à conteneurs": "Terminal à Conteneurs",
+    "terminal portuaire": "Port d'Abidjan",
+    "accès au port": "Port d'Abidjan",
+    "entrée du port": "Port d'Abidjan",
+    "petit-bassam": "Petit-Bassam",
+    "petit bassam": "Petit-Bassam",
 }
 
 # ---------------------------------------------------------------------------
