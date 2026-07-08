@@ -339,25 +339,31 @@ export function PagePrediction() {
                           <div className="text-[11px] font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 mb-1">
                             {t("prediction.labelMin")}
                           </div>
-                          <div className="text-[28px] font-bold text-green-700 dark:text-green-300">
-                            {formaterDuree(minS)}
-                          </div>
+                          <DureeDeuxLignes
+                            s={minS}
+                            classMin="text-[28px] font-bold text-green-700 dark:text-green-300"
+                            classSec="text-[20px] font-semibold text-green-600 dark:text-green-400"
+                          />
                         </div>
                         <div className="rounded-xl border-2 border-paa-blue-300 dark:border-paa-blue-600 p-4 bg-paa-blue-50/50 dark:bg-slate-800/60 shadow-md">
                           <div className="text-[11px] font-semibold uppercase tracking-wider text-paa-blue-600 dark:text-paa-blue-300 mb-1">
                             {t("prediction.labelMoy")}
                           </div>
-                          <div className="text-[36px] font-extrabold leading-none text-paa-navy-800 dark:text-paa-blue-50">
-                            {formaterDuree(moyS)}
-                          </div>
+                          <DureeDeuxLignes
+                            s={moyS}
+                            classMin="text-[36px] font-extrabold leading-none text-paa-navy-800 dark:text-paa-blue-50"
+                            classSec="text-[22px] font-bold text-paa-navy-700 dark:text-paa-blue-200"
+                          />
                         </div>
                         <div className="rounded-xl border app-border p-4 bg-red-50/50 dark:bg-red-950/10">
                           <div className="text-[11px] font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 mb-1">
                             {t("prediction.labelMax")}
                           </div>
-                          <div className="text-[28px] font-bold text-red-700 dark:text-red-300">
-                            {formaterDuree(maxS)}
-                          </div>
+                          <DureeDeuxLignes
+                            s={maxS}
+                            classMin="text-[28px] font-bold text-red-700 dark:text-red-300"
+                            classSec="text-[20px] font-semibold text-red-600 dark:text-red-400"
+                          />
                         </div>
                       </div>
 
@@ -486,6 +492,28 @@ export function PagePrediction() {
 type Ecart = ReturnType<typeof calculerEcart>;
 type TFn = (key: string) => string;
 
+/** Affiche une durée sur deux lignes : "XX min" (grande) + "YY s" (plus petite) */
+function DureeDeuxLignes({
+  s,
+  classMin,
+  classSec,
+}: {
+  s: number | null;
+  classMin: string;
+  classSec?: string;
+}) {
+  if (s == null) return <div className={classMin}>—</div>;
+  const mn = Math.floor(s / 60);
+  const sec = Math.round(s % 60);
+  if (mn === 0) return <div className={classMin}>{sec} s</div>;
+  return (
+    <>
+      <div className={classMin}>{mn} min</div>
+      {sec > 0 && <div className={classSec ?? classMin}>{sec} s</div>}
+    </>
+  );
+}
+
 function BlocGpx({
   titre, sousTitre, stats, vide = false, ecart, t,
 }: {
@@ -552,8 +580,9 @@ function BandeauEcart({ ecart, label, t }: { ecart: NonNullable<Ecart>; label: s
   const bgClass = egal
     ? "bg-paa-blue-50 dark:bg-paa-navy-800 border-paa-navy-200 dark:border-paa-navy-600"
     : positif
-    ? "bg-statut-congestionne/10 border-statut-congestionne/40"
+    ? "bg-statut-congestionne/15 border-statut-congestionne"
     : "bg-statut-fluide/10 border-statut-fluide/40";
+  const borderClass = positif ? "border-2" : "border";
   const textClass = egal
     ? "text-paa-navy-600 dark:text-paa-blue-200"
     : positif
@@ -571,7 +600,7 @@ function BandeauEcart({ ecart, label, t }: { ecart: NonNullable<Ecart>; label: s
     : `${t("prediction.terrainPlusCourt")} ${mnAff} (${pctAff}) ${t("prediction.ecartPlusCourt")}`;
 
   return (
-    <div className={`rounded-md border px-4 py-3 flex items-center gap-3 ${bgClass}`}>
+    <div className={`rounded-md ${borderClass} px-4 py-3 flex items-center gap-3 ${bgClass}`}>
       <span className={`text-fluid-xl ${textClass}`}>{egal ? "≈" : positif ? "▲" : "▼"}</span>
       <div>
         <div className={`text-fluid-sm font-bold ${textClass}`}>{t("prediction.ecartTitre")}</div>
