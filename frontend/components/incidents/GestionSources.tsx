@@ -267,24 +267,61 @@ export function GestionSources() {
               ➕ Ajouter un nouveau journal / site d'actualités
             </legend>
 
+            {/* Avertissement DNS Railway */}
+            <div className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-400 dark:border-amber-600 p-3 text-xs">
+              <p className="font-semibold text-amber-800 dark:text-amber-200 mb-2">
+                ⚠️ Attention — Sites ivoiriens bloqués sur le serveur Railway
+              </p>
+              <p className="text-amber-700 dark:text-amber-300 mb-2">
+                Les serveurs Railway (hébergés aux États-Unis) ne peuvent pas accéder
+                aux sites d'actualités ivoiriens directement. Ajouter ces URLs donnera
+                une source inactive :
+              </p>
+              <ul className="space-y-0.5 text-amber-700 dark:text-amber-300 font-mono mb-3">
+                <li>❌ fraternitematin.ci</li>
+                <li>❌ news.abidjan.net</li>
+                <li>❌ koaci.com</li>
+                <li>❌ linfodrome.ci / soir-info.ci</li>
+              </ul>
+              <p className="font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                ✅ Sources qui fonctionnent depuis Railway :
+              </p>
+              <ul className="space-y-1 text-amber-700 dark:text-amber-300">
+                <li>
+                  <b>Google News CI</b> (recommandé) — flux agrégé, accessible depuis partout :
+                  <br />
+                  <span className="font-mono break-all">
+                    https://news.google.com/rss/search?q=accident+Abidjan+port&hl=fr&gl=CI&ceid=CI:fr
+                  </span>
+                </li>
+                <li className="mt-1">
+                  <b>RFI Afrique</b> — couvre les incidents majeurs :
+                  <br />
+                  <span className="font-mono">https://www.rfi.fr/fr/afrique/rss</span>
+                </li>
+                <li className="mt-1">
+                  <b>AIP (Agence Ivoirienne de Presse)</b> — source officielle :
+                  <br />
+                  <span className="font-mono">https://www.aip.ci/feed/</span>
+                </li>
+              </ul>
+              <p className="mt-2 italic text-amber-600 dark:text-amber-400">
+                Conseil : pour cibler la zone portuaire dans Google News, adaptez les mots-clés
+                dans l'URL (ex. <span className="font-mono">q=accident+Treichville+port</span>).
+                Demandez à l'<b>Assistant FLUIDIS</b> en bas à droite de vous suggérer une URL Google News adaptée.
+              </p>
+            </div>
+
             {/* Exemple concret */}
             <div className="mb-4 rounded-md bg-paa-blue-50 dark:bg-paa-navy-800/60 border border-paa-blue-200 dark:border-paa-navy-600 p-3 text-xs">
               <p className="font-semibold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
-                💡 Comment remplir — il suffit de l'adresse du site
+                💡 Exemple de source à ajouter
               </p>
               <ul className="space-y-1 text-paa-navy-700 dark:text-paa-blue-200">
-                <li><b>Nom du site</b> : Fraternité Matin</li>
-                <li><b>Adresse du site</b> : https://www.fraternitematin.ci</li>
-                <li><b>Confiance</b> : 90 %</li>
+                <li><b>Nom du site</b> : Google News Abidjan Port</li>
+                <li><b>Adresse</b> : https://news.google.com/rss/search?q=accident+Abidjan+port&hl=fr&gl=CI&ceid=CI:fr</li>
+                <li><b>Confiance</b> : 75 %</li>
               </ul>
-              <p className="mt-2 italic text-paa-navy-600 dark:text-paa-blue-300">
-                Vous pouvez coller l'adresse <b>simple du site</b> — l'application
-                ajoutera automatiquement <span className="font-mono">/feed/</span> ou
-                trouvera la bonne adresse RSS si le site est connu (Fraternité Matin,
-                Abidjan.net, Koaci, L'Infodrome, Soir Info, RFI Afrique, Ivoiresoir,
-                Afrik.com…). Sinon, demandez l'adresse RSS à l'<b>Assistant FLUIDIS</b>
-                en bas à droite — il connaît les URLs RSS des journaux ivoiriens.
-              </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
