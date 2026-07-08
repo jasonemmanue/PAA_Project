@@ -34,7 +34,7 @@ function exporterCsv(entrees: EntreeCongestion[], nomFichier: string, typeLabel:
       : e.troncon_nom;
     const regles: string[] = [];
     if (e.regle_semaine) regles.push("Règle 1 — semaine (>=4 fois)");
-    if (e.regle_jour_indicatif) regles.push("Règle 2 — jour indicatif (>=75%)");
+    if (e.regle_jour_indicatif) regles.push("Règle 2 — jour indicatif (>=3 fois)");
     return [nom, e.troncon_nom, e.tranche, String(e.nb_total_semaine), regles.join(" | ")];
   });
 
@@ -71,8 +71,8 @@ export function TableauZonesCongestionnees({
       titre="Tableau 16 — Tronçons congestionnés (règles DEESP)"
       description={
         "Un tronçon est congestionné à un créneau horaire si l'une des deux règles DEESP est vérifiée — " +
-        "Règle 1 (semaine) : ce créneau revient au moins 4 fois dans la même semaine (tous jours confondus) ; " +
-        "Règle 2 (jour indicatif) : ce jour indicatif est congestionné à cette tranche horaire au moins 3 fois sur 4 dans le mois (≥ 75 %). " +
+        "Règle 1 (semaine) : ce créneau revient au moins 4 fois dans une seule semaine calendaire (lundi–dimanche) ; " +
+        "Règle 2 (jour indicatif) : ce même jour de la semaine (ex. lundi) est congestionné à cette tranche horaire au moins 3 fois dans le mois. " +
         "Critère de congestion d'une mesure : couleur Google Maps — rouge présent OU orange ≥ 50 % du tronçon."
       }
     >
@@ -165,7 +165,7 @@ function Regles({ e }: { e: EntreeCongestion }) {
       )}
       {e.regle_jour_indicatif && (
         <span className="inline-block rounded bg-statut-congestionne/20 px-2 py-0.5 text-xs text-statut-congestionne">
-          Règle 2 — jour indicatif (≥ 75 %)
+          Règle 2 — jour indicatif (≥ 3 ×)
         </span>
       )}
     </div>

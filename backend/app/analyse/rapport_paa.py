@@ -408,38 +408,43 @@ def troncons_congestionnes(
         ).scalars()
     )
 
-    # Clé : (troncon_id, sous_troncon_id|None, weekday, heure_locale) → nb
+    # Règles DEESP officielles (§ 4.5.3) — strictes, appliquées par période fixe
+    SEUIL_JOUR_DEESP = 3     # ≥ 3 occurrences sur le même jour indicatif (ex. 3 lundis)
+    SEUIL_SEMAINE_DEESP = 4  # ≥ 4 occurrences dans une seule semaine calendaire (lun-dim)
+
+    # Compteur par (tid, sid, weekday, heure) → nb total dans la période (règle jour)
     occurrences: dict[tuple[int, int | None, int, int], int] = defaultdict(int)
+    # Compteur par (tid, sid, heure, année_iso, semaine_iso) → nb dans cette semaine (règle semaine)
+    par_semaine_iso: dict[tuple[int, int | None, int, int, int], int] = defaultdict(int)
+
     for m in mesures:
         if m.troncon_id not in troncons:
             continue
         local = m.horodatage.astimezone(fuseau_local)
         if not _dans_plage_horaire(local, heure_debut, heure_fin):
             continue
-        occurrences[
-            (m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)
-        ] += 1
+        iy, iw, _ = local.isocalendar()
+        occurrences[(m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)] += 1
+        par_semaine_iso[(m.troncon_id, m.sous_troncon_id, local.hour, iy, iw)] += 1
 
-    # ── Agrégation par (troncon, sous_troncon, heure) — règle SEMAINE ──
+    # Agrégation par (troncon, sous, heure) — comptages par jour indicatif
     par_cle_heure: dict[tuple[int, int | None, int], dict[int, int]] = defaultdict(dict)
     for (tid, sid, wd, h), nb in occurrences.items():
         par_cle_heure[(tid, sid, h)][wd] = nb
 
-    # Règles DEESP officielles (§ 4.5.3) — fixes, sans adaptation
-    SEUIL_SEMAINE_DEESP = 4       # ≥ 4 fois à la même heure dans la semaine
-    RATIO_JOUR_DEESP = 3 / 4     # ≥ 75 % des jours du même type (ex. 3 lundis sur 4)
+    # Maximum d'occurrences dans une seule semaine calendaire, par créneau
+    max_par_semaine: dict[tuple[int, int | None, int], int] = defaultdict(int)
+    for (tid, sid, h, iy, iw), nb in par_semaine_iso.items():
+        if nb > max_par_semaine[(tid, sid, h)]:
+            max_par_semaine[(tid, sid, h)] = nb
 
     resultats: list[CongestionHoraire] = []
     for (tid, sid, h), par_jour in par_cle_heure.items():
-        # Règle 2 — jour indicatif : le ratio occurrences / jours disponibles ≥ 75 %
-        regle_jour = any(
-            nb_disponibles_dict.get(NOMS_JOURS_FR[wd], 0) > 0
-            and nb / nb_disponibles_dict[NOMS_JOURS_FR[wd]] >= RATIO_JOUR_DEESP
-            for wd, nb in par_jour.items()
-        )
+        # Règle 2 — jour indicatif STRICT : ≥ 3 fois sur le même type de jour dans le mois
+        regle_jour = any(nb >= SEUIL_JOUR_DEESP for nb in par_jour.values())
         nb_total = sum(par_jour.values())
-        # Règle 1 — semaine : ≥ 4 occurrences totales sur n'importe quel jour
-        regle_sem = nb_total >= SEUIL_SEMAINE_DEESP
+        # Règle 1 — semaine STRICT : ≥ 4 occurrences dans une seule semaine calendaire
+        regle_sem = max_par_semaine[(tid, sid, h)] >= SEUIL_SEMAINE_DEESP
         if not (regle_jour or regle_sem):
             continue
         t = troncons[tid]

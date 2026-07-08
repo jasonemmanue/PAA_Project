@@ -230,9 +230,9 @@ async def get_zones_congestionnees(
             ),
             "seuil_orange_long_pct": 50.0,
             "seuil_semaine_effectif": 4,
-            "ratio_jour_effectif": 0.75,
-            "regle_1_semaine": "Congestionné si le même créneau revient ≥ 4 fois dans la semaine (tous jours confondus)",
-            "regle_2_jour_indicatif": "Congestionné si ce jour indicatif revient ≥ 3 fois sur 4 dans le mois (≥ 75 %)",
+            "seuil_jour_effectif": 3,
+            "regle_1_semaine": "Congestionné si le même créneau revient ≥ 4 fois dans une seule semaine calendaire (lun–dim)",
+            "regle_2_jour_indicatif": "Congestionné si ce jour indicatif est congestionné ≥ 3 fois dans le mois (même type de jour)",
         },
         "entrees": [
             {
