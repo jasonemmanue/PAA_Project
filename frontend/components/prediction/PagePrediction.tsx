@@ -636,12 +636,8 @@ function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax }: {
   titre: string; stats: import("@/lib/types").StatsPeriode | null;
   labelMin: string; labelMoy: string; labelMax: string; unite?: string;
 }) {
-  // Convertit secondes ou minutes en format "X:XX min"
-  const aff = (mn: number | null | undefined, s: number | null | undefined): string => {
-    const totalS = s ?? (mn != null ? mn * 60 : null);
-    if (totalS == null) return "—";
-    return formaterMn(Math.round(totalS));
-  };
+  const toS = (s: number | null | undefined, mn: number | null | undefined): number | null =>
+    s != null ? s : mn != null ? Math.round(mn * 60) : null;
   return (
     <div className="paa-card p-3">
       <div className="text-fluid-xs font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-2">{titre}</div>
@@ -649,9 +645,30 @@ function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax }: {
         <p className="text-fluid-xs app-text-muted italic">—</p>
       ) : (
         <div className="grid grid-cols-3 gap-1 text-center">
-          <div><div className="text-fluid-xs app-text-muted">{labelMin}</div><div className="font-bold text-statut-fluide">{aff(stats.min_mn, stats.min_s)}</div></div>
-          <div><div className="text-fluid-xs app-text-muted">{labelMoy}</div><div className="font-bold text-paa-blue-500">{aff(stats.moyen_mn, stats.moyen_s)}</div></div>
-          <div><div className="text-fluid-xs app-text-muted">{labelMax}</div><div className="font-bold text-statut-congestionne">{aff(stats.max_mn, stats.max_s)}</div></div>
+          <div>
+            <div className="text-fluid-xs app-text-muted">{labelMin}</div>
+            <DureeDeuxLignes
+              s={toS(stats.min_s, stats.min_mn)}
+              classMin="font-bold text-fluid-sm text-statut-fluide"
+              classSec="text-fluid-xs font-semibold text-statut-fluide"
+            />
+          </div>
+          <div>
+            <div className="text-fluid-xs app-text-muted">{labelMoy}</div>
+            <DureeDeuxLignes
+              s={toS(stats.moyen_s, stats.moyen_mn)}
+              classMin="font-bold text-fluid-sm text-paa-blue-500"
+              classSec="text-fluid-xs font-semibold text-paa-blue-400"
+            />
+          </div>
+          <div>
+            <div className="text-fluid-xs app-text-muted">{labelMax}</div>
+            <DureeDeuxLignes
+              s={toS(stats.max_s, stats.max_mn)}
+              classMin="font-bold text-fluid-sm text-statut-congestionne"
+              classSec="text-fluid-xs font-semibold text-statut-congestionne"
+            />
+          </div>
         </div>
       )}
     </div>
