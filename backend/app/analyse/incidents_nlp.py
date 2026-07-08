@@ -110,8 +110,8 @@ LIEUX_ABIDJAN: dict[str, str] = {
     "attecoube": "Attécoubé",
     "grand-bassam": "Grand-Bassam",
     "grand bassam": "Grand-Bassam",
-    # Fallback générique : "abidjan" seul → point d'entrée port (dans la bbox)
-    "abidjan": "Port d'Abidjan",
+    # Fallback générique : "abidjan" seul → Zone industrielle de Vridi (zone portuaire)
+    "abidjan": "Vridi",
 }
 
 # ---------------------------------------------------------------------------
@@ -221,6 +221,21 @@ def classifier_severite(texte: str) -> SeveriteIncident:
 # Cache mémoire : {lieu_normalisé: (lat, lon) | None}
 _cache_geocodage: dict[str, tuple[float, float] | None] = {}
 
+# Coordonnées fixes pour les lieux génériques dont Nominatim est imprécis.
+# "abidjan" seul → zone industrielle de Vridi (cœur de la zone portuaire).
+# Ces valeurs bypasse Nominatim — elles sont issues du relevé terrain 2026-06-22.
+_COORDS_FIXES: dict[str, tuple[float, float]] = {
+    "Port d'Abidjan": (5.2903, -4.0086),
+    "Vridi": (5.2603, -3.9969),
+    "Canal de Vridi": (5.2550, -4.0050),
+    "Zone industrielle de Vridi": (5.2603, -3.9969),
+    "Route de Vridi": (5.2650, -4.0020),
+    "Port-Bouët": (5.2550, -3.9700),
+    "Gonzagueville": (5.2400, -3.9650),
+    "Petit-Bassam": (5.2700, -4.0100),
+    "Terminal à Conteneurs": (5.2850, -4.0050),
+}
+
 
 def _dans_bbox_portuaire(lat: float, lon: float) -> bool:
     """Retourne True si le point est dans la bounding box de la zone portuaire."""
@@ -240,6 +255,13 @@ async def geocoder_lieu(lieu: str) -> tuple[float, float] | None:
     cle = lieu.strip().lower()
     if cle in _cache_geocodage:
         return _cache_geocodage[cle]
+
+    # Bypass Nominatim pour les lieux dont les coordonnées sont hardcodées
+    for nom_fixe, coords_fixes in _COORDS_FIXES.items():
+        if nom_fixe.lower() == cle:
+            logger.info("Geocodage %r → coords fixes (%.4f, %.4f) ✓", lieu, *coords_fixes)
+            _cache_geocodage[cle] = coords_fixes
+            return coords_fixes
 
     await asyncio.sleep(_DELAI_GEOCODAGE_S)
 
