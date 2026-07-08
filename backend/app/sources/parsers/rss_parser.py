@@ -66,25 +66,68 @@ MOTS_CLES_TYPE: list[str] = [
     "opération", "intervention", "arrestation",
 ]
 
-# Mots-clés de LOCALISATION — zone portuaire étendue
-# (axes DEESP + Zone industrielle de Vridi + Port-Bouët)
+# Mots-clés de LOCALISATION — périmètre portuaire complet d'Abidjan
+#
+# Couvre : les 3 axes DEESP + tout le périmètre portuaire (Plateau au nord,
+# Treichville à l'ouest, Vridi et Port-Bouët au sud, Koumassi/Marcory à l'est)
+# + les ponts, gares, terminaux, quartiers riverains et voies de transit.
 MOTS_CLES_ZONE: list[str] = [
-    # Axes surveillés DEESP
-    "Treichville", "Plateau", "Zone 4",
-    "Port d'Abidjan", "port autonome", "CARENA",
-    "Palm Beach", "pont HB", "Houphouët",
-    "pont Félix", "Seamen", "Boulevard de Marseille",
-    "Avenue Christiani", "Grand Moulin", "Toyota CFAO",
-    "SODECI", "Marcory", "Koumassi",
-    # Zone industrielle de Vridi / Canal de Vridi / Port-Bouët
-    "Vridi", "canal de Vridi", "zone industrielle de Vridi",
-    "pont de Vridi", "Port-Bouët", "Gonzagueville",
+    # ── Axes surveillés DEESP ──
+    "CARENA", "Palm Beach", "Toyota CFAO", "SODECI",
+    "Grand Moulin", "GMA", "Seamen",
+    # ── Ponts et ouvrages d'art ──
+    "pont HB", "Houphouët", "pont Félix",
+    "pont De Gaulle", "pont de Gaulle",
+    "pont de Vridi", "pont de Cocody",
+    "pont Henri Konan Bédié", "pont HKB",
+    # ── Voies principales ──
+    "Boulevard de Marseille", "bd de Marseille",
+    "Avenue Christiani", "av Christiani",
+    "Boulevard Valéry Giscard d'Estaing", "bd VGE",
+    "Autoroute du Nord", "voie express",
+    "Boulevard de la République",
+    "Boulevard Nangui Abrogoua",
+    "Boulevard de la Paix",
+    "Boulevard Lagunaire",
+    "Route de Bassam", "route d'Abidjan-Bassam",
+    "Route de Vridi", "route du port",
+    # ── Port et terminaux ──
+    "Port d'Abidjan", "port autonome",
     "terminal à conteneurs", "terminal portuaire",
-    "accès au port", "entrée du port", "route de Vridi",
-    "Petit-Bassam", "zone franche",
-    # Communes / quartiers adjacents couvrant les axes DEESP
-    "Abidjan", "Adjame", "Cocody", "Yopougon",
-    "Abobo", "Attécoubé", "Grand-Bassam",
+    "terminal roulier", "terminal minéralier",
+    "terminal céréalier", "terminal pétrolier",
+    "accès au port", "entrée du port",
+    "zone portuaire", "enceinte portuaire",
+    "quai", "dock", "entrepôt portuaire",
+    # ── Zone industrielle de Vridi ──
+    "Vridi", "canal de Vridi",
+    "zone industrielle de Vridi", "zone industrielle",
+    "zone franche", "zone franche de Vridi",
+    "raffinerie", "SIR",
+    "GESTOCI", "dépôt pétrolier",
+    # ── Communes du périmètre portuaire ──
+    "Treichville", "Plateau", "Zone 4",
+    "Marcory", "Koumassi", "Petit-Bassam",
+    "Port-Bouët", "Gonzagueville",
+    "Île de Petit-Bassam",
+    # ── Communes adjacentes (transit vers le port) ──
+    "Adjamé", "Adjame", "Cocody",
+    "Attécoubé", "Yopougon", "Abobo",
+    "Grand-Bassam",
+    # ── Repères et landmarks portuaires ──
+    "CIMIVOIRE", "Unilever", "ATC Comafrique",
+    "SGBCI", "DGI", "Libya Oil",
+    "Gare SOTRA", "Terminus 19",
+    "Pharmacie du port", "Pharmacie Palm Beach",
+    "commissariat du port", "commissariat spécial",
+    "douane", "douane portuaire",
+    "AGL", "Bolloré", "MSC", "Maersk", "CMA CGM",
+    "Abidjan Terminal", "SETV",
+    "gendarmerie du port", "gendarmerie maritime",
+    "capitainerie", "pilotage portuaire",
+    "Biétry", "cité portuaire",
+    # ── Fallback large ──
+    "Abidjan",
 ]
 
 _RE_TYPE = re.compile(

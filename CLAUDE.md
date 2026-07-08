@@ -5420,3 +5420,56 @@ au lieu de conversions approximatives :
 | `GraphiquesParAxe.tsx` | Tooltips des graphiques Rapport DEESP |
 | `TableauTempsTraversee.tsx` | Cellules min/moy/max des Tableaux 3-15 |
 
+---
+
+## 31. Périmètre portuaire complet — scraping élargi + coords fixes (2026-07-08)
+
+### 31.1 Motivation
+
+Le scraper d'incidents ne couvrait qu'un sous-ensemble du périmètre portuaire
+d'Abidjan. Les mots-clés de zone et les lieux de référence ont été massivement
+étendus pour capturer les incidents sur **tout le périmètre**, des ponts au nord
+(Houphouët-Boigny, De Gaulle, HKB) jusqu'à Vridi et Port-Bouët au sud.
+
+### 31.2 Périmètre portuaire d'Abidjan — lieux délimitants
+
+| Zone | Lieux clés |
+|------|-----------|
+| **Nord** | Plateau, Adjamé, Pont Houphouët-Boigny, Pont De Gaulle, Pont HKB |
+| **Ouest** | Treichville, CARENA, bd de Marseille, Gare SOTRA Terminus 19 |
+| **Sud-Ouest** | Vridi, Zone industrielle, Canal de Vridi, SIR, GESTOCI |
+| **Sud** | Port-Bouët, Gonzagueville, Biétry, Cité portuaire |
+| **Est** | Koumassi, Marcory, Zone 4, Route de Bassam |
+| **Centre port** | Terminaux (conteneurs, roulier, minéralier, céréalier, pétrolier), AGL, Abidjan Terminal, douane, gendarmerie, capitainerie |
+| **Transit** | Autoroute du Nord, Avenue Christiani, bd VGE, Voie express |
+
+### 31.3 Changements appliqués
+
+**`backend/app/sources/parsers/rss_parser.py`** — `MOTS_CLES_ZONE` :
+- Ajout de **~50 nouveaux mots-clés** couvrant : ponts (De Gaulle, HKB, Cocody),
+  voies (bd VGE, bd de la République, bd Nangui Abrogoua, bd Lagunaire, Route de
+  Bassam), terminaux spécialisés (roulier, minéralier, céréalier, pétrolier),
+  opérateurs portuaires (AGL, Bolloré, MSC, Maersk, CMA CGM, Abidjan Terminal,
+  SETV), installations industrielles (SIR, GESTOCI, dépôt pétrolier, raffinerie),
+  services (douane, gendarmerie maritime, capitainerie), quartiers (Biétry, cité
+  portuaire, île de Petit-Bassam).
+
+**`backend/app/analyse/incidents_nlp.py`** — `LIEUX_ABIDJAN` :
+- Ajout de **~50 nouvelles entrées** avec les mêmes catégories, permettant
+  l'extraction précise du lieu depuis le texte de l'article.
+
+**`backend/app/analyse/incidents_nlp.py`** — `_COORDS_FIXES` :
+- Étendu de **9 à 60+ entrées** avec les coordonnées GPS de chaque lieu de
+  référence. Les coords des landmarks DEESP proviennent du relevé GPX terrain
+  (2026-06-22). Les autres sont relevées sur Google Maps.
+- Effet : le géocodage Nominatim n'est utilisé qu'en dernier recours — la grande
+  majorité des lieux du périmètre portuaire sont résolus instantanément via les
+  coords fixes, sans appel réseau ni risque d'imprécision.
+
+### 31.4 Avertissement DNS Railway
+
+Le composant `GestionSources.tsx` affiche un panneau ambre permanent avertissant
+que les sites ivoiriens (fraternitematin.ci, abidjan.net, koaci.com, etc.) sont
+bloqués par le DNS des serveurs Railway (hébergés aux USA). Seules les sources
+internationales fonctionnent : Google News CI, RFI Afrique, AIP.
+
