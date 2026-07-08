@@ -43,13 +43,27 @@ logger = logging.getLogger("paa.incidents.rss")
 # TYPE «travaux» est présent mais aucun mot-clé ZONE ne correspond.
 # ---------------------------------------------------------------------------
 
-# Mots-clés décrivant la NATURE de l'incident
+# Mots-clés décrivant la NATURE de l'incident — large pour la presse ivoirienne
+# Inclut les termes génériques de trafic qui apparaissent souvent en introduction
 MOTS_CLES_TYPE: list[str] = [
-    "accident", "collision", "accrochage", "carambolage",
-    "embouteillage", "bouchon", "route barrée", "voie coupée",
-    "camion renversé", "poids lourd", "convoi exceptionnel",
-    "ralentissement", "circulation perturbée", "trafic dense",
-    "travaux", "chantier", "réfection",
+    # Incidents directs
+    "accident", "collision", "accrochage", "carambolage", "dérapage",
+    "renversement", "renversé", "capotage", "percuté", "heurté",
+    # Victimes / urgence
+    "blessé", "mort", "décès", "tué", "victime", "hospitalisé",
+    "secours", "pompier", "ambulance", "urgence",
+    # Trafic routier
+    "embouteillage", "bouchon", "ralentissement", "circulation",
+    "trafic", "route barrée", "voie coupée", "bloqué", "bloquée",
+    "perturbation", "perturbé", "gêne", "déviation", "fermeture",
+    "camion", "poids lourd", "convoi", "véhicule", "moto",
+    "engin", "camionnette", "bus", "car",
+    # Travaux / infrastructure
+    "travaux", "chantier", "réfection", "réparation", "asphalte",
+    "nid-de-poule", "effondrement", "affaissement",
+    # Termes génériques de la presse CI
+    "incident", "évènement", "événement", "fait divers",
+    "opération", "intervention", "arrestation",
 ]
 
 # Mots-clés de LOCALISATION — zone portuaire étendue
@@ -68,6 +82,9 @@ MOTS_CLES_ZONE: list[str] = [
     "terminal à conteneurs", "terminal portuaire",
     "accès au port", "entrée du port", "route de Vridi",
     "Petit-Bassam", "zone franche",
+    # Communes / quartiers adjacents couvrant les axes DEESP
+    "Abidjan", "Adjame", "Cocody", "Yopougon",
+    "Abobo", "Attécoubé", "Grand-Bassam",
 ]
 
 _RE_TYPE = re.compile(
