@@ -163,6 +163,9 @@ def _stats_periode_par_troncon(
             "min_mn": round(min(valeurs), 1),
             "moyen_mn": round(statistics.fmean(valeurs), 1),
             "max_mn": round(max(valeurs), 1),
+            "min_s": int(round(min(valeurs))),
+            "moyen_s": int(round(statistics.fmean(valeurs))),
+            "max_s": int(round(max(valeurs))),
             "nb_mesures": len(valeurs),
         }
 
@@ -280,6 +283,9 @@ async def evolution_par_troncon(
                 "min_mn": round(l.temps_min_s / 60, 1) if l.temps_min_s is not None else None,
                 "moyen_mn": round(l.temps_moyen_s / 60, 1) if l.temps_moyen_s is not None else None,
                 "max_mn": round(l.temps_max_s / 60, 1) if l.temps_max_s is not None else None,
+                "min_s": int(round(l.temps_min_s)) if l.temps_min_s is not None else None,
+                "moyen_s": int(round(l.temps_moyen_s)) if l.temps_moyen_s is not None else None,
+                "max_s": int(round(l.temps_max_s)) if l.temps_max_s is not None else None,
             }
             if l.type_jour == "Jours ouvrables":
                 par_periode_import[l.periode]["jours_ouvrables"] = bloc

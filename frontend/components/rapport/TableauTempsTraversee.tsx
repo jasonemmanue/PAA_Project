@@ -1,20 +1,21 @@
 "use client";
 
 import { Card } from "@/components/ui/Card";
+import { formaterDuree } from "@/lib/format";
 import type { LigneTempsTraversee, RapportTempsTraversee } from "@/lib/types";
 
 type Agregat = "min" | "moyen" | "max";
 
 const LIBELLE: Record<Agregat, string> = {
-  min: "TEMPS MINIMAL (en Min)",
-  moyen: "TEMPS MOYEN (en Min)",
-  max: "TEMPS MAXIMAL (en Min)",
+  min: "TEMPS MINIMAL",
+  moyen: "TEMPS MOYEN",
+  max: "TEMPS MAXIMAL",
 };
 
-function valeurAgregat(l: LigneTempsTraversee, agregat: Agregat): number | null {
-  if (agregat === "min") return l.temps_min_mn;
-  if (agregat === "moyen") return l.temps_moyen_mn;
-  return l.temps_max_mn;
+function valeurSecondes(l: LigneTempsTraversee, agregat: Agregat): number | null {
+  if (agregat === "min") return l.temps_min_s ?? (l.temps_min_mn != null ? l.temps_min_mn * 60 : null);
+  if (agregat === "moyen") return l.temps_moyen_s ?? (l.temps_moyen_mn != null ? l.temps_moyen_mn * 60 : null);
+  return l.temps_max_s ?? (l.temps_max_mn != null ? l.temps_max_mn * 60 : null);
 }
 
 export function TableauTempsTraversee({
@@ -31,7 +32,7 @@ export function TableauTempsTraversee({
   // Group lines by troncon_nom so we can show 2 cols (jour_ouvrable / week_end)
   const parTroncon = new Map<string, { ouvrable: number | null; we: number | null; nbJo: number; nbWe: number }>();
   for (const l of rapport?.lignes ?? []) {
-    const v = valeurAgregat(l, agregat);
+    const v = valeurSecondes(l, agregat);
     const slot = parTroncon.get(l.troncon_nom) ?? { ouvrable: null, we: null, nbJo: 0, nbWe: 0 };
     if (l.type_jour === "jour_ouvrable") { slot.ouvrable = v; slot.nbJo = l.nb_mesures; }
     else { slot.we = v; slot.nbWe = l.nb_mesures; }
@@ -61,11 +62,11 @@ export function TableauTempsTraversee({
                 <Td>{LIBELLE[agregat]}</Td>
                 <Td>{nom}</Td>
                 <Td className={`text-right font-semibold ${vals.nbJo === 0 ? "app-text-muted italic" : ""}`}>
-                  {vals.nbJo === 0 ? "aucune mesure" : vals.ouvrable ?? "—"}
+                  {vals.nbJo === 0 ? "aucune mesure" : vals.ouvrable != null ? formaterDuree(vals.ouvrable) : "—"}
                 </Td>
                 <Td className="text-right text-fluid-xs app-text-muted">{vals.nbJo}</Td>
                 <Td className={`text-right font-semibold ${vals.nbWe === 0 ? "app-text-muted italic" : ""}`}>
-                  {vals.nbWe === 0 ? "aucune mesure" : vals.we ?? "—"}
+                  {vals.nbWe === 0 ? "aucune mesure" : vals.we != null ? formaterDuree(vals.we) : "—"}
                 </Td>
                 <Td className="text-right text-fluid-xs app-text-muted">{vals.nbWe}</Td>
               </tr>

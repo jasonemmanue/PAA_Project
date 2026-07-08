@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
 import { api } from "@/lib/api";
+import { formaterDuree } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import type { CreneauHoraire, HeureOptimaleResponse, Troncon } from "@/lib/types";
 
@@ -59,10 +60,10 @@ function CarteTop3({ creneaux, refMn }: { creneaux: CreneauHoraire[]; refMn: num
               {c.tranche}
             </span>
             <span className="text-fluid-lg font-extrabold text-paa-navy-900 dark:text-white">
-              {c.moyen_mn} min
+              {formaterDuree(c.moyen_s)}
             </span>
             <span className="text-fluid-xs app-text-muted">
-              {t("heureOptimale.colMin")}: {c.min_mn} / {t("heureOptimale.colMax")}: {c.max_mn}
+              {t("heureOptimale.colMin")}: {formaterDuree(c.min_s)} / {t("heureOptimale.colMax")}: {formaterDuree(c.max_s)}
             </span>
           </div>
         ))}
@@ -99,6 +100,7 @@ function GraphiqueCreneaux({
   const data = creneaux.map((c) => ({
     tranche: c.tranche.split("-")[0], // "07h"
     moyen_mn: c.moyen_mn,
+    moyen_s: c.moyen_s,
     min_mn: c.min_mn,
     max_mn: c.max_mn,
     optimal: c.optimal,
@@ -116,7 +118,7 @@ function GraphiqueCreneaux({
             <XAxis dataKey="tranche" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} unit=" min" />
             <Tooltip
-              formatter={(v: number) => [`${v} min`, t("heureOptimale.colMoyen")]}
+              formatter={(v: number) => [formaterDuree(v * 60), t("heureOptimale.colMoyen")]}
               labelFormatter={(l) => `${l}`}
             />
             {refMn !== null && (
@@ -175,10 +177,10 @@ function TableauCreneaux({ creneaux }: { creneaux: CreneauHoraire[] }) {
                   {c.tranche}
                 </td>
                 <td className="px-3 py-2 font-semibold text-paa-navy-900 dark:text-paa-blue-100">
-                  {c.moyen_mn} min
+                  {formaterDuree(c.moyen_s)}
                 </td>
-                <td className="px-3 py-2 app-text-muted">{c.min_mn} min</td>
-                <td className="px-3 py-2 app-text-muted">{c.max_mn} min</td>
+                <td className="px-3 py-2 app-text-muted">{formaterDuree(c.min_s)}</td>
+                <td className="px-3 py-2 app-text-muted">{formaterDuree(c.max_s)}</td>
                 <td className="px-3 py-2 app-text-muted">{c.nb_mesures}</td>
                 <td className="px-3 py-2">
                   {c.optimal && (

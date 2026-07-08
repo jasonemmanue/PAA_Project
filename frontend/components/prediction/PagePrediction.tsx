@@ -85,7 +85,8 @@ function googleMoyenMnMois(mois: ResumePrediction["mois"]): number | null {
   if (!jo) return we!.moyen_mn;
   if (!we) return jo.moyen_mn;
   const totalMesures = jo.nb_mesures + we.nb_mesures;
-  return Math.round((jo.moyen_mn * jo.nb_mesures + we.moyen_mn * we.nb_mesures) / totalMesures);
+  // Pas de Math.round — préserve la précision pour les courts tronçons (ex. 0.42 mn = 25 s)
+  return (jo.moyen_mn * jo.nb_mesures + we.moyen_mn * we.nb_mesures) / totalMesures;
 }
 
 // Calcule l'écart entre GPX (s) et Google (mn) — retourne {delta_mn, pct, sens}
@@ -93,7 +94,9 @@ function calculerEcart(
   gpxMoyenS: number | undefined,
   googleMoyenMn: number | null,
 ): { deltaMn: number; pct: number; sens: "plus_long" | "plus_court" | "egal" } | null {
-  if (!gpxMoyenS || !googleMoyenMn) return null;
+  // Vérification explicite de null/undefined (évite le falsy check sur 0)
+  if (gpxMoyenS == null || gpxMoyenS === 0) return null;
+  if (googleMoyenMn == null || googleMoyenMn === 0) return null;
   const gpxMn = gpxMoyenS / 60;
   const deltaMn = gpxMn - googleMoyenMn;
   const pct = (deltaMn / googleMoyenMn) * 100;
@@ -600,10 +603,16 @@ function KpiMn({ label, mn, couleur, dominante = false }: { label: string; mn: n
   );
 }
 
-function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax, unite }: {
+function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax }: {
   titre: string; stats: import("@/lib/types").StatsPeriode | null;
-  labelMin: string; labelMoy: string; labelMax: string; unite: string;
+  labelMin: string; labelMoy: string; labelMax: string; unite?: string;
 }) {
+  // Convertit secondes ou minutes en format "X:XX min"
+  const aff = (mn: number | null | undefined, s: number | null | undefined): string => {
+    const totalS = s ?? (mn != null ? mn * 60 : null);
+    if (totalS == null) return "—";
+    return formaterMn(Math.round(totalS));
+  };
   return (
     <div className="paa-card p-3">
       <div className="text-fluid-xs font-semibold text-paa-navy-700 dark:text-paa-blue-100 mb-2">{titre}</div>
@@ -611,9 +620,9 @@ function BlocTypeJour({ titre, stats, labelMin, labelMoy, labelMax, unite }: {
         <p className="text-fluid-xs app-text-muted italic">—</p>
       ) : (
         <div className="grid grid-cols-3 gap-1 text-center">
-          <div><div className="text-fluid-xs app-text-muted">{labelMin}</div><div className="font-bold text-statut-fluide">{formaterDuree(stats.min_s ?? (stats.min_mn != null ? stats.min_mn * 60 : null))}</div></div>
-          <div><div className="text-fluid-xs app-text-muted">{labelMoy}</div><div className="font-bold text-paa-blue-500">{formaterDuree(stats.moyen_s ?? (stats.moyen_mn != null ? stats.moyen_mn * 60 : null))}</div></div>
-          <div><div className="text-fluid-xs app-text-muted">{labelMax}</div><div className="font-bold text-statut-congestionne">{formaterDuree(stats.max_s ?? (stats.max_mn != null ? stats.max_mn * 60 : null))}</div></div>
+          <div><div className="text-fluid-xs app-text-muted">{labelMin}</div><div className="font-bold text-statut-fluide">{aff(stats.min_mn, stats.min_s)}</div></div>
+          <div><div className="text-fluid-xs app-text-muted">{labelMoy}</div><div className="font-bold text-paa-blue-500">{aff(stats.moyen_mn, stats.moyen_s)}</div></div>
+          <div><div className="text-fluid-xs app-text-muted">{labelMax}</div><div className="font-bold text-statut-congestionne">{aff(stats.max_mn, stats.max_s)}</div></div>
         </div>
       )}
     </div>

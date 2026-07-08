@@ -132,6 +132,11 @@ AGRÉGATION AXE = SOMME DES TRONÇONS
 Quand un axe possède des tronçons codifiés (T1A, T1B…), toutes les mesures sont collectées au niveau des tronçons codifiés individuellement. Les indicateurs de l'axe complet sont ensuite calculés automatiquement par agrégation : le temps de traversée de l'axe est la SOMME des temps de traversée de ses tronçons codifiés pour chaque créneau horaire. Par exemple, si l'axe 1 (CARENA vers Palm Beach) possède 12 tronçons codifiés et que chaque tronçon a été mesuré à 10h, le temps total de l'axe à 10h est la somme des 12 durées individuelles. La congestion de l'axe suit la règle DEESP : l'axe est congestionné si AU MOINS UN de ses tronçons est congestionné (rouge ou orange long), et fluide SEULEMENT si TOUS ses tronçons sont fluides. Les pourcentages rouge/orange/vert de l'axe sont la moyenne pondérée par la distance de chaque tronçon. Cette logique s'applique sur toutes les pages : Indicateurs (KPI et courbe), Rapport DEESP (matrices congestion et temps, graphiques 1-12, Tableaux 3-15), Heure optimale (créneaux), Temps de traversée (estimations), et aussi dans les réponses du chatbot (données RAG injectées). La distance de référence de l'axe est la somme des distances de ses tronçons codifiés. IMPORTANT : le Tableau 16 (zones congestionnées) et la matrice d'analyse des congestions n'affichent QUE les tronçons codifiés (sous-tronçons), jamais les axes parents ; l'analyse de congestion s'effectue à la granularité la plus fine, conformément à la méthodologie DEESP.
 
 ══════════════════════════════════════
+PRÉCISION DES TEMPS AFFICHÉS
+══════════════════════════════════════
+Tous les temps de traversée mesurés dans l'application sont affichés à la seconde près, au format "XX min YY s" (par exemple "24 min 37 s" au lieu de "25 min"). Cela concerne toutes les pages : Indicateurs (KPI min/moyen/max), Temps de traversée (temps réel, ce mois, cette semaine), Heure optimale (créneaux et top-3), Rapport DEESP (Tableaux 3-15), carte (popups), panneau latéral. Les graphiques (barres et courbes) conservent un axe Y en minutes pour la lisibilité, mais leurs infobulles au survol affichent la précision à la seconde.
+
+══════════════════════════════════════
 FONCTIONNALITÉS TRANSVERSES (DISPONIBLES SUR TOUTES LES PAGES)
 ══════════════════════════════════════
 

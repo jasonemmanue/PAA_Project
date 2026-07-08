@@ -117,7 +117,13 @@ function GraphiqueTroncon({
               />
               <YAxis tick={{ fontSize: 10 }} unit=" min" />
               <Tooltip
-                formatter={(v: unknown) => [`${v} min`, "Temps"]}
+                formatter={(v: unknown) => {
+                  const val = typeof v === "number" ? v : 0;
+                  const sec = Math.round(val * 60);
+                  const m = Math.floor(sec / 60);
+                  const s = sec % 60;
+                  return [`${m} min ${String(s).padStart(2, "0")} s`, "Temps"];
+                }}
                 labelFormatter={(_, payload) => {
                   const p = payload?.[0]?.payload as { date?: string } | undefined;
                   return p?.date ?? "";

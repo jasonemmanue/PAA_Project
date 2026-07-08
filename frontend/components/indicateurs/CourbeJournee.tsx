@@ -126,7 +126,11 @@ export function CourbeJournee({ serie }: { serie: SerieTemporelle | null }) {
                   moyenne: labelMoyenne,
                   max: labelMax,
                 };
-                return [`${value} min`, labels[key] ?? key];
+                const v = typeof value === "number" ? value : 0;
+                const sec = Math.round(v * 60);
+                const m = Math.floor(sec / 60);
+                const s = sec % 60;
+                return [`${m} min ${String(s).padStart(2, "0")} s`, labels[key] ?? key];
               }}
             />
             {/* Ligne référence 50 km/h — bleu ciel, tirets */}

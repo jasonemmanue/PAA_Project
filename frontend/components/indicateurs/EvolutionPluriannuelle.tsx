@@ -250,7 +250,11 @@ export function EvolutionPluriannuelle({ tronconId }: Props) {
                       moyen: t("indicateurs.evolutionMoyen"),
                       max: t("indicateurs.evolutionMax"),
                     };
-                    return [`${value} min`, labels[key] ?? key];
+                    const v = typeof value === "number" ? value : 0;
+                    const sec = Math.round(v * 60);
+                    const m = Math.floor(sec / 60);
+                    const s = sec % 60;
+                    return [`${m} min ${String(s).padStart(2, "0")} s`, labels[key] ?? key];
                   }}
                   labelFormatter={(label: string) => {
                     const entry = chartData.find((d) => d.periode === label);
