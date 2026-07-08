@@ -247,6 +247,11 @@ async def scraper_rss_source(
 
         horodatage = _extraire_date(entry)
 
+        # Rejeter les articles de plus de 30 jours (Google News contient du contenu historique)
+        age_jours = (datetime.now(tz=timezone.utc) - horodatage).total_seconds() / 86400
+        if age_jours > 30:
+            continue
+
         # Déduplication : INSERT … ON CONFLICT DO NOTHING (via SQLAlchemy core)
         stmt = (
             pg_insert(Incident)

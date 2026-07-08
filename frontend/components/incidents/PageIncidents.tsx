@@ -115,17 +115,23 @@ export function PageIncidents() {
     (i) => i.actif && i.lat != null && i.lon != null
   );
 
-  // Incidents groupés par mois (format "YYYY-MM")
-  const incidentsParMois: { mois: string; nb: number }[] = (() => {
+  // Incidents du mois courant groupés par jour
+  const maintenant = new Date();
+  const debutMoisCourant = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1);
+  const labelMoisCourant = maintenant.toLocaleString("fr-FR", { month: "long", year: "numeric" });
+
+  const incidentsParJourMois: { jour: string; nb: number }[] = (() => {
     const carte = new Map<string, number>();
     incidents.forEach((i) => {
       const d = new Date(i.horodatage_publication);
-      const cle = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      carte.set(cle, (carte.get(cle) ?? 0) + 1);
+      if (d >= debutMoisCourant && d <= maintenant) {
+        const cle = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+        carte.set(cle, (carte.get(cle) ?? 0) + 1);
+      }
     });
     return Array.from(carte.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([mois, nb]) => ({ mois, nb }));
+      .map(([jour, nb]) => ({ jour, nb }));
   })();
 
   // Tronçon le plus impacté
@@ -231,30 +237,34 @@ export function PageIncidents() {
       <GestionSources />
       <GestionTypes onTypeChange={chargerTypes} />
 
-      {/* Incidents par mois */}
-      {incidentsParMois.length > 0 && (
-        <div className="paa-card p-4">
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-            Incidents par mois
-          </h2>
+      {/* Incidents ce mois par jour */}
+      <div className="paa-card p-4">
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 capitalize">
+          Incidents — {labelMoisCourant}
+        </h2>
+        {incidentsParJourMois.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-8">
+            Aucun incident recensé ce mois-ci.
+          </p>
+        ) : (
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={incidentsParMois} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+            <BarChart data={incidentsParJourMois} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" />
-              <XAxis dataKey="mois" tick={{ fontSize: 11 }} />
+              <XAxis dataKey="jour" tick={{ fontSize: 11 }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
               <Tooltip
                 formatter={(v: number) => [`${v} incident(s)`, "Incidents"]}
-                labelFormatter={(l) => `Mois : ${l}`}
+                labelFormatter={(l) => `Jour : ${l}`}
               />
               <Bar dataKey="nb" name="Incidents" radius={[3, 3, 0, 0]}>
-                {incidentsParMois.map((_entry, i) => (
+                {incidentsParJourMois.map((_entry, i) => (
                   <Cell key={i} fill="#dc2626" />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Liste chronologique */}
       <div className="paa-card p-4">
