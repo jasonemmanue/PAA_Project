@@ -513,7 +513,7 @@ def _stats_mesures_periode(
             if filtrer_heure and not (heure_debut <= h_local.hour < heure_fin):
                 continue
             tj = _type_jour(h_local.date())
-            par_type[tj].append(duree_s / 60.0)
+            par_type[tj].append(float(duree_s))
     else:
         conditions = [
             Mesure.troncon_id == troncon_id,
