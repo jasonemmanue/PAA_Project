@@ -91,11 +91,14 @@ export function PageRapport() {
     setChargement(true);
     setErreur(null);
     try {
+      // Tableau 16 toujours restreint à la semaine ISO courante
+      const lundiSem = lundiSemaineCourante();
+      const dimSem = dimancheSemaineCourante();
       const [t, tt, ttv, zc] = await Promise.all([
         api.troncons(),
         api.rapportTempsTheoriques(),
         api.rapportTempsTraversee(campagne, debutRange, finRange, heureDebut, heureFin),
-        api.rapportZonesCongestionnees(campagne, debutRange, finRange, heureDebut, heureFin),
+        api.rapportZonesCongestionnees(campagne, lundiSem, dimSem, heureDebut, heureFin),
       ]);
       const liste = Array.isArray(t) ? t : [];
       setTroncons(liste);
@@ -267,8 +270,8 @@ export function PageRapport() {
       {/* Tableau 16 — Synthèse zones congestionnées (tous tronçons, règles DEESP) */}
       <TableauZonesCongestionnees
         rapport={zones}
-        debutRange={debutRange}
-        finRange={finRange}
+        debutRange={lundiSemaineCourante()}
+        finRange={dimancheSemaineCourante()}
         heureDebut={heureDebut}
         heureFin={heureFin}
       />
