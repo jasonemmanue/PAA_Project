@@ -90,13 +90,6 @@ export function PageCarte() {
 
   return (
     <div className="flex flex-col gap-fluid-4">
-      <div>
-        <h1 className="text-fluid-2xl font-semibold text-paa-navy-900 dark:text-paa-blue-100">
-          {t("carte.title")}
-        </h1>
-        <p className="text-fluid-sm app-text-muted">{sousTitre}</p>
-      </div>
-
       <div className="grid gap-fluid-4 lg:grid-cols-3">
         {/* Carte — colonne principale (2/3 sur desktop, pleine largeur sinon) */}
         <div className="paa-card relative h-[55vh] min-h-[360px] overflow-hidden lg:col-span-2 lg:h-[70vh]">
