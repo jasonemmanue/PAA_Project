@@ -26,8 +26,18 @@ function telechargerPdf(campagne: string, debut?: string, fin?: string, heureDeb
   document.body.removeChild(a);
 }
 
+function joursCongesStr(e: EntreeCongestion): string {
+  const abrev: Record<string, string> = {
+    lundi: "Lun", mardi: "Mar", mercredi: "Mer",
+    jeudi: "Jeu", vendredi: "Ven", samedi: "Sam", dimanche: "Dim",
+  };
+  return Object.entries(e.nb_par_jour_semaine ?? {})
+    .map(([j, n]) => `${abrev[j] ?? j}(${n})`)
+    .join(", ");
+}
+
 function exporterCsv(entrees: EntreeCongestion[], nomFichier: string, typeLabel: string): void {
-  const headers = [typeLabel, "AXE", "TRANCHE HORAIRE", "NB / SEMAINE", "RÈGLE DÉCLENCHÉE"];
+  const headers = [typeLabel, "JOURS", "TRANCHE HORAIRE", "NB / SEMAINE", "RÈGLE DÉCLENCHÉE"];
   const lignes = entrees.map((e) => {
     const nom = e.sous_troncon_code
       ? `${e.sous_troncon_code} - ${e.sous_troncon_nom ?? ""}`
@@ -35,7 +45,7 @@ function exporterCsv(entrees: EntreeCongestion[], nomFichier: string, typeLabel:
     const regles: string[] = [];
     if (e.regle_semaine) regles.push("Règle 1 — semaine (>=4 fois)");
     if (e.regle_jour_indicatif) regles.push("Règle 2 — jour indicatif (>=3 fois)");
-    return [nom, e.troncon_nom, e.tranche, String(e.nb_total_semaine), regles.join(" | ")];
+    return [nom, joursCongesStr(e), e.tranche, String(e.nb_total_semaine), regles.join(" | ")];
   });
 
   const csv = [headers, ...lignes].map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
@@ -83,7 +93,7 @@ export function TableauZonesCongestionnees({
           <thead className="bg-paa-navy-700 text-white dark:bg-paa-navy-800">
             <tr>
               <Th>TRONÇON</Th>
-              <Th>AXE</Th>
+              <Th>JOURS</Th>
               <Th>TRANCHE HORAIRE</Th>
               <Th className="text-right">NB / SEMAINE</Th>
               <Th>RÈGLE DÉCLENCHÉE</Th>
@@ -135,6 +145,11 @@ export function TableauZonesCongestionnees({
 }
 
 function LigneTroncon({ e }: { e: EntreeCongestion }) {
+  const abrev: Record<string, string> = {
+    lundi: "Lun", mardi: "Mar", mercredi: "Mer",
+    jeudi: "Jeu", vendredi: "Ven", samedi: "Sam", dimanche: "Dim",
+  };
+  const jours = Object.entries(e.nb_par_jour_semaine ?? {});
   return (
     <tr className="border-t app-border">
       <Td>
@@ -144,7 +159,16 @@ function LigneTroncon({ e }: { e: EntreeCongestion }) {
         </div>
       </Td>
       <Td>
-        <span className="text-fluid-xs app-text-muted">{e.troncon_nom}</span>
+        <div className="flex flex-wrap gap-1">
+          {jours.map(([j, n]) => (
+            <span
+              key={j}
+              className="inline-block rounded bg-statut-congestionne/15 px-1.5 py-0.5 text-xs font-medium text-statut-congestionne"
+            >
+              {abrev[j] ?? j} ({n})
+            </span>
+          ))}
+        </div>
       </Td>
       <Td className="font-mono">{e.tranche}</Td>
       <Td className="text-right font-semibold">{e.nb_total_semaine}</Td>

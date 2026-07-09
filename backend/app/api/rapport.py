@@ -324,8 +324,8 @@ async def get_zones_congestionnees_pdf(
     pdf.set_fill_color(26, 54, 93)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 7)
-    largeurs = [60, 35, 22, 16, 28, 117]  # mm — total = 278
-    entetes = ["AXE", "TRONCON CODIFIE", "TRANCHE", "NB/SEM.", "REGLE", "REPARTITION PAR JOUR"]
+    largeurs = [35, 60, 22, 16, 28, 117]  # mm — total = 278
+    entetes = ["TRONCON", "JOURS", "TRANCHE", "NB/SEM.", "REGLE", "REPARTITION PAR JOUR"]
     for w, h in zip(largeurs, entetes):
         pdf.cell(w, 6, h, border=1, fill=True, align="L")
     pdf.ln()
@@ -346,10 +346,13 @@ async def get_zones_congestionnees_pdf(
             else:
                 pdf.set_fill_color(255, 255, 255)
                 fill = True
-            sous = (
+            troncon_label = (
                 f"{c.sous_troncon_code} - {c.sous_troncon_nom or ''}"
                 if c.sous_troncon_code
                 else "axe entier"
+            )
+            jours_str = ", ".join(
+                f"{j[:3]}({n})" for j, n in c.nb_jours_congestionnes_par_type.items()
             )
             tranche = f"{c.heure:02d}h-{c.heure + 1:02d}h"
             regles = []
@@ -363,8 +366,8 @@ async def get_zones_congestionnees_pdf(
             )
 
             ligne = [
-                (largeurs[0], _sanitize_pdf((c.troncon_nom or "")[:50])),
-                (largeurs[1], _sanitize_pdf(sous[:28])),
+                (largeurs[0], _sanitize_pdf(troncon_label[:28])),
+                (largeurs[1], _sanitize_pdf(jours_str[:50])),
                 (largeurs[2], tranche),
                 (largeurs[3], str(c.nb_total_semaine)),
                 (largeurs[4], regle_txt),
@@ -757,7 +760,7 @@ async def export_rapport_word(
         tab16 = doc.add_table(rows=1, cols=6)
         tab16.style = "Light Grid Accent 1"
         hdr = tab16.rows[0].cells
-        for i, txt in enumerate(("AXE", "SOUS-TRONÇON", "TRANCHE",
+        for i, txt in enumerate(("TRONÇON", "JOURS", "TRANCHE",
                                   "NB/SEM.", "RÈGLE", "RÉPARTITION/JOUR")):
             hdr[i].text = txt
             shade(hdr[i], "1A365D")
@@ -767,10 +770,13 @@ async def export_rapport_word(
                     run.font.color.rgb = BLANC
                     run.font.size = Pt(9)
         for c in cong:
-            sous = (
+            troncon_label = (
                 f"{c.sous_troncon_code} — {c.sous_troncon_nom or ''}"
                 if c.sous_troncon_code
                 else "axe entier"
+            )
+            jours_str = ", ".join(
+                f"{j[:3]}({n})" for j, n in c.nb_jours_congestionnes_par_type.items()
             )
             regles = []
             if c.regle_jour_indicatif:
@@ -778,8 +784,8 @@ async def export_rapport_word(
             if c.regle_semaine:
                 regles.append(f"≥{seuil_s}/sem")
             row = tab16.add_row().cells
-            row[0].text = c.troncon_nom or ""
-            row[1].text = sous
+            row[0].text = troncon_label
+            row[1].text = jours_str
             row[2].text = f"{c.heure:02d}h-{c.heure + 1:02d}h"
             row[3].text = str(c.nb_total_semaine)
             row[4].text = " | ".join(regles) or "—"
