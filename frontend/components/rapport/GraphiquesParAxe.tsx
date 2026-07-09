@@ -37,9 +37,11 @@ interface Props {
   titre: string;
   heureDebut?: number;
   heureFin?: number;
+  debutRange?: string;
+  finRange?: string;
 }
 
-export function GraphiquesParAxe({ troncons, campagne, agregat, titre, heureDebut = 0, heureFin = 24 }: Props) {
+export function GraphiquesParAxe({ troncons, campagne, agregat, titre, heureDebut = 0, heureFin = 24, debutRange, finRange }: Props) {
   return (
     <Card titre={titre} description="Axe Y en minutes — 1 barre = 1 observation journalière.">
       <div className="grid gap-fluid-4 lg:grid-cols-2">
@@ -51,6 +53,8 @@ export function GraphiquesParAxe({ troncons, campagne, agregat, titre, heureDebu
             agregat={agregat}
             heureDebut={heureDebut}
             heureFin={heureFin}
+            debutRange={debutRange}
+            finRange={finRange}
           />
         ))}
       </div>
@@ -64,12 +68,16 @@ function GraphiqueTroncon({
   agregat,
   heureDebut = 0,
   heureFin = 24,
+  debutRange,
+  finRange,
 }: {
   troncon: Troncon;
   campagne: string;
   agregat: "min" | "max";
   heureDebut?: number;
   heureFin?: number;
+  debutRange?: string;
+  finRange?: string;
 }) {
   const [data, setData] = useState<RapportGraphique | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -79,7 +87,7 @@ function GraphiqueTroncon({
     setData(null);
     setErreur(null);
     api
-      .rapportGraphique(troncon.id, campagne, agregat, heureDebut, heureFin)
+      .rapportGraphique(troncon.id, campagne, agregat, heureDebut, heureFin, debutRange, finRange)
       .then((r) => {
         if (!annule) setData(r);
       })
@@ -89,7 +97,7 @@ function GraphiqueTroncon({
     return () => {
       annule = true;
     };
-  }, [troncon.id, campagne, agregat, heureDebut, heureFin]);
+  }, [troncon.id, campagne, agregat, heureDebut, heureFin, debutRange, finRange]);
 
   const couleur = agregat === "min" ? COULEUR_BAR_MIN : COULEUR_BAR_MAX;
   const points = data?.points ?? [];

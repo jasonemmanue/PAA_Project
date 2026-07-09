@@ -443,8 +443,12 @@ export function getRapportGraphique(
   agregat: "min" | "max",
   heureDebut = 0,
   heureFin = 24,
+  debut?: string,
+  fin?: string,
 ): Promise<RapportGraphique> {
   const p = new URLSearchParams({ campagne, agregat });
+  if (debut) p.set("debut", debut);
+  if (fin) p.set("fin", fin);
   if (heureDebut !== 0) p.set("heure_debut", String(heureDebut));
   if (heureFin !== 24) p.set("heure_fin", String(heureFin));
   return appel<RapportGraphique>(`/rapport/graphique/${tronconId}?${p}`);

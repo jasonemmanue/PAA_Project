@@ -45,16 +45,36 @@ function premierJourMois(cam: string): string {
 
 function dernierJourMois(cam: string): string {
   const [annee, mois] = cam.split("-").map(Number);
-  const j = new Date(annee, mois, 0).getDate(); // dernier jour du mois
+  const j = new Date(annee, mois, 0).getDate();
   return `${annee}-${String(mois).padStart(2, "0")}-${String(j).padStart(2, "0")}`;
+}
+
+function lundiSemaineCourante(): string {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const lundi = new Date(d.getFullYear(), d.getMonth(), diff);
+  return formatDate(lundi);
+}
+
+function dimancheSemaineCourante(): string {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? 0 : 7);
+  const dim = new Date(d.getFullYear(), d.getMonth(), diff);
+  return formatDate(dim);
+}
+
+function formatDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export function PageRapport() {
   const { heureDebut, heureFin } = usePlageHoraire();
   const campagneDefaut = defautCampagne();
   const [campagne, setCampagne] = useState<string>(campagneDefaut);
-  const [debutRange, setDebutRange] = useState<string>(premierJourMois(campagneDefaut));
-  const [finRange, setFinRange] = useState<string>(dernierJourMois(campagneDefaut));
+  const [debutRange, setDebutRange] = useState<string>(lundiSemaineCourante());
+  const [finRange, setFinRange] = useState<string>(dimancheSemaineCourante());
   const [theoriques, setTheoriques] = useState<RapportTempsTheoriques | null>(null);
   const [traversee, setTraversee] = useState<RapportTempsTraversee | null>(null);
   const [zones, setZones] = useState<RapportZonesCongestionnees | null>(null);
@@ -156,8 +176,13 @@ export function PageRapport() {
               onChange={(e) => {
                 const c = e.target.value;
                 setCampagne(c);
-                setDebutRange(premierJourMois(c));
-                setFinRange(dernierJourMois(c));
+                if (c === defautCampagne()) {
+                  setDebutRange(lundiSemaineCourante());
+                  setFinRange(dimancheSemaineCourante());
+                } else {
+                  setDebutRange(premierJourMois(c));
+                  setFinRange(dernierJourMois(c));
+                }
               }}
               className="rounded-md border app-border app-surface px-3 py-2 text-fluid-sm
                          text-paa-navy-900 focus:outline-none focus:ring-2 focus:ring-paa-blue-400
@@ -279,6 +304,8 @@ export function PageRapport() {
         titre="Graphiques 1-6 — Temps MIN observé par jour (BarChart)"
         heureDebut={heureDebut}
         heureFin={heureFin}
+        debutRange={debutRange}
+        finRange={finRange}
       />
       <GraphiquesParAxe
         troncons={troncons}
@@ -287,6 +314,8 @@ export function PageRapport() {
         titre="Graphiques 7-12 — Temps MAX observé par jour (BarChart)"
         heureDebut={heureDebut}
         heureFin={heureFin}
+        debutRange={debutRange}
+        finRange={finRange}
       />
 
       {chargement && (

@@ -1057,6 +1057,8 @@ async def get_graphique(
     troncon_id: int,
     campagne: str = Query(..., description="Format 'AAAA-MM'."),
     agregat: str = Query("min", description="`min` ou `max`."),
+    debut: DateType | None = Query(None, description="Date de début (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
+    fin: DateType | None = Query(None, description="Date de fin (YYYY-MM-DD) — affine la fenêtre à l'intérieur du mois."),
     heure_debut: int = Query(0, ge=0, le=23),
     heure_fin: int = Query(24, ge=1, le=24),
     db: Session = Depends(get_db),
@@ -1066,7 +1068,7 @@ async def get_graphique(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="`agregat` doit valoir 'min' ou 'max'.",
         )
-    debut_utc, fin_utc = _parser_campagne(campagne)
+    debut_utc, fin_utc = _bornes_utc(campagne, debut, fin)
     serie = rapport_paa.serie_graphique(
         db, troncon_id, debut_utc, fin_utc, agregat=agregat,
         heure_debut=heure_debut, heure_fin=heure_fin,
