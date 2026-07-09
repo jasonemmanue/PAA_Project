@@ -313,7 +313,7 @@ def temps_traversee_par_troncon(
 # Exposés au niveau module pour que l'API (JSON, PDF, Word) affiche exactement
 # les seuils appliqués par le calcul.
 SEUIL_JOUR_DEESP = 3     # ≥ 3 occurrences sur le même jour indicatif (ex. 3 lundis)
-SEUIL_SEMAINE_DEESP = 4  # ≥ 4 occurrences dans une fenêtre glissante de 7 jours
+SEUIL_SEMAINE_DEESP = 4  # ≥ 4 occurrences dans la même semaine calendaire ISO (lun–dim)
 
 
 @dataclass(frozen=True)
@@ -350,12 +350,11 @@ def troncons_congestionnes(
       2. Granularité : si la mesure porte sur un sous-tronçon (T1A, T1B…),
          on évalue les règles AU NIVEAU SOUS-TRONÇON. Sinon au niveau axe.
       3. Règle JOUR : congestionné si ≥ 3 fois sur les lundis (ou mardis…)
-      4. Règle SEMAINE : congestionné si ≥ 4 fois à cette heure dans une
-         **fenêtre glissante de 7 jours**, peu importe le jour. La fenêtre
-         glissante (et non la semaine calendaire ISO lundi–dimanche) évite
-         l'artefact de frontière : 4 congestions consécutives dim→mer
-         doivent déclencher la règle même si elles chevauchent deux
-         semaines calendaires.
+      4. Règle SEMAINE : congestionné si ≥ 4 fois à cette heure dans la
+         **même semaine calendaire ISO (lundi–dimanche)**. Python
+         `date.isocalendar()` : lundi = début de semaine, dimanche = fin.
+         Exemple : dim 05/07 → semaine 27 ; lun 06/07 → semaine 28 —
+         ils sont comptés séparément.
     """
     from app.models.models import SousTroncon  # import paresseux pour éviter cycle
 
@@ -400,9 +399,11 @@ def troncons_congestionnes(
 
     # Compteur par (tid, sid, weekday, heure) → nb total dans la période (règle jour)
     occurrences: dict[tuple[int, int | None, int, int], int] = defaultdict(int)
-    # Dates locales congestionnées par (tid, sid, heure) — alimente la règle
-    # semaine sur fenêtre glissante de 7 jours
-    dates_par_creneau: dict[tuple[int, int | None, int], list[date]] = defaultdict(list)
+    # Occurrences par semaine calendaire ISO (lun–dim) par (tid, sid, heure).
+    # Python isocalendar() : dim 05/07 → semaine 27 ; lun 06/07 → semaine 28.
+    semaines_par_creneau: dict[tuple[int, int | None, int], dict[tuple[int, int], int]] = (
+        defaultdict(lambda: defaultdict(int))
+    )
 
     for m in mesures:
         if m.troncon_id not in troncons:
@@ -411,26 +412,18 @@ def troncons_congestionnes(
         if not _dans_plage_horaire(local, heure_debut, heure_fin):
             continue
         occurrences[(m.troncon_id, m.sous_troncon_id, local.weekday(), local.hour)] += 1
-        dates_par_creneau[(m.troncon_id, m.sous_troncon_id, local.hour)].append(local.date())
+        iso = local.date().isocalendar()
+        semaines_par_creneau[(m.troncon_id, m.sous_troncon_id, local.hour)][(iso.year, iso.week)] += 1
 
     # Agrégation par (troncon, sous, heure) — comptages par jour indicatif
     par_cle_heure: dict[tuple[int, int | None, int], dict[int, int]] = defaultdict(dict)
     for (tid, sid, wd, h), nb in occurrences.items():
         par_cle_heure[(tid, sid, h)][wd] = nb
 
-    # Maximum d'occurrences dans une fenêtre glissante de 7 jours, par créneau.
-    # Deux pointeurs sur les dates triées : la fenêtre [dates[i]..dates[j]]
-    # reste valide tant que l'écart entre extrémités est ≤ 6 jours.
+    # Maximum d'occurrences dans une seule semaine calendaire ISO (lun–dim).
     max_par_semaine: dict[tuple[int, int | None, int], int] = defaultdict(int)
-    for cle, dates_creneau in dates_par_creneau.items():
-        dates_triees = sorted(dates_creneau)
-        i = 0
-        meilleur = 0
-        for j in range(len(dates_triees)):
-            while (dates_triees[j] - dates_triees[i]).days > 6:
-                i += 1
-            meilleur = max(meilleur, j - i + 1)
-        max_par_semaine[cle] = meilleur
+    for cle, nb_par_semaine in semaines_par_creneau.items():
+        max_par_semaine[cle] = max(nb_par_semaine.values()) if nb_par_semaine else 0
 
     resultats: list[CongestionHoraire] = []
     for (tid, sid, h), par_jour in par_cle_heure.items():

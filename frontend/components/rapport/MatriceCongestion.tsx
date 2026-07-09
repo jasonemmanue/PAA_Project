@@ -5,8 +5,6 @@ import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import type { Troncon } from "@/lib/types";
 
-const FENETRE_JOURS = 7;
-
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
 interface CellData {
@@ -40,25 +38,56 @@ function estWeekend(dateStr: string): boolean {
   return j === 0 || j === 6;
 }
 
-/**
- * Maximum d'occurrences congestionnées dans une fenêtre glissante de 7 jours
- * — même règle SEMAINE que le Tableau 16 backend (troncons_congestionnes).
- * La fenêtre glissante (et non la semaine calendaire lun–dim) évite
- * l'artefact de frontière dimanche/lundi.
- */
-function maxCongestionsFenetre7j(parDate: Record<string, CellData | null>): number {
-  const datesCong = Object.entries(parDate)
-    .filter(([, c]) => c?.est_congestionne === true)
-    .map(([d]) => Date.parse(d + "T12:00:00"))
-    .sort((a, b) => a - b);
-  const SIX_JOURS_MS = 6 * 24 * 3600 * 1000;
-  let meilleur = 0;
-  let i = 0;
-  for (let j = 0; j < datesCong.length; j++) {
-    while (datesCong[j] - datesCong[i] > SIX_JOURS_MS) i++;
-    meilleur = Math.max(meilleur, j - i + 1);
+// Retourne le lundi (YYYY-MM-DD) de la semaine ISO contenant cette date.
+// Semaine ISO : lundi = 1er jour, dimanche = dernier jour.
+function lundiSemaineIso(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  const jour = d.getDay(); // 0=dim, 1=lun…6=sam
+  const diff = jour === 0 ? 6 : jour - 1; // jours depuis lundi
+  const lundi = new Date(d.getTime() - diff * 86400000);
+  return lundi.toISOString().slice(0, 10);
+}
+
+interface SemaineIso {
+  lundiKey: string; // YYYY-MM-DD du lundi
+  dates: string[];  // dates de la semaine présentes dans les données
+}
+
+function grouperParSemaineIso(dates: string[]): SemaineIso[] {
+  const map = new Map<string, string[]>();
+  for (const d of dates) {
+    const key = lundiSemaineIso(d);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(d);
   }
-  return meilleur;
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([lundiKey, dates]) => ({ lundiKey, dates }));
+}
+
+// Maximum de congestions dans une seule semaine calendaire ISO (lun–dim).
+// Aligné exactement sur la règle SEMAINE du backend (troncons_congestionnes).
+function maxCongestionsSemaineIso(parDate: Record<string, CellData | null>): number {
+  const nbParSemaine = new Map<string, number>();
+  for (const [dateStr, cell] of Object.entries(parDate)) {
+    if (cell?.est_congestionne !== true) continue;
+    const key = lundiSemaineIso(dateStr);
+    nbParSemaine.set(key, (nbParSemaine.get(key) ?? 0) + 1);
+  }
+  return nbParSemaine.size > 0 ? Math.max(...nbParSemaine.values()) : 0;
+}
+
+function labelSemaine(lundiKey: string): string {
+  const d = new Date(lundiKey + "T12:00:00");
+  const dim = new Date(d.getTime() + 6 * 86400000);
+  const fmt = (dt: Date) =>
+    `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`;
+  return `Sem. ${fmt(d)} – ${fmt(dim)}`;
+}
+
+// Retourne le lundi de la semaine ISO courante.
+function lundiSemaineActuelle(): string {
+  return lundiSemaineIso(new Date().toISOString().slice(0, 10));
 }
 
 function Cellule({ cell }: { cell: CellData | null | undefined }) {
@@ -82,7 +111,6 @@ function Cellule({ cell }: { cell: CellData | null | undefined }) {
       />
     );
   }
-  // null = indéterminé (pas de speedReadingIntervals Google)
   return (
     <span
       title="Indéterminé (pas de données couleur Google)"
@@ -132,7 +160,6 @@ export function MatriceCongestion({
 
   const charger = useCallback(async () => {
     if (tronconId === null) return;
-    // Si des sous-tronçons existent mais qu'aucun n'est sélectionné, attendre l'auto-sélection
     const tousSous = troncons.flatMap((t) => t.sous_troncons ?? []);
     if (tousSous.length > 0 && sousTronconId === null) return;
     setChargement(true);
@@ -161,22 +188,30 @@ export function MatriceCongestion({
   }, [campagne, debutRange, finRange, tronconId, sousTronconId, heureDebut, heureFin]);
 
   useEffect(() => {
-    setFenetre(0); // reset au changement de période
     charger();
   }, [charger]);
 
+  // Positionne la fenêtre sur la semaine courante dès que les données arrivent
+  useEffect(() => {
+    if (!data || data.dates.length === 0) return;
+    const semaines = grouperParSemaineIso(data.dates);
+    const lundiActuel = lundiSemaineActuelle();
+    const idx = semaines.findIndex((s) => s.lundiKey === lundiActuel);
+    setFenetre(idx >= 0 ? idx : semaines.length - 1);
+  }, [data]);
+
   const tronconNom = data?.troncon_nom ?? troncons.find((t) => t.id === tronconId)?.nom ?? "";
 
-  // Fenêtre glissante de 7 jours sur les dates disponibles
-  const datesVisibles = data
-    ? data.dates.slice(fenetre * FENETRE_JOURS, (fenetre + 1) * FENETRE_JOURS)
-    : [];
-  const maxFenetre = data ? Math.max(0, Math.ceil(data.dates.length / FENETRE_JOURS) - 1) : 0;
+  // Regroupement par semaine ISO calendaire
+  const semaines: SemaineIso[] = data ? grouperParSemaineIso(data.dates) : [];
+  const maxFenetre = Math.max(0, semaines.length - 1);
+  const datesVisibles = semaines[fenetre]?.dates ?? [];
+  const labelFen = semaines[fenetre] ? labelSemaine(semaines[fenetre].lundiKey) : "";
 
   return (
     <Card
       titre="Analyse détaillée des congestions — créneaux horaires × dates"
-      description={`Plage ${heureDebut === 0 && heureFin === 24 ? "24h/24" : `${String(heureDebut).padStart(2, "0")}h–${String(heureFin).padStart(2, "0")}h`}. 🟥 Congestionné  🟩 Fluide  ◻ Indéterminé (pas de données couleur)  — Sans mesure. Les week-ends sont sur fond grisé.`}
+      description={`Plage ${heureDebut === 0 && heureFin === 24 ? "24h/24" : `${String(heureDebut).padStart(2, "0")}h–${String(heureFin).padStart(2, "0")}h`}. 🟥 Congestionné  🟩 Fluide  ◻ Indéterminé  — Sans mesure. Week-ends sur fond grisé. Badge ≥4× = règle SEMAINE ISO déclenchée.`}
     >
       {/* Sélecteur de tronçon */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -229,38 +264,35 @@ export function MatriceCongestion({
 
       {!chargement && data && data.tranches.length > 0 && (
         <>
-          {/* Navigation 7 jours — affiché uniquement si la période dépasse 7 jours */}
-          {data.dates.length > FENETRE_JOURS && (
-            <div className="mb-3 flex items-center gap-2 text-fluid-xs">
-              <button
-                type="button"
-                disabled={fenetre === 0}
-                onClick={() => setFenetre((f) => f - 1)}
-                className="px-3 py-1 rounded-md border app-border disabled:opacity-40
-                           hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
-              >
-                ← 7 jours précédents
-              </button>
-              <span className="app-text-muted">
-                Semaine {fenetre + 1} / {maxFenetre + 1}
-              </span>
-              <button
-                type="button"
-                disabled={fenetre >= maxFenetre}
-                onClick={() => setFenetre((f) => f + 1)}
-                className="px-3 py-1 rounded-md border app-border disabled:opacity-40
-                           hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
-              >
-                7 jours suivants →
-              </button>
-            </div>
-          )}
+          {/* Navigation par semaine ISO — toujours affiché s'il y a plusieurs semaines */}
+          <div className="mb-3 flex items-center gap-2 text-fluid-xs">
+            <button
+              type="button"
+              disabled={fenetre === 0}
+              onClick={() => setFenetre((f) => f - 1)}
+              className="px-3 py-1 rounded-md border app-border disabled:opacity-40
+                         hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
+            >
+              ← Semaine précédente
+            </button>
+            <span className="app-text-muted font-medium">
+              {labelFen} ({fenetre + 1}/{semaines.length})
+            </span>
+            <button
+              type="button"
+              disabled={fenetre >= maxFenetre}
+              onClick={() => setFenetre((f) => f + 1)}
+              className="px-3 py-1 rounded-md border app-border disabled:opacity-40
+                         hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
+            >
+              Semaine suivante →
+            </button>
+          </div>
 
         <div className="overflow-x-auto">
           <table className="text-fluid-xs border-collapse">
             <thead>
               <tr>
-                {/* En-tête colonne créneau */}
                 <th
                   className="sticky left-0 z-10 bg-paa-navy-700 text-white px-3 py-2
                              text-left whitespace-nowrap min-w-[90px] font-medium text-[11px]
@@ -285,7 +317,6 @@ export function MatriceCongestion({
                     </th>
                   );
                 })}
-                {/* Colonne compteur congestions */}
                 <th
                   className="bg-paa-navy-700 text-white px-2 py-2 text-center
                              whitespace-nowrap min-w-[48px] font-medium text-[11px]
@@ -297,29 +328,27 @@ export function MatriceCongestion({
             </thead>
             <tbody>
               {data.tranches.map((tr) => {
-                // Compte uniquement sur les dates visibles dans la fenêtre courante
+                // Compte sur les dates visibles de la fenêtre
                 const nbCong = datesVisibles.filter(
                   (d) => tr.par_date[d]?.est_congestionne === true,
                 ).length;
-                // Badge ≥4× : max d'occurrences dans une fenêtre glissante de
-                // 7 jours — aligné sur la règle SEMAINE du Tableau 16 backend
-                const nbCongFenetre7j = maxCongestionsFenetre7j(tr.par_date);
+                // Badge ≥4× : max dans une semaine ISO calendaire — aligné avec le backend
+                const nbCongSemaineMax = maxCongestionsSemaineIso(tr.par_date);
                 const rowHighlight = nbCong >= 4 ? "bg-red-50 dark:bg-red-950/20" : "";
                 return (
                   <tr
                     key={tr.heure}
                     className={`border-t app-border ${rowHighlight}`}
                   >
-                    {/* Créneau — collant à gauche */}
                     <td
                       className="sticky left-0 z-10 bg-white dark:bg-slate-900 font-mono
                                  px-3 py-1.5 whitespace-nowrap border-r app-border
                                  text-paa-navy-900 dark:text-paa-blue-100 text-[11px]"
                     >
                       {tr.tranche}
-                      {nbCongFenetre7j >= 4 && (
+                      {nbCongSemaineMax >= 4 && (
                         <span
-                          title="≥ 4 occurrences congestionnées dans une fenêtre glissante de 7 jours (règle DEESP semaine — Tableau 16)"
+                          title={`≥ 4 occurrences congestionnées dans la même semaine ISO (lun–dim) — règle DEESP semaine, Tableau 16`}
                           className="ml-2 inline-block rounded bg-red-100 dark:bg-red-900/40
                                      px-1 text-[9px] text-red-700 dark:text-red-300 font-semibold"
                         >
@@ -327,7 +356,6 @@ export function MatriceCongestion({
                         </span>
                       )}
                     </td>
-                    {/* Cellules pour les dates de la fenêtre courante */}
                     {datesVisibles.map((d) => {
                       const we = estWeekend(d);
                       return (
@@ -341,7 +369,6 @@ export function MatriceCongestion({
                         </td>
                       );
                     })}
-                    {/* Total congestions sur la fenêtre visible */}
                     <td
                       className={`px-2 py-1.5 text-center font-semibold
                                   ${nbCong >= 4 ? "text-red-600 dark:text-red-400" : "app-text-muted"}`}
@@ -356,8 +383,9 @@ export function MatriceCongestion({
 
           <p className="mt-2 text-[10px] app-text-muted">
             {tronconNom} — {debutRange} → {finRange}
-            {data.dates.length > FENETRE_JOURS && ` — Fenêtre ${fenetre + 1}/${maxFenetre + 1} (${datesVisibles[0]} → ${datesVisibles[datesVisibles.length - 1]})`}
-            {" "}— Surligné en rouge si le créneau cumule ≥ 4 congestions sur la fenêtre (règle DEESP).
+            {datesVisibles.length > 0 && ` — ${labelFen}`}
+            {" "}— Surligné en rouge si ≥ 4 congestions dans la fenêtre (règle DEESP).
+            Badge ≥4× = règle SEMAINE ISO déclenchée sur l'ensemble de la période.
           </p>
         </div>
         </>

@@ -7,7 +7,6 @@ import { api } from "@/lib/api";
 import type { Troncon } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
-const FENETRE_JOURS = 7;
 
 interface CellTemps {
   duree_s: number;
@@ -48,6 +47,43 @@ function formatMnSs(duree_s: number): string {
   return `${mn}:${String(ss).padStart(2, "0")}`;
 }
 
+// Retourne le lundi (YYYY-MM-DD) de la semaine ISO contenant cette date.
+function lundiSemaineIso(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  const jour = d.getDay();
+  const diff = jour === 0 ? 6 : jour - 1;
+  const lundi = new Date(d.getTime() - diff * 86400000);
+  return lundi.toISOString().slice(0, 10);
+}
+
+interface SemaineIso {
+  lundiKey: string;
+  dates: string[];
+}
+
+function grouperParSemaineIso(dates: string[]): SemaineIso[] {
+  const map = new Map<string, string[]>();
+  for (const d of dates) {
+    const key = lundiSemaineIso(d);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(d);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([lundiKey, dates]) => ({ lundiKey, dates }));
+}
+
+function labelSemaine(lundiKey: string): string {
+  const d = new Date(lundiKey + "T12:00:00");
+  const dim = new Date(d.getTime() + 6 * 86400000);
+  const fmt = (dt: Date) =>
+    `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`;
+  return `Sem. ${fmt(d)} – ${fmt(dim)}`;
+}
+
+function lundiSemaineActuelle(): string {
+  return lundiSemaineIso(new Date().toISOString().slice(0, 10));
+}
 
 interface Props {
   campagne: string;
@@ -81,7 +117,6 @@ export function MatriceTemps({
     if (tronconId === null) return;
     setChargement(true);
     setErreur(null);
-    setFenetre(0);
     try {
       const params = new URLSearchParams({
         campagne,
@@ -109,13 +144,20 @@ export function MatriceTemps({
     charger();
   }, [charger]);
 
-  // Fenêtre glissante de 7 jours
-  const datesVisibles = data
-    ? data.dates.slice(fenetre * FENETRE_JOURS, (fenetre + 1) * FENETRE_JOURS)
-    : [];
-  const maxFenetre = data
-    ? Math.max(0, Math.ceil(data.dates.length / FENETRE_JOURS) - 1)
-    : 0;
+  // Positionne la fenêtre sur la semaine courante dès que les données arrivent
+  useEffect(() => {
+    if (!data || data.dates.length === 0) return;
+    const semaines = grouperParSemaineIso(data.dates);
+    const lundiActuel = lundiSemaineActuelle();
+    const idx = semaines.findIndex((s) => s.lundiKey === lundiActuel);
+    setFenetre(idx >= 0 ? idx : semaines.length - 1);
+  }, [data]);
+
+  // Regroupement par semaine ISO calendaire
+  const semaines: SemaineIso[] = data ? grouperParSemaineIso(data.dates) : [];
+  const maxFenetre = Math.max(0, semaines.length - 1);
+  const datesVisibles = semaines[fenetre]?.dates ?? [];
+  const labelFen = semaines[fenetre] ? labelSemaine(semaines[fenetre].lundiKey) : "";
   const ref_s = data?.temps_ref_s ?? 0;
 
   return (
@@ -178,7 +220,6 @@ export function MatriceTemps({
           </span>
         )}
 
-        {/* Bouton d'export Excel — télécharge les mesures brutes de la période */}
         {tronconId !== null && (
           <a
             href={api.urlExportMesures({ troncon_id: tronconId, debut: debutRange, fin: finRange, format: "xlsx" })}
@@ -207,32 +248,30 @@ export function MatriceTemps({
 
       {!chargement && data && data.tranches.length > 0 && (
         <>
-          {/* Navigation 7 jours */}
-          {data.dates.length > FENETRE_JOURS && (
-            <div className="mb-3 flex items-center gap-2 text-fluid-xs">
-              <button
-                type="button"
-                disabled={fenetre === 0}
-                onClick={() => setFenetre((f) => f - 1)}
-                className="px-3 py-1 rounded-md border app-border disabled:opacity-40
-                           hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
-              >
-                ← 7 jours précédents
-              </button>
-              <span className="app-text-muted">
-                Semaine {fenetre + 1} / {maxFenetre + 1}
-              </span>
-              <button
-                type="button"
-                disabled={fenetre >= maxFenetre}
-                onClick={() => setFenetre((f) => f + 1)}
-                className="px-3 py-1 rounded-md border app-border disabled:opacity-40
-                           hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
-              >
-                7 jours suivants →
-              </button>
-            </div>
-          )}
+          {/* Navigation par semaine ISO — toujours affiché */}
+          <div className="mb-3 flex items-center gap-2 text-fluid-xs">
+            <button
+              type="button"
+              disabled={fenetre === 0}
+              onClick={() => setFenetre((f) => f - 1)}
+              className="px-3 py-1 rounded-md border app-border disabled:opacity-40
+                         hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
+            >
+              ← Semaine précédente
+            </button>
+            <span className="app-text-muted font-medium">
+              {labelFen} ({fenetre + 1}/{semaines.length})
+            </span>
+            <button
+              type="button"
+              disabled={fenetre >= maxFenetre}
+              onClick={() => setFenetre((f) => f + 1)}
+              className="px-3 py-1 rounded-md border app-border disabled:opacity-40
+                         hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
+            >
+              Semaine suivante →
+            </button>
+          </div>
 
           <div className="overflow-x-auto">
             <table className="text-fluid-xs border-collapse">
@@ -317,7 +356,6 @@ export function MatriceTemps({
                           </td>
                         );
                       })}
-                      {/* Moyenne sur la fenêtre visible */}
                       <td
                         className={`px-2 py-1.5 text-center font-mono font-semibold text-[11px]
                                     border-l app-border

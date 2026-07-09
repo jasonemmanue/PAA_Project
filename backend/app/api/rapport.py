@@ -202,7 +202,7 @@ async def get_temps_traversee(
         "- **Règle JOUR** : tronçon congestionné si ≥ 3 fois sur un même "
         "  jour-indicatif (ex. 3 lundis sur 4) à la même heure.\n"
         "- **Règle SEMAINE** : tronçon congestionné si ≥ 4 fois à la même "
-        "  heure dans une fenêtre glissante de 7 jours, tous jours confondus.\n\n"
+        "  heure dans la **même semaine calendaire ISO (lun–dim)**.\n\n"
         "Le critère de congestion d'une mesure individuelle est "
         "Couleur Google Maps lue par tronçon : ROUGE OU ORANGE ≥ 50 % → "
         "congestionné (cf. rapport DEESP/DEEF oct. 2025, section "
@@ -231,7 +231,7 @@ async def get_zones_congestionnees(
             "seuil_orange_long_pct": 50.0,
             "seuil_semaine_effectif": rapport_paa.SEUIL_SEMAINE_DEESP,
             "seuil_jour_effectif": rapport_paa.SEUIL_JOUR_DEESP,
-            "regle_1_semaine": "Congestionné si le même créneau revient ≥ 4 fois dans une fenêtre glissante de 7 jours",
+            "regle_1_semaine": "Congestionné si le même créneau revient ≥ 4 fois dans la même semaine calendaire ISO (lun-dim)",
             "regle_2_jour_indicatif": "Congestionné si ce jour indicatif est congestionné ≥ 3 fois dans le mois (même type de jour)",
         },
         "entrees": [
@@ -302,47 +302,46 @@ async def get_zones_congestionnees_pdf(
     nb_jours = max(1, (fin_utc - debut_utc).days + 1)
 
     pdf = FPDF(orientation="L", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=10)
+    pdf.set_auto_page_break(auto=True, margin=8)
     pdf.add_page()
 
     # En-tête
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 7, "Tableau 16 - Axes congestionnes (regles DEESP)", ln=True)
-    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 6, "Tableau 16 - Troncons congestionnes (regles DEESP)", ln=True)
+    pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(26, 54, 93)
-    pdf.cell(0, 5, f"Campagne : {campagne}    -    {nb_jours} jour(s) analyse(s)", ln=True)
+    pdf.cell(0, 4, f"Campagne : {campagne}  -  {nb_jours} jour(s)  |  Regle JOUR >= {seuil_j}x/jour  |  Regle SEMAINE >= {seuil_s}x/semaine ISO (lun-dim)", ln=True)
     pdf.set_text_color(85, 85, 85)
-    pdf.set_font("Helvetica", "", 8)
+    pdf.set_font("Helvetica", "", 7)
     desc = (
-        f"Critere par mesure : couleur Google Maps - ROUGE OU ORANGE >= 50%. "
-        f"Seuils appliques : >= {seuil_j} occurrence(s) / jour-indicatif OU "
-        f">= {seuil_s} occurrence(s) / semaine."
+        f"Critere congestion : couleur Google Maps - ROUGE OU ORANGE >= 50% du tracé. "
+        f"Semaine = semaine calendaire ISO lundi-dimanche (un dimanche et le lundi suivant sont dans des semaines differentes)."
     )
-    pdf.multi_cell(0, 4, desc)
-    pdf.ln(2)
+    pdf.multi_cell(0, 3, desc)
+    pdf.ln(1)
 
     # En-tête du tableau
     pdf.set_fill_color(26, 54, 93)
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Helvetica", "B", 8)
-    largeurs = [60, 35, 25, 18, 30, 110]  # mm — total = 278
+    pdf.set_font("Helvetica", "B", 7)
+    largeurs = [60, 35, 22, 16, 28, 117]  # mm — total = 278
     entetes = ["AXE", "TRONCON CODIFIE", "TRANCHE", "NB/SEM.", "REGLE", "REPARTITION PAR JOUR"]
     for w, h in zip(largeurs, entetes):
-        pdf.cell(w, 7, h, border=1, fill=True, align="L")
+        pdf.cell(w, 6, h, border=1, fill=True, align="L")
     pdf.ln()
 
     # Lignes
     pdf.set_text_color(17, 17, 17)
-    pdf.set_font("Helvetica", "", 8)
+    pdf.set_font("Helvetica", "", 7)
     if not cong:
-        pdf.set_font("Helvetica", "I", 9)
+        pdf.set_font("Helvetica", "I", 8)
         pdf.set_text_color(107, 114, 128)
-        pdf.cell(sum(largeurs), 10, "Aucun troncon congestionne sur cette campagne.",
+        pdf.cell(sum(largeurs), 8, "Aucun troncon congestionne sur cette campagne.",
                  border=1, align="C")
     else:
         for i, c in enumerate(cong):
             if i % 2 == 1:
-                pdf.set_fill_color(249, 250, 251)
+                pdf.set_fill_color(245, 247, 250)
                 fill = True
             else:
                 pdf.set_fill_color(255, 255, 255)
@@ -355,7 +354,7 @@ async def get_zones_congestionnees_pdf(
             tranche = f"{c.heure:02d}h-{c.heure + 1:02d}h"
             regles = []
             if c.regle_jour_indicatif:
-                regles.append(f">={seuil_j}/jour")
+                regles.append(f">={seuil_j}/j")
             if c.regle_semaine:
                 regles.append(f">={seuil_s}/sem")
             regle_txt = " | ".join(regles) or "-"
@@ -364,22 +363,22 @@ async def get_zones_congestionnees_pdf(
             )
 
             ligne = [
-                (largeurs[0], _sanitize_pdf((c.troncon_nom or "")[:45])),
-                (largeurs[1], _sanitize_pdf(sous[:25])),
+                (largeurs[0], _sanitize_pdf((c.troncon_nom or "")[:50])),
+                (largeurs[1], _sanitize_pdf(sous[:28])),
                 (largeurs[2], tranche),
                 (largeurs[3], str(c.nb_total_semaine)),
                 (largeurs[4], regle_txt),
-                (largeurs[5], _sanitize_pdf(repartition[:80])),
+                (largeurs[5], _sanitize_pdf(repartition[:90])),
             ]
             for w, txt in ligne:
-                pdf.cell(w, 6, txt, border=1, fill=fill, align="L")
+                pdf.cell(w, 5, txt, border=1, fill=fill, align="L")
             pdf.ln()
 
     # Pied de page
-    pdf.ln(4)
-    pdf.set_font("Helvetica", "I", 7)
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "I", 6)
     pdf.set_text_color(107, 114, 128)
-    pdf.cell(0, 4,
+    pdf.cell(0, 3,
              "Genere par FLUIDIS - Port Autonome d'Abidjan - "
              f"Methodologie DEESP rapport octobre 2025", ln=True)
 

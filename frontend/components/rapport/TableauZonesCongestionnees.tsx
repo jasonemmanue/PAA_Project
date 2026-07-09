@@ -71,7 +71,7 @@ export function TableauZonesCongestionnees({
       titre="Tableau 16 — Tronçons congestionnés (règles DEESP)"
       description={
         "Un tronçon est congestionné à un créneau horaire si l'une des deux règles DEESP est vérifiée — " +
-        "Règle 1 (semaine) : ce créneau revient au moins 4 fois dans une fenêtre glissante de 7 jours ; " +
+        "Règle 1 (semaine) : ce créneau revient au moins 4 fois dans la même semaine calendaire ISO (lun–dim) ; " +
         "Règle 2 (jour indicatif) : ce même jour de la semaine (ex. lundi) est congestionné à cette tranche horaire au moins 3 fois dans le mois. " +
         "Critère de congestion d'une mesure : couleur Google Maps — rouge présent OU orange ≥ 50 % du tronçon."
       }
