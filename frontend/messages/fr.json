@@ -62,6 +62,7 @@
     "kpiMoyenne": "Temps moyen",
     "kpiMin": "Temps min.",
     "kpiMax": "Temps max.",
+    "kpiVitesseMoyenne": "Vitesse moyenne",
     "kpiNbMesures": "Nb mesures",
     "courbeTitle": "Évolution du temps de traversée",
     "courbeSubtitle": "Temps minimum, moyen et maximal observés (avec trafic), ligne de référence 50 km/h.",

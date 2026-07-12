@@ -262,6 +262,7 @@ export interface SnapshotIndicateurs {
   pourcentage_rouge_moyen: number | null;
   pourcentage_orange_moyen: number | null;
   pourcentage_vert_moyen: number | null;
+  vitesse_moyenne_kmh: number | null;
   temps_reference_50kmh_s: number;
 }
 

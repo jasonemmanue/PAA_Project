@@ -30,6 +30,10 @@ export function KpiCards({ snapshot }: { snapshot: SnapshotIndicateurs | null })
   const min = formaterDuree(snapshot?.min_s);
   const max = formaterDuree(snapshot?.max_s);
   const nb = snapshot?.nb_mesures ?? 0;
+  const vitesse =
+    snapshot?.vitesse_moyenne_kmh != null
+      ? `${snapshot.vitesse_moyenne_kmh.toFixed(1)} km/h`
+      : "—";
 
   const taux =
     snapshot?.taux_congestion !== null && snapshot?.taux_congestion !== undefined
@@ -65,10 +69,11 @@ export function KpiCards({ snapshot }: { snapshot: SnapshotIndicateurs | null })
   return (
     <div className="flex flex-col gap-fluid-4">
       {/* Ligne 1 — temps min / moyen / max + nb mesures */}
-      <div className="grid gap-fluid-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-fluid-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCompteur label={t("indicateurs.kpiMoyenne")} valeur={moyenne} />
         <KpiCompteur label={t("indicateurs.kpiMin")} valeur={min} />
         <KpiCompteur label={t("indicateurs.kpiMax")} valeur={max} />
+        <KpiCompteur label={t("indicateurs.kpiVitesseMoyenne")} valeur={vitesse} />
         <KpiCompteur
           label={t("indicateurs.kpiNbMesures")}
           valeur={nb.toLocaleString("fr-FR")}

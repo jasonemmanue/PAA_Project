@@ -102,6 +102,9 @@ class IndicateursTroncon:
     pourcentage_orange_moyen: float | None
     pourcentage_vert_moyen: float | None
 
+    # Vitesse moyenne calculée depuis distance / temps moyen (km/h)
+    vitesse_moyenne_kmh: float | None
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -242,6 +245,7 @@ def calcul_indicateurs(
             pourcentage_rouge_moyen=None,
             pourcentage_orange_moyen=None,
             pourcentage_vert_moyen=None,
+            vitesse_moyenne_kmh=None,
         )
 
     durees = [float(m.duree_trafic_s) for m in valides]
@@ -269,6 +273,11 @@ def calcul_indicateurs(
 
     classe = _classe_depuis_moyennes(pct_r_moy, pct_o_moy, pct_v_moy, nb_qualifie)
 
+    # Vitesse moyenne = distance / temps moyen
+    vit_moy_kmh: float | None = None
+    if moyenne_s and moyenne_s > 0 and ref_dist and ref_dist > 0:
+        vit_moy_kmh = round((ref_dist / 1000) / (moyenne_s / 3600), 1)
+
     return IndicateursTroncon(
         troncon_id=troncon.id,
         troncon_nom=troncon.nom,
@@ -288,6 +297,7 @@ def calcul_indicateurs(
         pourcentage_rouge_moyen=pct_r_moy,
         pourcentage_orange_moyen=pct_o_moy,
         pourcentage_vert_moyen=pct_v_moy,
+        vitesse_moyenne_kmh=vit_moy_kmh,
     )
 
 

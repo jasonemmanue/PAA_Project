@@ -62,6 +62,7 @@
     "kpiMoyenne": "Avg time",
     "kpiMin": "Min time",
     "kpiMax": "Max time",
+    "kpiVitesseMoyenne": "Avg speed",
     "kpiNbMesures": "Measurements",
     "courbeTitle": "Travel time evolution",
     "courbeSubtitle": "Minimum, average and maximum observed travel times, with 50 km/h reference line.",

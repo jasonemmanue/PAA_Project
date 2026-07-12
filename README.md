@@ -200,7 +200,7 @@ npm run build && npm start
 | Exigence du brief | Statut | Implémentation |
 |-------------------|--------|----------------|
 | Interface moderne style dashboard | ✅ | Design system PAA ([README.md § 8](README.md)) — palette navy/sky, fluides via `clamp()`, 3 breakpoints, FR/EN, clair/sombre |
-| Carte temps réel | ✅ | WebSocket `/ws/etat` qui pousse l'état à chaque cycle de collecte (20 min) |
+| Carte temps réel | ✅ | WebSocket `/ws/etat` qui pousse l'état à chaque cycle de collecte (60 min) |
 | Choix dynamique des tronçons | ✅ | Dropdown sur la page Indicateurs + panneau latéral cliquable sur la page Carte |
 | Zoom sur les zones critiques | ✅ | Au chargement (worst classe) + au clic (`flyToBounds`) — cf. § P4.1 |
 | Affichage des temps de parcours | ✅ | 3 endroits : popup carte au clic, panneau latéral avec « Temps actuel », KPI page Indicateurs |
@@ -213,7 +213,7 @@ npm run build && npm start
 | Exigence du brief | Statut | Implémentation |
 |-------------------|--------|----------------|
 | Connexion APIs cartographiques | ✅ | OpenStreetMap (tuiles) + OSRM (auto-hébergé, routage) + Google Routes (trafic) |
-| Récupération **temps de parcours** | ✅ | Scheduler APScheduler **toutes les heures (60 min), 24h/24** Africa/Abidjan — 144 req/jour |
+| Récupération **temps de parcours** | ✅ | Scheduler APScheduler **toutes les heures (60 min), 24h/24** Africa/Abidjan — 1296 req/jour |
 | Récupération **distances** | ✅ | Stockées en base via `seed_troncons` (officielles) + OSRM (réelles routière) |
 | Récupération **niveaux de congestion** | ✅ | Couleur Google Maps (`speedReadingIntervals`) lue à chaque cycle → classification fluide / congestionné (critère DEESP officiel — cf. § Refonte ci-dessus). |
 | Récupération **itinéraires** | ✅ | Polylines OSRM réelles persistées en Railway (558–1081 cars/tronçon). Tracé routier complet : boulevard de Marseille, pont Houphouët-Boigny, avenue Christiani. Cf. § 0bis. |
@@ -477,7 +477,7 @@ Quatre tables ont été conçues pour stocker proprement les données du projet 
 | `profils_horaires` | Statistiques par jour-de-semaine + heure (calculé chaque nuit en **P3**)         |
 | `releves_terrain`  | Mesures faites manuellement avec un GPS sur le terrain (vérification en **P5**)  |
 
-### ✅ Les 6 tronçons sont chargés et leur tracé dessiné
+### ✅ Les 6 Axes sont chargés et leur tracé dessiné
 
 Au démarrage, on a inséré les 6 axes dans la table `troncons`. Puis on a
 demandé à OSRM (notre GPS interne) de **calculer le tracé exact de chaque axe**
@@ -534,7 +534,7 @@ de garder du code inutile (cf. [CLAUDE.md § 2.5](CLAUDE.md)).
 ### ✅ Un robot mesure le trafic tout seul, en continu
 
 Un **ordonnanceur** (APScheduler — pensez à un « réveil programmable » à
-l'intérieur du backend) se réveille **toutes les 20 minutes**, **entre 7h et
+l'intérieur du backend) se réveille **toutes les 60 minutes**, **entre 7h et
 19h** (fuseau Abidjan), et fait ceci pour chacun des 6 tronçons :
 
 1. **Appelle Google Routes** en parallèle pour récupérer le temps actuel.
@@ -726,7 +726,7 @@ recharger la page. Concrètement :
 
 1. À l'ouverture : le serveur envoie un message `{"type": "snapshot", ...}` avec
    l'état complet **immédiatement**.
-2. Toutes les 20 minutes (quand le robot tourne) : tous les clients connectés
+2. Toutes les 60 minutes (quand le robot tourne) : tous les clients connectés
    reçoivent un message `{"type": "maj", "donnees": {...}}` avec le nouvel état.
 3. Le client peut envoyer le texte `"ping"` à tout moment ; le serveur répond
    `"pong"` (utile pour vérifier que la connexion est encore vivante).
