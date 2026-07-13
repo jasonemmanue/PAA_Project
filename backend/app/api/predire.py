@@ -235,31 +235,33 @@ async def get_heure_optimale(
 
     creneaux: list[dict] = []
 
-    # --- Source 1 : profils horaires (agrégats nocternes) ---
-    # Fenêtre 30 j uniquement — évite de mélanger les 3 fenêtres (30/60/90)
-    # qui produiraient un triple-comptage et feraient converger min/max vers la moyenne.
-    # min() et max() agrégés sur les jours filtrés pour obtenir les vraies bornes.
-    rows_profils = (
-        db.execute(
-            select(
-                ProfilHoraire.heure,
-                func.avg(ProfilHoraire.moyenne).label("moyenne"),
-                func.min(ProfilHoraire.min).label("p_min"),
-                func.max(ProfilHoraire.max).label("p_max"),
-                func.sum(ProfilHoraire.nb_mesures).label("nb"),
-            )
-            .where(
-                ProfilHoraire.troncon_id == troncon_id,
-                ProfilHoraire.fenetre_jours == 30,
-                ProfilHoraire.jour_semaine.in_(jours_filtre),
-                ProfilHoraire.heure >= heure_debut,
-                ProfilHoraire.heure < heure_fin,
-                ProfilHoraire.nb_mesures > 0,
-            )
-            .group_by(ProfilHoraire.heure)
-            .order_by(ProfilHoraire.heure)
-        ).all()
-    )
+    # Les profils_horaires sont pollués par les mesures de sous-tronçons
+    # individuels (durées courtes) pour les axes décomposés → on les saute.
+    utiliser_profils = not axe_a_sous_troncons(db, troncon_id)
+
+    rows_profils = []
+    if utiliser_profils:
+        rows_profils = (
+            db.execute(
+                select(
+                    ProfilHoraire.heure,
+                    func.avg(ProfilHoraire.moyenne).label("moyenne"),
+                    func.min(ProfilHoraire.min).label("p_min"),
+                    func.max(ProfilHoraire.max).label("p_max"),
+                    func.sum(ProfilHoraire.nb_mesures).label("nb"),
+                )
+                .where(
+                    ProfilHoraire.troncon_id == troncon_id,
+                    ProfilHoraire.fenetre_jours == 30,
+                    ProfilHoraire.jour_semaine.in_(jours_filtre),
+                    ProfilHoraire.heure >= heure_debut,
+                    ProfilHoraire.heure < heure_fin,
+                    ProfilHoraire.nb_mesures > 0,
+                )
+                .group_by(ProfilHoraire.heure)
+                .order_by(ProfilHoraire.heure)
+            ).all()
+        )
 
     source = "profils_horaires"
 
