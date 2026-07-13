@@ -69,7 +69,7 @@ export function KpiCards({ snapshot }: { snapshot: SnapshotIndicateurs | null })
   return (
     <div className="flex flex-col gap-fluid-4">
       {/* Ligne 1 — temps min / moyen / max + nb mesures */}
-      <div className="grid gap-fluid-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-fluid-4 grid-cols-2 lg:grid-cols-5">
         <KpiCompteur label={t("indicateurs.kpiMoyenne")} valeur={moyenne} />
         <KpiCompteur label={t("indicateurs.kpiMin")} valeur={min} />
         <KpiCompteur label={t("indicateurs.kpiMax")} valeur={max} />

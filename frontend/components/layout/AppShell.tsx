@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <main
           className="flex-1 px-fluid-4 py-fluid-6 lg:px-fluid-8 lg:py-fluid-8
-                     bg-[rgb(var(--app-bg))]"
+                     bg-[rgb(var(--app-bg))] overflow-x-hidden"
         >
           {children}
         </main>
