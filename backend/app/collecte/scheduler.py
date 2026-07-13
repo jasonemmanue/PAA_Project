@@ -396,8 +396,8 @@ async def cycle_de_collecte() -> dict[str, int]:
     # Pour les sous-tronçons : une tâche par (axe parent, sous), avec sens
     # calculé depuis l'origine de l'axe. Un pont partagé par 2 axes de sens
     # opposés est donc mesuré 2 fois — une par sens de circulation réel.
-    # Fallback : un sous sans lien M2M (données legacy) est mesuré une fois
-    # avec son parent principal.
+    # OPTIMISATION QUOTA : si 2 axes traversent le même sous dans le MÊME
+    # sens, un seul appel Google est fait et le résultat est cloné.
     paires_sous: list[tuple[SousTroncon, int, str]] = []
     for sous in sous_troncons_actifs:
         ids_axes = axes_par_sous.get(sous.id, [sous.troncon_id])
@@ -413,16 +413,37 @@ async def cycle_de_collecte() -> dict[str, int]:
                 )
             paires_sous.append((sous, axe_id, sens))
 
+    # Déduplication : regrouper par (sous_troncon_id, sens).
+    # Clé = (sous.id, sens) → un seul appel Google.
+    # Valeur = liste des axe_ids à alimenter avec le même résultat.
+    from collections import defaultdict
+    groupes_dedup: dict[tuple[int, str], list[tuple[SousTroncon, int]]] = defaultdict(list)
+    for sous, axe_id, sens in paires_sous:
+        groupes_dedup[(sous.id, sens)].append((sous, axe_id))
+
+    nb_appels_economises = len(paires_sous) - len(groupes_dedup)
+    if nb_appels_economises > 0:
+        logger.info(
+            "Déduplication quota : %d paires → %d appels Google "
+            "(%d économisés, sous-tronçons partagés même sens).",
+            len(paires_sous), len(groupes_dedup), nb_appels_economises,
+        )
+
     taches: list[Awaitable[ResultatSource]] = []
     for troncon in troncons_a_mesurer:
         for src in sources_actives:
             adaptateur = _ADAPTATEURS_SOURCES[src]
             taches.append(adaptateur(troncon))
-    for sous, axe_id_ctx, sens in paires_sous:
+
+    # Clé de dédup → index dans la liste de tâches (pour retrouver le résultat)
+    dedup_keys_ordre: list[tuple[int, str]] = []
+    for cle, groupe in groupes_dedup.items():
+        sous_representant, premier_axe = groupe[0]
         if SourceMesure.google in sources_actives:
             taches.append(_collecter_google_pour_sous_troncon(
-                sous, axe_id_contexte=axe_id_ctx, sens=sens,
+                sous_representant, axe_id_contexte=premier_axe, sens=cle[1],
             ))
+            dedup_keys_ordre.append(cle)
 
     # Si aucune source n'est dispo, on génère quand même des trous.
     if not sources_actives:
@@ -439,19 +460,49 @@ async def cycle_de_collecte() -> dict[str, int]:
                 message_erreur="aucune source temps réel configurée",
             ))
     else:
-        resultats = list(await asyncio.gather(*taches, return_exceptions=False))
+        resultats_bruts = list(await asyncio.gather(*taches, return_exceptions=False))
+        # Séparer les résultats des tronçons parents et les résultats dédupliqués
+        nb_troncons_parents = len(troncons_a_mesurer) * len(sources_actives)
+        resultats = list(resultats_bruts[:nb_troncons_parents])
+
+        # Cloner les résultats sous-tronçons pour chaque axe associé
+        resultats_dedup = resultats_bruts[nb_troncons_parents:]
+        for i, cle in enumerate(dedup_keys_ordre):
+            resultat_original = resultats_dedup[i]
+            groupe = groupes_dedup[cle]
+            # Le 1er axe du groupe a déjà son résultat
+            resultats.append(resultat_original)
+            # Les axes suivants reçoivent un clone avec leur propre troncon_id
+            for _sous, axe_id_secondaire in groupe[1:]:
+                clone = ResultatSource(
+                    source=resultat_original.source,
+                    troncon_id=axe_id_secondaire,
+                    sous_troncon_id=resultat_original.sous_troncon_id,
+                    succes=resultat_original.succes,
+                    duree_trafic_s=resultat_original.duree_trafic_s,
+                    duree_sans_trafic_s=resultat_original.duree_sans_trafic_s,
+                    distance_m=resultat_original.distance_m,
+                    message_erreur=resultat_original.message_erreur,
+                    pourcentage_rouge=resultat_original.pourcentage_rouge,
+                    pourcentage_orange=resultat_original.pourcentage_orange,
+                    pourcentage_vert=resultat_original.pourcentage_vert,
+                    est_congestionne=resultat_original.est_congestionne,
+                )
+                resultats.append(clone)
 
     # 4. Persistance (dans un thread pour ne pas bloquer la boucle)
     await asyncio.to_thread(_persister_mesures, resultats, horodatage_utc)
 
     nb_succes = sum(1 for r in resultats if r.succes)
     nb_trous = len(resultats) - nb_succes
+    nb_appels_google = len(troncons_a_mesurer) * len(sources_actives) + len(dedup_keys_ordre)
     logger.info(
-        "Cycle terminé à %s — %d tronçons + %d sous-tronçons, "
-        "%d appels, %d réussites, %d trous.",
+        "Cycle terminé à %s — %d tronçons + %d paires sous-tronçons "
+        "(%d appels Google réels, %d résultats persistés, %d réussites, %d trous).",
         horodatage_utc.isoformat(),
         len(troncons_a_mesurer),
         len(paires_sous),
+        nb_appels_google,
         len(resultats),
         nb_succes,
         nb_trous,
@@ -473,7 +524,8 @@ async def cycle_de_collecte() -> dict[str, int]:
         "nb_trous": nb_trous,
         "nb_troncons": len(troncons_a_mesurer),
         "nb_sous_troncons": len(paires_sous),
-        "nb_appels": len(resultats),
+        "nb_appels_google_reels": nb_appels_google,
+        "nb_resultats_persistes": len(resultats),
     }
 
 
