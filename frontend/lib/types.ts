@@ -184,7 +184,9 @@ export interface CollecteStatus {
     nb_succes: number;
     nb_trous: number;
     nb_troncons_actifs: number;
-    nb_entites_mesurees?: number;
+    nb_appels_google_par_cycle?: number;
+    nb_resultats_par_cycle?: number;
+    nb_economises_dedup?: number;
   };
 }
 

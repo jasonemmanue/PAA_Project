@@ -246,8 +246,11 @@ export function BarrePilotage({
             <span className="text-fluid-xs app-text-muted">
               {statut.compteurs_jour.nb_succes} /{" "}
               {statut.config.estimation_requetes_google_par_jour} req/j
-              {statut.compteurs_jour.nb_entites_mesurees != null &&
-                ` · ${statut.compteurs_jour.nb_entites_mesurees} entités/cycle`}
+              {statut.compteurs_jour.nb_appels_google_par_cycle != null &&
+                ` · ${statut.compteurs_jour.nb_appels_google_par_cycle} appels/cycle`}
+              {statut.compteurs_jour.nb_economises_dedup != null &&
+                statut.compteurs_jour.nb_economises_dedup > 0 &&
+                ` (${statut.compteurs_jour.nb_economises_dedup} éco.)`}
             </span>
             {plage && (
               <span className="text-fluid-xs app-text-muted">

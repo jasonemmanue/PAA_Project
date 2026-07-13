@@ -28,6 +28,7 @@ from app.collecte.scheduler import (
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.models import Mesure, SousTroncon, Troncon, axe_sous_troncons
+from app.sources.polyline import calculer_sens_par_axe
 
 
 router = APIRouter(prefix="/collecte", tags=["collecte"])
@@ -110,40 +111,67 @@ async def status_collecte(db: Session = Depends(get_db)) -> dict[str, Any]:
         select(func.count(Troncon.id)).where(Troncon.actif.is_(True))
     ) or 0
 
-    # Calcul réel du nombre d'entités mesurées par cycle (même logique que
-    # le scheduler § 18.4) : axes sans sous-tronçon + liens M2M actifs.
+    # Calcul réel du nombre d'entités mesurées par cycle avec déduplication
+    # (même logique que le scheduler § 18.4 + dédup par (sous_id, sens)).
     axes_couverts_par_sous: set[int] = set()
+
+    # Charger les axes actifs avec coordonnées
+    axes_actifs = db.execute(
+        select(Troncon).where(Troncon.actif.is_(True))
+    ).scalars().all()
+    axes_par_id = {a.id: a for a in axes_actifs}
+
+    # Charger les sous-tronçons actifs
+    sous_actifs = db.execute(
+        select(SousTroncon).where(SousTroncon.actif.is_(True))
+    ).scalars().all()
+    sous_par_id = {s.id: s for s in sous_actifs}
+
+    # Liens M2M
     liens_m2m = db.execute(
         select(axe_sous_troncons.c.axe_id, axe_sous_troncons.c.sous_troncon_id)
         .join(SousTroncon, axe_sous_troncons.c.sous_troncon_id == SousTroncon.id)
         .where(SousTroncon.actif.is_(True))
     ).all()
-    nb_liens_sous = len(liens_m2m)
-    for axe_id, _ in liens_m2m:
+    from collections import defaultdict
+    axes_par_sous: dict[int, list[int]] = defaultdict(list)
+    for axe_id, sous_id in liens_m2m:
         axes_couverts_par_sous.add(axe_id)
-    # Repli pour les sous-tronçons sans lien M2M (legacy pré-migration 0016)
-    sous_sans_m2m = db.execute(
-        select(SousTroncon.troncon_id)
-        .where(
-            SousTroncon.actif.is_(True),
-            ~SousTroncon.id.in_(
-                select(axe_sous_troncons.c.sous_troncon_id)
-            ),
-        )
-    ).scalars().all()
-    nb_sous_orphelins = len(sous_sans_m2m)
-    for tid in sous_sans_m2m:
-        axes_couverts_par_sous.add(tid)
-    ids_parents_actifs = db.execute(
-        select(Troncon.id).where(Troncon.actif.is_(True))
-    ).scalars().all()
+        axes_par_sous[sous_id].append(axe_id)
+
+    # Repli legacy (sous sans M2M)
+    sous_sans_m2m = [s for s in sous_actifs if s.id not in axes_par_sous]
+    for s in sous_sans_m2m:
+        axes_couverts_par_sous.add(s.troncon_id)
+
     nb_parents_a_mesurer = sum(
-        1 for tid in ids_parents_actifs if tid not in axes_couverts_par_sous
+        1 for a in axes_actifs if a.id not in axes_couverts_par_sous
     )
-    nb_entites_mesurees = nb_parents_a_mesurer + nb_liens_sous + nb_sous_orphelins
+
+    # Déduplication par (sous_id, sens) — même logique que le scheduler
+    paires_uniques: set[tuple[int, str]] = set()
+    nb_paires_brutes = 0
+    for sous in sous_actifs:
+        ids_axes = axes_par_sous.get(sous.id, [sous.troncon_id])
+        for axe_id in ids_axes:
+            nb_paires_brutes += 1
+            axe = axes_par_id.get(axe_id)
+            if axe is None or axe.lat_origine is None or axe.lon_origine is None:
+                sens = "direct"
+            else:
+                sens = calculer_sens_par_axe(
+                    axe.lat_origine, axe.lon_origine,
+                    sous.lat_debut, sous.lon_debut,
+                    sous.lat_fin, sous.lon_fin,
+                )
+            paires_uniques.add((sous.id, sens))
+
+    nb_appels_google_par_cycle = nb_parents_a_mesurer + len(paires_uniques)
+    nb_resultats_par_cycle = nb_parents_a_mesurer + nb_paires_brutes
+    nb_economises = nb_paires_brutes - len(paires_uniques)
 
     settings = get_settings()
-    estimation_quota = estimer_requetes_par_jour(settings, nb_entites_mesurees)
+    estimation_quota = estimer_requetes_par_jour(settings, nb_appels_google_par_cycle)
 
     return {
         **etat_scheduler(),
@@ -159,7 +187,9 @@ async def status_collecte(db: Session = Depends(get_db)) -> dict[str, Any]:
             "nb_succes": nb_succes_jour,
             "nb_trous": nb_trous_jour,
             "nb_troncons_actifs": nb_troncons_actifs_total,
-            "nb_entites_mesurees": nb_entites_mesurees,
+            "nb_appels_google_par_cycle": nb_appels_google_par_cycle,
+            "nb_resultats_par_cycle": nb_resultats_par_cycle,
+            "nb_economises_dedup": nb_economises,
         },
     }
 
