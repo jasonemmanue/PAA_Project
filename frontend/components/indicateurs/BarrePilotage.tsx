@@ -253,9 +253,6 @@ export function BarrePilotage({
               })()}
               {statut.compteurs_jour.nb_appels_google_par_cycle != null &&
                 ` · ${statut.compteurs_jour.nb_appels_google_par_cycle} appels/cycle`}
-              {statut.compteurs_jour.nb_economises_dedup != null &&
-                statut.compteurs_jour.nb_economises_dedup > 0 &&
-                ` (${statut.compteurs_jour.nb_economises_dedup} éco.)`}
             </span>
             {plage && (
               <span className="text-fluid-xs app-text-muted">
