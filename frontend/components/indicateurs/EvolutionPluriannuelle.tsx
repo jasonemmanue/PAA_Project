@@ -111,14 +111,16 @@ export function EvolutionPluriannuelle({ tronconId }: Props) {
     };
   }, [tronconId, charger]);
 
-  // Les 2 campagnes historiques les plus récentes + le mois courant
+  // Campagnes historiques les plus récentes + le mois courant.
+  // Si un mois Google reconstruit existe → 2 historiques (slice -2).
+  // Sinon (que des imports Excel) → 1 seul historique pour éviter Oct 2025 obsolète.
   const campagnes: Campagne[] = (() => {
     if (!data) return [];
-    const historiques = data.campagnes
-      .filter((c) => c.source === "historique")
-      .slice(-2); // les 2 plus récentes (déjà triées chronologiquement)
+    const historiques = data.campagnes.filter((c) => c.source === "historique");
+    const aGoogle = historiques.some((c) => c.origine === "mesures_google");
+    const recentes = historiques.slice(aGoogle ? -2 : -1);
     const live = data.campagnes.filter((c) => c.source === "live");
-    return [...historiques, ...live];
+    return [...recentes, ...live];
   })();
 
   // Données Recharts : 1 objet par campagne avec min/moyen/max du type_jour sélectionné
