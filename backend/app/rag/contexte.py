@@ -229,57 +229,104 @@ def recuperer_temps_traversee(db: Session) -> str:
 
 
 def recuperer_heure_optimale(db: Session) -> str:
-    """Top-3 créneaux les plus rapides par tronçon pour le type de jour actuel."""
+    """Top-3 créneaux les plus rapides par tronçon pour le type de jour actuel.
+
+    Pour les axes décomposés en sous-tronçons, utilise l'agrégation (somme)
+    depuis les mesures brutes au lieu des profils_horaires (qui contiennent
+    des durées individuelles de sous-tronçons, pas la somme de l'axe).
+    """
     maintenant_local = _maintenant_local()
     est_ouvrable = maintenant_local.weekday() < 5
     type_jour_label = "jours ouvrables" if est_ouvrable else "week-end"
     jours_filtre = list(range(5)) if est_ouvrable else [5, 6]
 
     troncons = db.execute(
-        select(Troncon).where(Troncon.actif.is_(True)).order_by(Troncon.id)
+        select(Troncon).where(Troncon.actif.is_(True), Troncon.est_axe.is_(True)).order_by(Troncon.id)
     ).scalars().all()
 
     lignes = [
         f"CRÉNEAUX OPTIMAUX — {type_jour_label} (historique 30 jours, 24h/24)"
     ]
 
-    for t in troncons:
-        rows = db.execute(
-            select(
-                ProfilHoraire.heure,
-                func.avg(ProfilHoraire.moyenne).label("moy"),
-                func.min(ProfilHoraire.min).label("p_min"),
-                func.max(ProfilHoraire.max).label("p_max"),
-                func.sum(ProfilHoraire.nb_mesures).label("nb"),
-            )
-            .where(
-                ProfilHoraire.troncon_id == t.id,
-                ProfilHoraire.fenetre_jours == 30,
-                ProfilHoraire.jour_semaine.in_(jours_filtre),
-                ProfilHoraire.heure >= 0,
-                ProfilHoraire.heure < 24,
-                ProfilHoraire.nb_mesures > 0,
-            )
-            .group_by(ProfilHoraire.heure)
-            .order_by(ProfilHoraire.heure)
-        ).all()
+    debut_utc = datetime.now(tz=timezone.utc) - timedelta(days=30)
+    fin_utc = datetime.now(tz=timezone.utc)
 
-        if not rows:
+    for t in troncons:
+        if axe_a_sous_troncons(db, t.id):
+            # Axes décomposés : agrégation depuis les mesures brutes
+            tuples_agg = agreger_durees_par_creneau(
+                db, t.id, debut_utc, fin_utc, source_google_only=True,
+            )
+            if not tuples_agg:
+                lignes.append(
+                    f"  T{t.id} — {t.nom} : historique insuffisant (collecte en cours)"
+                )
+                continue
+            par_heure: dict[int, list[float]] = {}
+            for horodatage, duree_s, _src in tuples_agg:
+                h_local = (
+                    horodatage.astimezone(_FUSEAU)
+                    if horodatage.tzinfo
+                    else horodatage.replace(tzinfo=timezone.utc).astimezone(_FUSEAU)
+                )
+                if h_local.weekday() not in jours_filtre:
+                    continue
+                par_heure.setdefault(h_local.hour, []).append(duree_s)
+            creneaux = [
+                {
+                    "heure": h,
+                    "moy_s": statistics.fmean(vals),
+                    "min_s": min(vals),
+                    "max_s": max(vals),
+                    "nb": len(vals),
+                }
+                for h, vals in par_heure.items()
+                if vals
+            ]
+        else:
+            rows = db.execute(
+                select(
+                    ProfilHoraire.heure,
+                    func.avg(ProfilHoraire.moyenne).label("moy"),
+                    func.min(ProfilHoraire.min).label("p_min"),
+                    func.max(ProfilHoraire.max).label("p_max"),
+                    func.sum(ProfilHoraire.nb_mesures).label("nb"),
+                )
+                .where(
+                    ProfilHoraire.troncon_id == t.id,
+                    ProfilHoraire.fenetre_jours == 30,
+                    ProfilHoraire.jour_semaine.in_(jours_filtre),
+                    ProfilHoraire.heure >= 0,
+                    ProfilHoraire.heure < 24,
+                    ProfilHoraire.nb_mesures > 0,
+                )
+                .group_by(ProfilHoraire.heure)
+                .order_by(ProfilHoraire.heure)
+            ).all()
+
+            if not rows:
+                lignes.append(
+                    f"  T{t.id} — {t.nom} : historique insuffisant (collecte en cours)"
+                )
+                continue
+
+            creneaux = [
+                {
+                    "heure": r.heure,
+                    "moy_s": float(r.moy or 0),
+                    "min_s": float(r.p_min or 0),
+                    "max_s": float(r.p_max or 0),
+                    "nb": int(r.nb or 0),
+                }
+                for r in rows
+            ]
+
+        if not creneaux:
             lignes.append(
                 f"  T{t.id} — {t.nom} : historique insuffisant (collecte en cours)"
             )
             continue
 
-        creneaux = [
-            {
-                "heure": r.heure,
-                "moy_s": float(r.moy or 0),
-                "min_s": float(r.p_min or 0),
-                "max_s": float(r.p_max or 0),
-                "nb": int(r.nb or 0),
-            }
-            for r in rows
-        ]
         top3 = sorted(creneaux, key=lambda c: c["moy_s"])[:3]
         top3_str = ", ".join(
             f"{c['heure']:02d}h-{c['heure']+1:02d}h"

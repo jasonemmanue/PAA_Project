@@ -57,6 +57,7 @@ logger = logging.getLogger("paa.collecte")
 _JOB_ID = "collecte_temps_reel"
 _JOB_ID_AGREGATION = "agregation_profils_horaires"
 _JOB_ID_INCIDENTS = "collecte_incidents"
+_JOB_ID_RETENTION = "retention_mesures"
 
 
 # ---------------------------------------------------------------------------
@@ -703,6 +704,46 @@ def _ajouter_job_incidents(scheduler: AsyncIOScheduler, settings: Settings) -> N
     )
 
 
+def _ajouter_job_retention(scheduler: AsyncIOScheduler, settings: Settings) -> None:
+    """Purge les mesures plus anciennes que RETENTION_MESURES_JOURS (défaut 365 j).
+
+    Tourne chaque nuit à 23h30 (après l'agrégation de 23h00).
+    """
+    async def _tache():
+        from datetime import datetime, timedelta, timezone
+        session = SessionLocal()
+        try:
+            seuil = datetime.now(tz=timezone.utc) - timedelta(
+                days=settings.retention_mesures_jours,
+            )
+            result = session.execute(
+                Mesure.__table__.delete().where(Mesure.horodatage < seuil)
+            )
+            nb = result.rowcount
+            session.commit()
+            if nb:
+                logger.info(
+                    "Rétention : %d mesure(s) antérieure(s) à %s supprimée(s).",
+                    nb, seuil.date().isoformat(),
+                )
+        except Exception:
+            session.rollback()
+            logger.exception("Erreur dans le job de rétention des mesures.")
+        finally:
+            session.close()
+
+    scheduler.add_job(
+        _tache,
+        trigger=CronTrigger(hour=23, minute=30, timezone=ZoneInfo(settings.tz)),
+        id=_JOB_ID_RETENTION,
+        name="Purge des mesures anciennes",
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
+
+
 def demarrer_scheduler() -> dict[str, str | int | None]:
     """Démarre le scheduler s'il ne tourne pas déjà.
 
@@ -736,6 +777,9 @@ def demarrer_scheduler() -> dict[str, str | int | None]:
 
     # Job de collecte incidents (scraping RSS toutes les 30 min)
     _ajouter_job_incidents(scheduler, settings)
+
+    # Job de rétention — purge des mesures anciennes (23h30)
+    _ajouter_job_retention(scheduler, settings)
 
     # Affichage spécial pour la collecte 24h/24 (start=0 et end=24).
     couvre_journee_complete = (

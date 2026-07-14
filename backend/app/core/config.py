@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     # badge nav, stats). 720 h = 30 jours. Configurable via variable Railway.
     incident_actif_heures: int = Field(default=720, alias="INCIDENT_ACTIF_HEURES")
 
+    # === Rétention des mesures ===
+    # Nombre de jours de mesures conservés en base. Les mesures plus anciennes
+    # sont purgées automatiquement chaque nuit à 23h30 (après l'agrégation).
+    # 365 j = 1 an de données, suffisant pour l'évolution pluriannuelle.
+    retention_mesures_jours: int = Field(default=365, alias="RETENTION_MESURES_JOURS")
+
     # === Sécurité de l'API ===
     api_secret_key: str = Field(..., alias="API_SECRET_KEY")
     allowed_origins: str = Field(default="http://localhost:3000", alias="ALLOWED_ORIGINS")

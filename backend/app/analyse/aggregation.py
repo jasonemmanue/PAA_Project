@@ -294,6 +294,31 @@ def agreger_durees_par_creneau(
 # ---------------------------------------------------------------------------
 
 
+def compter_mesures_brutes_axe(
+    db: Session,
+    axe_id: int,
+    debut_utc: datetime,
+    fin_utc: datetime,
+) -> int:
+    """Compte les mesures brutes des sous-tronçons d'un axe sur une fenêtre."""
+    from sqlalchemy import func as sqlfunc
+    sous_ids = get_sous_ids_pour_axe(db, axe_id)
+    if not sous_ids:
+        return 0
+    result = db.execute(
+        select(sqlfunc.count()).select_from(Mesure).where(
+            Mesure.troncon_id == axe_id,
+            Mesure.sous_troncon_id.in_(sous_ids),
+            Mesure.source == SourceMesure.google,
+            Mesure.duree_trafic_s.is_not(None),
+            Mesure.aberrante.is_(False),
+            Mesure.horodatage >= debut_utc,
+            Mesure.horodatage <= fin_utc,
+        )
+    ).scalar_one()
+    return result or 0
+
+
 def _moyenne_ponderee(
     valeurs_poids: list[tuple[float | None, int]],
 ) -> float | None:

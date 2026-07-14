@@ -24,6 +24,7 @@ from app.models.models import EvolutionIndicateur, Mesure, SourceMesure, Troncon
 from app.analyse.aggregation import (
     agreger_durees_par_creneau,
     axe_a_sous_troncons,
+    compter_mesures_brutes_axe,
 )
 
 
@@ -116,7 +117,7 @@ def _stats_periode_par_troncon(
         tuples_agg = agreger_durees_par_creneau(
             db, troncon_id, debut_utc, fin_utc, source_google_only=True,
         )
-        nb_total = len(tuples_agg)
+        nb_total = compter_mesures_brutes_axe(db, troncon_id, debut_utc, fin_utc)
         for horodatage, duree_s, _src in tuples_agg:
             h_local = (
                 horodatage.astimezone(fuseau)
