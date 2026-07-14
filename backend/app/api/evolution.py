@@ -113,12 +113,43 @@ def _stats_periode_par_troncon(
     filtrer_heure = not (heure_debut == 0 and heure_fin == 24)
     par_type: dict[str, list[float]] = {"jour_ouvrable": [], "week_end": []}
 
+    # Mesures directes sur l'axe (sous_troncon_id IS NULL) — toujours lues,
+    # car les mois passés peuvent précéder la décomposition en sous-tronçons.
+    rows_directes = list(
+        db.execute(
+            select(Mesure.duree_trafic_s, Mesure.horodatage)
+            .where(
+                Mesure.troncon_id == troncon_id,
+                Mesure.sous_troncon_id.is_(None),
+                Mesure.source == SourceMesure.google,
+                Mesure.duree_trafic_s.is_not(None),
+                Mesure.aberrante.is_(False),
+                Mesure.horodatage >= debut_utc,
+                Mesure.horodatage <= fin_utc,
+            )
+        ).all()
+    )
+
     if utiliser_agg:
         tuples_agg = agreger_durees_par_creneau(
             db, troncon_id, debut_utc, fin_utc, source_google_only=True,
         )
-        nb_total = compter_mesures_brutes_axe(db, troncon_id, debut_utc, fin_utc)
+        nb_total = compter_mesures_brutes_axe(db, troncon_id, debut_utc, fin_utc) + len(rows_directes)
+        # Injecter les mesures agrégées des sous-tronçons
         for horodatage, duree_s, _src in tuples_agg:
+            h_local = (
+                horodatage.astimezone(fuseau)
+                if horodatage.tzinfo
+                else horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+            )
+            if filtrer_heure and not (heure_debut <= h_local.hour < heure_fin):
+                continue
+            tj = "week_end" if h_local.weekday() >= 5 else "jour_ouvrable"
+            par_type[tj].append(duree_s / 60.0)
+        # Injecter aussi les mesures directes (avant la décomposition)
+        for duree_s, horodatage in rows_directes:
+            if duree_s is None:
+                continue
             h_local = (
                 horodatage.astimezone(fuseau)
                 if horodatage.tzinfo
@@ -164,9 +195,9 @@ def _stats_periode_par_troncon(
             "min_mn": round(min(valeurs), 1),
             "moyen_mn": round(statistics.fmean(valeurs), 1),
             "max_mn": round(max(valeurs), 1),
-            "min_s": int(round(min(valeurs))),
-            "moyen_s": int(round(statistics.fmean(valeurs))),
-            "max_s": int(round(max(valeurs))),
+            "min_s": int(round(min(valeurs) * 60)),
+            "moyen_s": int(round(statistics.fmean(valeurs) * 60)),
+            "max_s": int(round(max(valeurs) * 60)),
             "nb_mesures": len(valeurs),
         }
 
