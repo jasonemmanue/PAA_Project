@@ -30,7 +30,6 @@ import { api } from "@/lib/api";
 import type {
   RapportTempsTheoriques,
   RapportTempsTraversee,
-  RapportZonesCongestionnees,
   Troncon,
 } from "@/lib/types";
 
@@ -77,7 +76,6 @@ export function PageRapport() {
   const [finRange, setFinRange] = useState<string>(dimancheSemaineCourante());
   const [theoriques, setTheoriques] = useState<RapportTempsTheoriques | null>(null);
   const [traversee, setTraversee] = useState<RapportTempsTraversee | null>(null);
-  const [zones, setZones] = useState<RapportZonesCongestionnees | null>(null);
   const [troncons, setTroncons] = useState<Troncon[]>([]);
   const [tronconId, setTronconId] = useState<number | null>(null);
   const [sousTronconId, setSousTronconId] = useState<number | null>(null);
@@ -91,23 +89,17 @@ export function PageRapport() {
     setChargement(true);
     setErreur(null);
     try {
-      // Tableau 16 toujours restreint à la semaine ISO courante
-      const lundiSem = lundiSemaineCourante();
-      const dimSem = dimancheSemaineCourante();
-      const [t, tt, ttv, zc] = await Promise.all([
+      const [t, tt, ttv] = await Promise.all([
         api.troncons(),
         api.rapportTempsTheoriques(),
         api.rapportTempsTraversee(campagne, debutRange, finRange, heureDebut, heureFin),
-        api.rapportZonesCongestionnees(campagne, lundiSem, dimSem, heureDebut, heureFin),
       ]);
       const liste = Array.isArray(t) ? t : [];
       setTroncons(liste);
-      // Initialise le tronçon sélectionné la première fois uniquement
       setTronconId((prev) => (prev === null && liste.length > 0 ? liste[0].id : prev));
       setTempsTronconId((prev) => (prev === null && liste.length > 0 ? liste[0].id : prev));
       setTheoriques(tt);
       setTraversee(ttv);
-      setZones(zc);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
@@ -269,9 +261,9 @@ export function PageRapport() {
 
       {/* Tableau 16 — Synthèse zones congestionnées (tous tronçons, règles DEESP) */}
       <TableauZonesCongestionnees
-        rapport={zones}
-        debutRange={lundiSemaineCourante()}
-        finRange={dimancheSemaineCourante()}
+        campagne={campagne}
+        debutRange={debutRange}
+        finRange={finRange}
         heureDebut={heureDebut}
         heureFin={heureFin}
       />

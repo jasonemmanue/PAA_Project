@@ -1,16 +1,13 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
+
 import { Card } from "@/components/ui/Card";
+import { api } from "@/lib/api";
 import type { RapportZonesCongestionnees, EntreeCongestion } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
 
-/**
- * Téléchargement direct du PDF généré côté backend (fpdf2).
- * Utilise une navigation directe (pas fetch) pour contourner les restrictions CORS
- * sur les requêtes cross-origin. Le serveur envoie Content-Disposition: attachment,
- * ce qui déclenche le téléchargement sans quitter la page.
- */
 function telechargerPdf(campagne: string, debut?: string, fin?: string, heureDebut = 0, heureFin = 24): void {
   const params = new URLSearchParams({ campagne });
   if (debut) params.set("debut", debut);
@@ -59,21 +56,95 @@ function exporterCsv(entrees: EntreeCongestion[], nomFichier: string, typeLabel:
   URL.revokeObjectURL(a.href);
 }
 
+function lundiSemaineIso(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  const jour = d.getDay();
+  const diff = jour === 0 ? 6 : jour - 1;
+  const lundi = new Date(d.getTime() - diff * 86400000);
+  return lundi.toISOString().slice(0, 10);
+}
+
+function dimancheSemaineIso(lundiKey: string): string {
+  const d = new Date(lundiKey + "T12:00:00");
+  const dim = new Date(d.getTime() + 6 * 86400000);
+  return dim.toISOString().slice(0, 10);
+}
+
+function labelSemaine(lundiKey: string): string {
+  const d = new Date(lundiKey + "T12:00:00");
+  const dim = new Date(d.getTime() + 6 * 86400000);
+  const fmt = (dt: Date) =>
+    `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`;
+  return `Sem. ${fmt(d)} – ${fmt(dim)}`;
+}
+
+function genererSemainesIso(debut: string, fin: string): string[] {
+  const lundis: string[] = [];
+  const premierLundi = lundiSemaineIso(debut);
+  const dernierLundi = lundiSemaineIso(fin);
+  let cur = premierLundi;
+  while (cur <= dernierLundi) {
+    lundis.push(cur);
+    const d = new Date(cur + "T12:00:00");
+    d.setDate(d.getDate() + 7);
+    cur = d.toISOString().slice(0, 10);
+  }
+  return lundis;
+}
+
+function lundiSemaineActuelle(): string {
+  return lundiSemaineIso(new Date().toISOString().slice(0, 10));
+}
+
 export function TableauZonesCongestionnees({
-  rapport,
+  campagne,
   debutRange,
   finRange,
   heureDebut = 0,
   heureFin = 24,
 }: {
-  rapport: RapportZonesCongestionnees | null;
-  debutRange?: string;
-  finRange?: string;
+  campagne: string;
+  debutRange: string;
+  finRange: string;
   heureDebut?: number;
   heureFin?: number;
 }) {
-  // Seuls les tronçons codifiés (sous-tronçons) sont affichés — conformément
-  // à la méthodologie DEESP : la congestion s'évalue au niveau tronçon.
+  const [rapport, setRapport] = useState<RapportZonesCongestionnees | null>(null);
+  const [chargement, setChargement] = useState(false);
+  const [fenetre, setFenetre] = useState(0);
+
+  const semaines = genererSemainesIso(debutRange, finRange);
+  const maxFenetre = Math.max(0, semaines.length - 1);
+  const lundiActuel = semaines[fenetre] ?? semaines[0] ?? lundiSemaineActuelle();
+  const dimancheActuel = dimancheSemaineIso(lundiActuel);
+  const labelFen = labelSemaine(lundiActuel);
+
+  // Positionne sur la semaine courante ou la dernière disponible au changement de plage
+  useEffect(() => {
+    if (semaines.length === 0) return;
+    const lundiAuj = lundiSemaineActuelle();
+    const idx = semaines.indexOf(lundiAuj);
+    setFenetre(idx >= 0 ? idx : semaines.length - 1);
+  }, [debutRange, finRange]);
+
+  const charger = useCallback(async () => {
+    setChargement(true);
+    try {
+      const data = await api.rapportZonesCongestionnees(
+        campagne, lundiActuel, dimancheActuel, heureDebut, heureFin,
+      );
+      setRapport(data);
+    } catch {
+      setRapport(null);
+    } finally {
+      setChargement(false);
+    }
+  }, [campagne, lundiActuel, dimancheActuel, heureDebut, heureFin]);
+
+  useEffect(() => {
+    charger();
+  }, [charger]);
+
   const entrees = (rapport?.entrees ?? []).filter((e) => e.sous_troncon_id !== null);
 
   return (
@@ -86,6 +157,34 @@ export function TableauZonesCongestionnees({
         "Critère de congestion d'une mesure : couleur Google Maps — rouge présent OU orange ≥ 50 % du tronçon."
       }
     >
+      {/* Navigation par semaine ISO */}
+      <div className="mb-3 flex items-center gap-2 text-fluid-xs">
+        <button
+          type="button"
+          disabled={fenetre === 0}
+          onClick={() => setFenetre((f) => f - 1)}
+          className="px-3 py-1 rounded-md border app-border disabled:opacity-40
+                     hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
+        >
+          ← Semaine précédente
+        </button>
+        <span className="app-text-muted font-medium">
+          {labelFen} ({fenetre + 1}/{semaines.length})
+        </span>
+        <button
+          type="button"
+          disabled={fenetre >= maxFenetre}
+          onClick={() => setFenetre((f) => f + 1)}
+          className="px-3 py-1 rounded-md border app-border disabled:opacity-40
+                     hover:bg-paa-blue-50 dark:hover:bg-paa-navy-800 transition-colors"
+        >
+          Semaine suivante →
+        </button>
+      </div>
+
+      {chargement && (
+        <div className="text-fluid-xs app-text-muted animate-pulse mb-3">Chargement du Tableau 16…</div>
+      )}
 
       {/* ──── Tronçons codifiés congestionnés ──── */}
       <div className="overflow-x-auto">
@@ -103,12 +202,12 @@ export function TableauZonesCongestionnees({
             {entrees.map((e) => (
               <LigneTroncon key={`${e.sous_troncon_id}-${e.troncon_id}-${e.heure}`} e={e} />
             ))}
-            {entrees.length === 0 && (
+            {entrees.length === 0 && !chargement && (
               <tr>
                 <Td colSpan={5}>
                   <span className="app-text-muted">
                     {rapport
-                      ? "Aucun tronçon codifié congestionné sur cette campagne."
+                      ? "Aucun tronçon codifié congestionné sur cette semaine."
                       : "Chargement…"}
                   </span>
                 </Td>
@@ -129,13 +228,13 @@ export function TableauZonesCongestionnees({
         </div>
       )}
 
-      {/* Bouton PDF global en bas — couvre axes + tronçons codifiés */}
+      {/* Bouton PDF */}
       <div className="mt-4 border-t app-border pt-4">
         <BoutonExportPdf
-          campagne={rapport?.campagne ?? ""}
+          campagne={rapport?.campagne ?? campagne}
           actif={!!rapport}
-          debut={debutRange}
-          fin={finRange}
+          debut={lundiActuel}
+          fin={dimancheActuel}
           heureDebut={heureDebut}
           heureFin={heureFin}
         />
