@@ -10,6 +10,10 @@ Règles :
   - Congestionné si AU MOINS UN sous est congestionné
   - Fluide seulement si TOUS les sous sont fluides
   - Couleurs : moyenne pondérée par distance des sous-tronçons
+  - Carry-forward : si un sous-tronçon n'a pas de mesure pour un créneau
+    donné, on réutilise sa dernière mesure valide connue. Cela évite que
+    l'absence ponctuelle d'un seul sous (échec API) produise un créneau
+    vide ou une somme tronquée au niveau axe.
 """
 
 from __future__ import annotations
@@ -110,6 +114,84 @@ class MesureAgregee:
 # ---------------------------------------------------------------------------
 
 
+def _charger_mesures_sous_troncons(
+    db: Session,
+    axe_id: int,
+    sous_ids: list[int],
+    debut_utc: datetime,
+    fin_utc: datetime,
+    *,
+    source_google_only: bool = False,
+    exclure_aberrantes: bool = True,
+) -> list:
+    """Charge les mesures brutes des sous-tronçons d'un axe sur la fenêtre."""
+    conds = [
+        Mesure.troncon_id == axe_id,
+        Mesure.sous_troncon_id.in_(sous_ids),
+        Mesure.duree_trafic_s.is_not(None),
+        Mesure.horodatage >= debut_utc,
+        Mesure.horodatage <= fin_utc,
+    ]
+    if source_google_only:
+        conds.append(Mesure.source == SourceMesure.google)
+    if exclure_aberrantes:
+        conds.append(Mesure.aberrante.is_(False))
+    return list(db.execute(select(Mesure).where(*conds)).scalars())
+
+
+def _grouper_par_creneau(
+    mesures: list,
+    fuseau,
+) -> dict[tuple[str, int], dict[int, "Mesure"]]:
+    """Groupe les mesures par créneau (date_iso, heure) → {sous_id: Mesure}."""
+    par_creneau: dict[tuple[str, int], dict[int, "Mesure"]] = defaultdict(dict)
+    for m in mesures:
+        h_local = (
+            m.horodatage.astimezone(fuseau)
+            if m.horodatage.tzinfo
+            else m.horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
+        )
+        cle = (h_local.date().isoformat(), h_local.hour)
+        sid = m.sous_troncon_id
+        if (
+            sid not in par_creneau[cle]
+            or m.horodatage > par_creneau[cle][sid].horodatage
+        ):
+            par_creneau[cle][sid] = m
+    return par_creneau
+
+
+def _completer_avec_carry_forward(
+    par_creneau: dict[tuple[str, int], dict[int, "Mesure"]],
+    sous_ids: list[int],
+) -> dict[tuple[str, int], dict[int, "Mesure"]]:
+    """Comble les sous-tronçons manquants par carry-forward (dernière mesure connue).
+
+    Pour chaque créneau, si un sous-tronçon n'a pas de mesure, on réutilise
+    sa dernière mesure valide (créneau précédent, même jour ou jour précédent).
+    Cela évite que l'échec ponctuel d'un seul appel Google vide la cellule de
+    l'axe complet ou fausse la somme (somme partielle < somme réelle).
+    """
+    if not par_creneau:
+        return par_creneau
+
+    sous_set = set(sous_ids)
+    derniere_par_sous: dict[int, "Mesure"] = {}
+    creneaux_tries = sorted(par_creneau.keys())
+
+    for cle in creneaux_tries:
+        mesures_du_creneau = par_creneau[cle]
+        # Mettre à jour le carry-forward avec les mesures réelles du créneau
+        for sid, m in mesures_du_creneau.items():
+            derniere_par_sous[sid] = m
+        # Compléter les sous-tronçons manquants
+        for sid in sous_set:
+            if sid not in mesures_du_creneau and sid in derniere_par_sous:
+                mesures_du_creneau[sid] = derniere_par_sous[sid]
+
+    return par_creneau
+
+
 def agreger_mesures_axe(
     db: Session,
     axe_id: int,
@@ -120,6 +202,10 @@ def agreger_mesures_axe(
     exclure_aberrantes: bool = True,
 ) -> list[MesureAgregee]:
     """Agrège les mesures des sous-tronçons d'un axe par créneau (date, heure).
+
+    Les sous-tronçons manquants pour un créneau donné sont complétés par
+    carry-forward (dernière mesure connue) afin d'éviter les trous et les
+    sommes partielles au niveau axe.
 
     Retourne une liste de ``MesureAgregee`` triée par horodatage.
     """
@@ -135,40 +221,17 @@ def agreger_mesures_axe(
     distances = {s.id: s.distance_m for s in sous_list}
     nb_sous = len(sous_ids)
 
-    conds = [
-        Mesure.troncon_id == axe_id,
-        Mesure.sous_troncon_id.in_(sous_ids),
-        Mesure.duree_trafic_s.is_not(None),
-        Mesure.horodatage >= debut_utc,
-        Mesure.horodatage <= fin_utc,
-    ]
-    if source_google_only:
-        conds.append(Mesure.source == SourceMesure.google)
-    if exclure_aberrantes:
-        conds.append(Mesure.aberrante.is_(False))
-
-    mesures = list(db.execute(select(Mesure).where(*conds)).scalars())
-
+    mesures = _charger_mesures_sous_troncons(
+        db, axe_id, sous_ids, debut_utc, fin_utc,
+        source_google_only=source_google_only,
+        exclure_aberrantes=exclure_aberrantes,
+    )
     if not mesures:
         return []
 
     fuseau = ZoneInfo(get_settings().tz)
-
-    # Grouper par créneau (date, heure) — un cycle scheduler = un créneau
-    par_creneau: dict[tuple[str, int], dict[int, Mesure]] = defaultdict(dict)
-    for m in mesures:
-        h_local = (
-            m.horodatage.astimezone(fuseau)
-            if m.horodatage.tzinfo
-            else m.horodatage.replace(tzinfo=timezone.utc).astimezone(fuseau)
-        )
-        cle = (h_local.date().isoformat(), h_local.hour)
-        sid = m.sous_troncon_id
-        if (
-            sid not in par_creneau[cle]
-            or m.horodatage > par_creneau[cle][sid].horodatage
-        ):
-            par_creneau[cle][sid] = m
+    par_creneau = _grouper_par_creneau(mesures, fuseau)
+    _completer_avec_carry_forward(par_creneau, sous_ids)
 
     resultats: list[MesureAgregee] = []
     for (date_str, heure), mesures_par_sous in sorted(par_creneau.items()):
@@ -207,6 +270,12 @@ def agreger_mesures_axe(
         horodatage = max(m.horodatage for m in mesures_par_sous.values())
         source_val = next(iter(mesures_par_sous.values())).source
 
+        # Nombre de mesures réelles (pas carry-forward) dans ce créneau
+        nb_reels = sum(
+            1 for sid, m in mesures_par_sous.items()
+            if m.sous_troncon_id == sid
+        )
+
         resultats.append(
             MesureAgregee(
                 horodatage=horodatage,
@@ -236,6 +305,7 @@ def agreger_durees_par_creneau(
     """Retourne (horodatage, duree_totale_s, source) par créneau — version légère.
 
     Utilisée par les fonctions de stats qui n'ont besoin que des durées.
+    Les sous-tronçons manquants sont complétés par carry-forward.
     """
     sous_ids = get_sous_ids_pour_axe(db, axe_id)
     if not sous_ids:
@@ -266,6 +336,7 @@ def agreger_durees_par_creneau(
         return []
 
     fuseau = ZoneInfo(get_settings().tz)
+    sous_set = set(sous_ids)
 
     par_creneau: dict[tuple[str, int], dict[int, tuple]] = defaultdict(dict)
     for horodatage, duree_s, sid, source in rows:
@@ -277,6 +348,16 @@ def agreger_durees_par_creneau(
         cle = (h_local.date().isoformat(), h_local.hour)
         if sid not in par_creneau[cle] or horodatage > par_creneau[cle][sid][0]:
             par_creneau[cle][sid] = (horodatage, duree_s, source)
+
+    # Carry-forward : combler les sous-tronçons manquants
+    derniere_par_sous: dict[int, tuple] = {}
+    for cle in sorted(par_creneau.keys()):
+        subs = par_creneau[cle]
+        for sid, val in subs.items():
+            derniere_par_sous[sid] = val
+        for sid in sous_set:
+            if sid not in subs and sid in derniere_par_sous:
+                subs[sid] = derniere_par_sous[sid]
 
     resultats = []
     for (date_str, heure), subs in sorted(par_creneau.items()):
