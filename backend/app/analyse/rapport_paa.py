@@ -39,6 +39,9 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.models import Mesure, SourceMesure, Troncon
 from app.analyse.aggregation import (
+    _charger_seed_historique,
+    _generer_creneaux_attendus,
+    _resoudre_axes_equivalents,
     agreger_durees_par_creneau,
     agreger_mesures_axe,
     axe_a_sous_troncons,
@@ -511,8 +514,16 @@ def matrice_congestion(
                 "pct_orange": round(m.pourcentage_orange, 1) if m.pourcentage_orange is not None else None,
             }
     else:
+        # Cross-axe : si un sous-tronçon spécifique est demandé, on pioche aussi
+        # dans les mesures cloneées vers tout axe frère de MÊME sens. Sinon
+        # (axe simple sans sous), on reste sur troncon_id == axe_id.
+        if sous_troncon_id is not None:
+            axes_lookup = _resoudre_axes_equivalents(db, troncon_id, [sous_troncon_id])
+        else:
+            axes_lookup = {troncon_id}
+
         conds = [
-            Mesure.troncon_id == troncon_id,
+            Mesure.troncon_id.in_(axes_lookup),
             Mesure.source == SourceMesure.google,
             Mesure.aberrante.is_(False),
             Mesure.horodatage >= debut_utc,
@@ -536,6 +547,35 @@ def matrice_congestion(
         )
         nb_rows = len(rows)
 
+        # Seed historique (dernière mesure valide AVANT debut_utc, ≤ 30j) pour
+        # amorcer le carry-forward des premiers créneaux.
+        seed_conds = [
+            Mesure.troncon_id.in_(axes_lookup),
+            Mesure.source == SourceMesure.google,
+            Mesure.aberrante.is_(False),
+            Mesure.horodatage >= debut_utc - timedelta(days=30),
+            Mesure.horodatage < debut_utc,
+        ]
+        if sous_troncon_id is not None:
+            seed_conds.append(Mesure.sous_troncon_id == sous_troncon_id)
+        else:
+            seed_conds.append(Mesure.sous_troncon_id.is_(None))
+        seed_rows = list(
+            db.execute(
+                select(
+                    Mesure.horodatage,
+                    Mesure.est_congestionne,
+                    Mesure.pourcentage_rouge,
+                    Mesure.pourcentage_orange,
+                )
+                .where(*seed_conds)
+                .order_by(Mesure.horodatage.desc())
+                .limit(1)
+            ).all()
+        )
+
+        # Indexation par (date_str, heure) → dernière mesure du créneau
+        cellules_par_creneau: dict[tuple[str, int], dict] = {}
         for horodatage, est_cong, pct_rouge, pct_orange in rows:
             h_local = (
                 horodatage.astimezone(fuseau)
@@ -546,12 +586,53 @@ def matrice_congestion(
                 continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour
-            dates_set.add(date_str)
-            par_date_heure.setdefault(date_str, {})[heure] = {
+            cellules_par_creneau[(date_str, heure)] = {
                 "est_congestionne": est_cong,
                 "pct_rouge": round(pct_rouge, 1) if pct_rouge is not None else None,
                 "pct_orange": round(pct_orange, 1) if pct_orange is not None else None,
             }
+
+        # Créneaux attendus dans la plage horaire DEESP
+        creneaux_attendus = [
+            (d, h) for (d, h) in _generer_creneaux_attendus(debut_utc, fin_utc, fuseau)
+            if heure_debut <= h < heure_fin
+        ]
+
+        # Seed initial (dernière valeur avant fenêtre)
+        derniere: dict | None = None
+        if seed_rows:
+            horo, est_cong, pct_rouge, pct_orange = seed_rows[0]
+            derniere = {
+                "est_congestionne": est_cong,
+                "pct_rouge": round(pct_rouge, 1) if pct_rouge is not None else None,
+                "pct_orange": round(pct_orange, 1) if pct_orange is not None else None,
+            }
+
+        # Passe forward carry-forward
+        cellules_completes: dict[tuple[str, int], dict | None] = {}
+        for cle in sorted(set(list(cellules_par_creneau.keys()) + creneaux_attendus)):
+            if cle in cellules_par_creneau:
+                derniere = cellules_par_creneau[cle]
+                cellules_completes[cle] = derniere
+            elif derniere is not None:
+                cellules_completes[cle] = derniere
+            else:
+                cellules_completes[cle] = None
+
+        # Passe backward pour combler les débuts sans seed
+        prochaine: dict | None = None
+        for cle in sorted(cellules_completes.keys(), reverse=True):
+            val = cellules_completes[cle]
+            if val is not None:
+                prochaine = val
+            elif prochaine is not None:
+                cellules_completes[cle] = prochaine
+
+        for (date_str, heure), cell in cellules_completes.items():
+            if cell is None:
+                continue
+            dates_set.add(date_str)
+            par_date_heure.setdefault(date_str, {})[heure] = cell
 
     dates_list = sorted(dates_set)
 
@@ -633,8 +714,14 @@ def matrice_temps(
                 "source": src_str,
             }
     else:
+        # Cross-axe pour un sous-tronçon spécifique.
+        if sous_troncon_id is not None:
+            axes_lookup = _resoudre_axes_equivalents(db, troncon_id, [sous_troncon_id])
+        else:
+            axes_lookup = {troncon_id}
+
         conds = [
-            Mesure.troncon_id == troncon_id,
+            Mesure.troncon_id.in_(axes_lookup),
             Mesure.duree_trafic_s.is_not(None),
             Mesure.aberrante.is_(False),
             Mesure.horodatage >= debut_utc,
@@ -657,6 +744,32 @@ def matrice_temps(
         )
         nb_rows_t = len(rows)
 
+        # Seed historique (≤ 30j avant debut_utc)
+        seed_conds = [
+            Mesure.troncon_id.in_(axes_lookup),
+            Mesure.duree_trafic_s.is_not(None),
+            Mesure.aberrante.is_(False),
+            Mesure.horodatage >= debut_utc - timedelta(days=30),
+            Mesure.horodatage < debut_utc,
+        ]
+        if sous_troncon_id is not None:
+            seed_conds.append(Mesure.sous_troncon_id == sous_troncon_id)
+        else:
+            seed_conds.append(Mesure.sous_troncon_id.is_(None))
+        seed_rows = list(
+            db.execute(
+                select(
+                    Mesure.horodatage,
+                    Mesure.duree_trafic_s,
+                    Mesure.source,
+                )
+                .where(*seed_conds)
+                .order_by(Mesure.horodatage.desc())
+                .limit(1)
+            ).all()
+        )
+
+        cellules_par_creneau: dict[tuple[str, int], dict] = {}
         for horodatage, duree_s, source in rows:
             h_local = (
                 horodatage.astimezone(fuseau)
@@ -667,11 +780,47 @@ def matrice_temps(
                 continue
             date_str = h_local.date().isoformat()
             heure = h_local.hour
-            dates_set.add(date_str)
-            par_date_heure.setdefault(date_str, {})[heure] = {
+            cellules_par_creneau[(date_str, heure)] = {
                 "duree_s": duree_s,
                 "source": source.value if hasattr(source, "value") else str(source),
             }
+
+        creneaux_attendus = [
+            (d, h) for (d, h) in _generer_creneaux_attendus(debut_utc, fin_utc, fuseau)
+            if heure_debut <= h < heure_fin
+        ]
+
+        derniere: dict | None = None
+        if seed_rows:
+            _horo, duree_s, source = seed_rows[0]
+            derniere = {
+                "duree_s": duree_s,
+                "source": source.value if hasattr(source, "value") else str(source),
+            }
+
+        cellules_completes: dict[tuple[str, int], dict | None] = {}
+        for cle in sorted(set(list(cellules_par_creneau.keys()) + creneaux_attendus)):
+            if cle in cellules_par_creneau:
+                derniere = cellules_par_creneau[cle]
+                cellules_completes[cle] = derniere
+            elif derniere is not None:
+                cellules_completes[cle] = derniere
+            else:
+                cellules_completes[cle] = None
+
+        prochaine: dict | None = None
+        for cle in sorted(cellules_completes.keys(), reverse=True):
+            val = cellules_completes[cle]
+            if val is not None:
+                prochaine = val
+            elif prochaine is not None:
+                cellules_completes[cle] = prochaine
+
+        for (date_str, heure), cell in cellules_completes.items():
+            if cell is None:
+                continue
+            dates_set.add(date_str)
+            par_date_heure.setdefault(date_str, {})[heure] = cell
 
     dates_list = sorted(dates_set)
 

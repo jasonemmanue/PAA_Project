@@ -14,14 +14,32 @@ Règles :
     donné, on réutilise sa dernière mesure valide connue. Cela évite que
     l'absence ponctuelle d'un seul sous (échec API) produise un créneau
     vide ou une somme tronquée au niveau axe.
+
+Extension 2026-07-24 — remplissage complet (cf. CLAUDE.md § 36) :
+  - CROSS-AXE : les mesures sont lues depuis TOUS les axes qui partagent
+    un même sous-tronçon dans le MÊME sens (calculer_sens_par_axe).
+    Un sous partagé cloné vers plusieurs axes voit ainsi sa donnée
+    disponible sur chaque axe, même si un cycle passé n'a pas cloné.
+  - SEED HISTORIQUE : la dernière mesure connue AVANT debut_utc est
+    injectée en amorçage → les premiers créneaux de la fenêtre reçoivent
+    un carry-forward même si aucune mesure directe ne les couvre.
+  - CRÉNEAUX ATTENDUS : tous les créneaux (date, heure) de la fenêtre
+    [debut_utc, min(fin_utc, now())] sont matérialisés → les heures sans
+    mesure directe reçoivent le carry-forward au lieu de disparaître.
+  - BACKWARD-FILL : deuxième passe qui comble les rares créneaux encore
+    vides en début de fenêtre à partir de la première mesure future.
+
+Résultat : aucune cellule vide dans les matrices Rapport DEESP dès qu'au
+moins une mesure existe pour un sous-tronçon (quel que soit son axe et
+son créneau).
 """
 
 from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -32,8 +50,10 @@ from app.models.models import (
     Mesure,
     SousTroncon,
     SourceMesure,
+    Troncon,
     axe_sous_troncons,
 )
+from app.sources.polyline import calculer_sens_par_axe
 
 
 logger = logging.getLogger("paa.aggregation")
@@ -90,6 +110,84 @@ def distance_ref_sous_troncons(db: Session, axe_id: int) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Cross-axe : axes équivalents dans le même sens
+# ---------------------------------------------------------------------------
+
+
+def _resoudre_axes_equivalents(
+    db: Session, axe_cible_id: int, sous_ids: list[int]
+) -> set[int]:
+    """Ensemble des axe_id qui traversent CES sous dans le MÊME sens que axe_cible.
+
+    Inclut toujours ``axe_cible_id``. Permet de puiser dans les mesures d'un
+    axe frère (M2M) quand un sous est partagé et parcouru dans la même
+    direction : la mesure faite pour l'axe A vaut aussi pour l'axe B si le
+    trafic les traverse dans le même sens.
+
+    Pour les axes de sens opposé, on ne partage PAS — le trafic peut être
+    très asymétrique (retour d'école, exports vs imports du port…).
+    """
+    axe_cible = db.get(Troncon, axe_cible_id)
+    if axe_cible is None or axe_cible.lat_origine is None:
+        return {axe_cible_id}
+
+    liens = list(
+        db.execute(
+            select(
+                axe_sous_troncons.c.axe_id,
+                axe_sous_troncons.c.sous_troncon_id,
+            ).where(axe_sous_troncons.c.sous_troncon_id.in_(sous_ids))
+        ).all()
+    )
+    if not liens:
+        return {axe_cible_id}
+
+    sous_map = {
+        s.id: s
+        for s in db.execute(
+            select(SousTroncon).where(SousTroncon.id.in_(sous_ids))
+        ).scalars()
+    }
+
+    axe_ids_candidats = {axe_id for axe_id, _sid in liens} | {axe_cible_id}
+    axes_map = {
+        t.id: t
+        for t in db.execute(
+            select(Troncon).where(Troncon.id.in_(axe_ids_candidats))
+        ).scalars()
+    }
+
+    equivalents: set[int] = {axe_cible_id}
+    for sid, sous in sous_map.items():
+        try:
+            sens_cible = calculer_sens_par_axe(
+                axe_cible.lat_origine, axe_cible.lon_origine,
+                sous.lat_debut, sous.lon_debut,
+                sous.lat_fin, sous.lon_fin,
+            )
+        except Exception:
+            continue
+        for axe_id, sid_row in liens:
+            if sid_row != sid or axe_id == axe_cible_id:
+                continue
+            axe_autre = axes_map.get(axe_id)
+            if axe_autre is None or axe_autre.lat_origine is None:
+                continue
+            try:
+                sens_autre = calculer_sens_par_axe(
+                    axe_autre.lat_origine, axe_autre.lon_origine,
+                    sous.lat_debut, sous.lon_debut,
+                    sous.lat_fin, sous.lon_fin,
+                )
+            except Exception:
+                continue
+            if sens_autre == sens_cible:
+                equivalents.add(axe_id)
+
+    return equivalents
+
+
+# ---------------------------------------------------------------------------
 # Mesure agrégée — dataclass compatible avec les attributs de Mesure
 # ---------------------------------------------------------------------------
 
@@ -110,7 +208,7 @@ class MesureAgregee:
 
 
 # ---------------------------------------------------------------------------
-# Agrégation principale
+# Chargement des mesures (cross-axe)
 # ---------------------------------------------------------------------------
 
 
@@ -124,9 +222,14 @@ def _charger_mesures_sous_troncons(
     source_google_only: bool = False,
     exclure_aberrantes: bool = True,
 ) -> list:
-    """Charge les mesures brutes des sous-tronçons d'un axe sur la fenêtre."""
+    """Charge les mesures des sous-tronçons d'un axe sur la fenêtre.
+
+    CROSS-AXE : lit aussi les mesures des axes qui partagent ces sous dans le
+    même sens. Un sous partagé bénéficie ainsi de la donnée de tout axe frère.
+    """
+    axes_equivalents = _resoudre_axes_equivalents(db, axe_id, sous_ids)
     conds = [
-        Mesure.troncon_id == axe_id,
+        Mesure.troncon_id.in_(axes_equivalents),
         Mesure.sous_troncon_id.in_(sous_ids),
         Mesure.duree_trafic_s.is_not(None),
         Mesure.horodatage >= debut_utc,
@@ -137,6 +240,82 @@ def _charger_mesures_sous_troncons(
     if exclure_aberrantes:
         conds.append(Mesure.aberrante.is_(False))
     return list(db.execute(select(Mesure).where(*conds)).scalars())
+
+
+def _charger_seed_historique(
+    db: Session,
+    axe_id: int,
+    sous_ids: list[int],
+    debut_utc: datetime,
+    *,
+    source_google_only: bool = False,
+    exclure_aberrantes: bool = True,
+    fenetre_historique_jours: int = 30,
+) -> dict[int, "Mesure"]:
+    """Pour chaque sous_id, retourne la DERNIÈRE mesure AVANT debut_utc.
+
+    Sert d'amorce pour le carry-forward : sans ça, un sous qui n'a aucune
+    mesure directe dans les 1ers créneaux de la fenêtre laisse des cellules
+    vides. Avec ça, il repart de sa dernière valeur connue avant la fenêtre.
+
+    On limite la recherche à ``fenetre_historique_jours`` en arrière pour
+    éviter d'utiliser une donnée obsolète (ex. mesure de 2 mois).
+    """
+    if not sous_ids:
+        return {}
+    axes_equivalents = _resoudre_axes_equivalents(db, axe_id, sous_ids)
+    borne_min = debut_utc - timedelta(days=fenetre_historique_jours)
+    conds = [
+        Mesure.troncon_id.in_(axes_equivalents),
+        Mesure.sous_troncon_id.in_(sous_ids),
+        Mesure.duree_trafic_s.is_not(None),
+        Mesure.horodatage >= borne_min,
+        Mesure.horodatage < debut_utc,
+    ]
+    if source_google_only:
+        conds.append(Mesure.source == SourceMesure.google)
+    if exclure_aberrantes:
+        conds.append(Mesure.aberrante.is_(False))
+    mesures = list(
+        db.execute(
+            select(Mesure).where(*conds).order_by(Mesure.horodatage)
+        ).scalars()
+    )
+    dernieres: dict[int, "Mesure"] = {}
+    for m in mesures:
+        dernieres[m.sous_troncon_id] = m  # ordre croissant → écrase par la plus récente
+    return dernieres
+
+
+# ---------------------------------------------------------------------------
+# Complétion des créneaux attendus + carry-forward bidirectionnel
+# ---------------------------------------------------------------------------
+
+
+def _generer_creneaux_attendus(
+    debut_utc: datetime, fin_utc: datetime, fuseau: ZoneInfo,
+) -> list[tuple[str, int]]:
+    """Liste tous les créneaux (date_iso, heure_locale) dans la fenêtre.
+
+    Borne haute cappée à ``now()`` pour ne pas générer de créneaux futurs.
+    """
+    now_utc = datetime.now(tz=timezone.utc)
+    fin_effective = min(fin_utc, now_utc)
+    if fin_effective < debut_utc:
+        return []
+
+    debut_local = debut_utc.astimezone(fuseau)
+    fin_local = fin_effective.astimezone(fuseau)
+    # On aligne debut sur l'heure pleine.
+    cur = debut_local.replace(minute=0, second=0, microsecond=0)
+    if cur < debut_local:
+        cur = cur + timedelta(hours=1)
+
+    creneaux: list[tuple[str, int]] = []
+    while cur <= fin_local:
+        creneaux.append((cur.date().isoformat(), cur.hour))
+        cur = cur + timedelta(hours=1)
+    return creneaux
 
 
 def _grouper_par_creneau(
@@ -164,32 +343,60 @@ def _grouper_par_creneau(
 def _completer_avec_carry_forward(
     par_creneau: dict[tuple[str, int], dict[int, "Mesure"]],
     sous_ids: list[int],
+    creneaux_attendus: list[tuple[str, int]],
+    seed_historique: dict[int, "Mesure"],
 ) -> dict[tuple[str, int], dict[int, "Mesure"]]:
-    """Comble les sous-tronçons manquants par carry-forward (dernière mesure connue).
+    """Comble les sous-tronçons manquants par carry-forward bidirectionnel.
 
-    Pour chaque créneau, si un sous-tronçon n'a pas de mesure, on réutilise
-    sa dernière mesure valide (créneau précédent, même jour ou jour précédent).
-    Cela évite que l'échec ponctuel d'un seul appel Google vide la cellule de
-    l'axe complet ou fausse la somme (somme partielle < somme réelle).
+    3 passes :
+      1. Injection des créneaux attendus manquants (dict vide) — garantit
+         qu'aucun créneau de la fenêtre n'est absent.
+      2. Passe forward avec seed historique : pour chaque créneau (ordre
+         chronologique), tout sous manquant reçoit la dernière mesure
+         valide connue (mesures antérieures dans la fenêtre OU seed).
+      3. Passe backward : comble les créneaux du DÉBUT où le forward n'a
+         rien pu injecter (aucun historique disponible), en piochant la
+         PREMIÈRE mesure future du sous.
+
+    Résultat : chaque créneau attendu contient l'ensemble complet des sous
+    dès qu'au moins une mesure existe pour chaque sous (ancienne ou future).
     """
+    sous_set = set(sous_ids)
+
+    # Passe 1 — injection des créneaux attendus manquants
+    for cle in creneaux_attendus:
+        par_creneau.setdefault(cle, {})
+
     if not par_creneau:
         return par_creneau
 
-    sous_set = set(sous_ids)
-    derniere_par_sous: dict[int, "Mesure"] = {}
+    # Passe 2 — forward carry-forward avec seed historique
+    derniere_par_sous: dict[int, "Mesure"] = dict(seed_historique)
     creneaux_tries = sorted(par_creneau.keys())
-
     for cle in creneaux_tries:
         mesures_du_creneau = par_creneau[cle]
-        # Mettre à jour le carry-forward avec les mesures réelles du créneau
         for sid, m in mesures_du_creneau.items():
             derniere_par_sous[sid] = m
-        # Compléter les sous-tronçons manquants
         for sid in sous_set:
             if sid not in mesures_du_creneau and sid in derniere_par_sous:
                 mesures_du_creneau[sid] = derniere_par_sous[sid]
 
+    # Passe 3 — backward-fill pour combler les premiers créneaux
+    prochaine_par_sous: dict[int, "Mesure"] = {}
+    for cle in reversed(creneaux_tries):
+        mesures_du_creneau = par_creneau[cle]
+        for sid, m in mesures_du_creneau.items():
+            prochaine_par_sous[sid] = m
+        for sid in sous_set:
+            if sid not in mesures_du_creneau and sid in prochaine_par_sous:
+                mesures_du_creneau[sid] = prochaine_par_sous[sid]
+
     return par_creneau
+
+
+# ---------------------------------------------------------------------------
+# Agrégation principale
+# ---------------------------------------------------------------------------
 
 
 def agreger_mesures_axe(
@@ -203,9 +410,8 @@ def agreger_mesures_axe(
 ) -> list[MesureAgregee]:
     """Agrège les mesures des sous-tronçons d'un axe par créneau (date, heure).
 
-    Les sous-tronçons manquants pour un créneau donné sont complétés par
-    carry-forward (dernière mesure connue) afin d'éviter les trous et les
-    sommes partielles au niveau axe.
+    Voir docstring du module : cross-axe + seed historique + créneaux
+    attendus + backward-fill garantissent l'absence de cellule vide.
 
     Retourne une liste de ``MesureAgregee`` triée par horodatage.
     """
@@ -226,15 +432,26 @@ def agreger_mesures_axe(
         source_google_only=source_google_only,
         exclure_aberrantes=exclure_aberrantes,
     )
-    if not mesures:
+
+    seed = _charger_seed_historique(
+        db, axe_id, sous_ids, debut_utc,
+        source_google_only=source_google_only,
+        exclure_aberrantes=exclure_aberrantes,
+    )
+
+    if not mesures and not seed:
         return []
 
     fuseau = ZoneInfo(get_settings().tz)
     par_creneau = _grouper_par_creneau(mesures, fuseau)
-    _completer_avec_carry_forward(par_creneau, sous_ids)
+    creneaux_attendus = _generer_creneaux_attendus(debut_utc, fin_utc, fuseau)
+    _completer_avec_carry_forward(par_creneau, sous_ids, creneaux_attendus, seed)
 
     resultats: list[MesureAgregee] = []
     for (date_str, heure), mesures_par_sous in sorted(par_creneau.items()):
+        if not mesures_par_sous:
+            continue  # créneau attendu mais aucune donnée disponible (jamais collectée)
+
         duree_totale = sum(
             m.duree_trafic_s for m in mesures_par_sous.values()
         )
@@ -270,12 +487,6 @@ def agreger_mesures_axe(
         horodatage = max(m.horodatage for m in mesures_par_sous.values())
         source_val = next(iter(mesures_par_sous.values())).source
 
-        # Nombre de mesures réelles (pas carry-forward) dans ce créneau
-        nb_reels = sum(
-            1 for sid, m in mesures_par_sous.items()
-            if m.sous_troncon_id == sid
-        )
-
         resultats.append(
             MesureAgregee(
                 horodatage=horodatage,
@@ -305,14 +516,17 @@ def agreger_durees_par_creneau(
     """Retourne (horodatage, duree_totale_s, source) par créneau — version légère.
 
     Utilisée par les fonctions de stats qui n'ont besoin que des durées.
-    Les sous-tronçons manquants sont complétés par carry-forward.
+    Bénéficie du même mécanisme complet (cross-axe + seed + créneaux
+    attendus + backward-fill) que ``agreger_mesures_axe``.
     """
     sous_ids = get_sous_ids_pour_axe(db, axe_id)
     if not sous_ids:
         return []
 
+    axes_equivalents = _resoudre_axes_equivalents(db, axe_id, sous_ids)
+
     conds = [
-        Mesure.troncon_id == axe_id,
+        Mesure.troncon_id.in_(axes_equivalents),
         Mesure.sous_troncon_id.in_(sous_ids),
         Mesure.duree_trafic_s.is_not(None),
         Mesure.aberrante.is_(False),
@@ -332,7 +546,34 @@ def agreger_durees_par_creneau(
             ).where(*conds)
         ).all()
     )
-    if not rows:
+
+    # Seed historique (dernière mesure de chaque sous AVANT debut_utc).
+    borne_min = debut_utc - timedelta(days=30)
+    conds_seed = [
+        Mesure.troncon_id.in_(axes_equivalents),
+        Mesure.sous_troncon_id.in_(sous_ids),
+        Mesure.duree_trafic_s.is_not(None),
+        Mesure.aberrante.is_(False),
+        Mesure.horodatage >= borne_min,
+        Mesure.horodatage < debut_utc,
+    ]
+    if source_google_only:
+        conds_seed.append(Mesure.source == SourceMesure.google)
+    rows_seed = list(
+        db.execute(
+            select(
+                Mesure.horodatage,
+                Mesure.duree_trafic_s,
+                Mesure.sous_troncon_id,
+                Mesure.source,
+            ).where(*conds_seed).order_by(Mesure.horodatage)
+        ).all()
+    )
+    seed_par_sous: dict[int, tuple] = {}
+    for horodatage, duree_s, sid, source in rows_seed:
+        seed_par_sous[sid] = (horodatage, duree_s, source)
+
+    if not rows and not seed_par_sous:
         return []
 
     fuseau = ZoneInfo(get_settings().tz)
@@ -349,9 +590,14 @@ def agreger_durees_par_creneau(
         if sid not in par_creneau[cle] or horodatage > par_creneau[cle][sid][0]:
             par_creneau[cle][sid] = (horodatage, duree_s, source)
 
-    # Carry-forward : combler les sous-tronçons manquants
-    derniere_par_sous: dict[int, tuple] = {}
-    for cle in sorted(par_creneau.keys()):
+    # Injection des créneaux attendus manquants
+    for cle in _generer_creneaux_attendus(debut_utc, fin_utc, fuseau):
+        par_creneau.setdefault(cle, {})
+
+    # Passe forward carry-forward avec seed
+    derniere_par_sous: dict[int, tuple] = dict(seed_par_sous)
+    creneaux_tries = sorted(par_creneau.keys())
+    for cle in creneaux_tries:
         subs = par_creneau[cle]
         for sid, val in subs.items():
             derniere_par_sous[sid] = val
@@ -359,8 +605,20 @@ def agreger_durees_par_creneau(
             if sid not in subs and sid in derniere_par_sous:
                 subs[sid] = derniere_par_sous[sid]
 
+    # Passe backward pour combler les premiers créneaux
+    prochaine_par_sous: dict[int, tuple] = {}
+    for cle in reversed(creneaux_tries):
+        subs = par_creneau[cle]
+        for sid, val in subs.items():
+            prochaine_par_sous[sid] = val
+        for sid in sous_set:
+            if sid not in subs and sid in prochaine_par_sous:
+                subs[sid] = prochaine_par_sous[sid]
+
     resultats = []
-    for (date_str, heure), subs in sorted(par_creneau.items()):
+    for (_date_str, _heure), subs in sorted(par_creneau.items()):
+        if not subs:
+            continue
         duree_totale = sum(t[1] for t in subs.values())
         horodatage = max(t[0] for t in subs.values())
         source_val = next(iter(subs.values()))[2]
@@ -381,14 +639,18 @@ def compter_mesures_brutes_axe(
     debut_utc: datetime,
     fin_utc: datetime,
 ) -> int:
-    """Compte les mesures brutes des sous-tronçons d'un axe sur une fenêtre."""
+    """Compte les mesures brutes des sous-tronçons d'un axe sur une fenêtre.
+
+    Prend en compte le cross-axe (mesures des axes frères même sens).
+    """
     from sqlalchemy import func as sqlfunc
     sous_ids = get_sous_ids_pour_axe(db, axe_id)
     if not sous_ids:
         return 0
+    axes_equivalents = _resoudre_axes_equivalents(db, axe_id, sous_ids)
     result = db.execute(
         select(sqlfunc.count()).select_from(Mesure).where(
-            Mesure.troncon_id == axe_id,
+            Mesure.troncon_id.in_(axes_equivalents),
             Mesure.sous_troncon_id.in_(sous_ids),
             Mesure.source == SourceMesure.google,
             Mesure.duree_trafic_s.is_not(None),
