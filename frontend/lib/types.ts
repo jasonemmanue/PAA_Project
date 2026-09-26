@@ -736,3 +736,62 @@ export interface StatsIncidents {
   nb_par_source: Record<string, number>;
   derniere_collecte: string | null;
 }
+
+/** Champs d'un incident saisi ou corrigé manuellement (POST / PATCH). */
+export interface IncidentSaisie {
+  titre: string;
+  resume?: string | null;
+  source_url?: string | null;
+  source_nom?: string;
+  horodatage_publication?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  lieu_extrait?: string | null;
+  troncon_id?: number | null;
+  type_incident?: string | null;
+  severite?: SeveriteIncident | null;
+  verifie?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Rapport DEESP officiel (.docx)
+// ---------------------------------------------------------------------------
+
+/** État de préparation d'une campagne : ce que le classeur Excel a apporté. */
+export interface EtatParametresRapport {
+  campagne: string;
+  importe: boolean;
+  nom_fichier: string | null;
+  nb_textes: number;
+  nb_valeurs_comparatif: number;
+  nb_donnees_directes: number;
+  nb_lignes_annexes: number;
+  sens_disponibles: string[];
+}
+
+/** Synthèse renvoyée par la mise à jour, avant génération du document. */
+export interface ResumeRafraichissementRapport {
+  campagne: string;
+  periode: string;
+  creneau: string;
+  nb_mesures: number;
+  nb_sens: number;
+  nb_axes: number;
+  nb_troncons_congestionnes: number;
+  temps_moyen_par_sens: Record<
+    string,
+    { jour_ouvrable: number | null; week_end: number | null }
+  >;
+  tendance_comparatif: "baisse" | "hausse" | "contrastee" | "indeterminee";
+  avertissements: string[];
+}
+
+export interface ReponseImportRapport {
+  campagne: string;
+  message: string;
+  avertissements: string[];
+  nb_textes: number;
+  nb_valeurs_comparatif: number;
+  nb_donnees_directes: number;
+  nb_lignes_annexes: number;
+}

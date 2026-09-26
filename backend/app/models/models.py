@@ -841,3 +841,46 @@ class TypesIncident(Base):
 
     def __repr__(self) -> str:
         return f"<TypesIncident {self.slug!r} actif={self.actif}>"
+
+
+# =============================================================================
+# Paramètres hors-application du Rapport DEESP (migration 0017)
+# =============================================================================
+
+
+class RapportParametres(Base):
+    """Données du Rapport DEESP qui ne proviennent pas de la collecte (migration 0017).
+
+    Le rapport officiel mélange deux familles de contenus :
+      - celles que l'application calcule (temps de traversée, congestion,
+        graphiques) — recalculées à chaque génération ;
+      - celles que seul un rédacteur connaît (chiffres macro-économiques de
+        l'introduction, constats terrain de la conclusion, campagne de
+        référence du tableau comparatif, relevés manuels des annexes,
+        signataires).
+
+    La seconde famille est saisie dans un classeur Excel téléchargé depuis la
+    page Rapport, puis ré-importé. Le contenu normalisé est persisté ici en
+    JSON, une ligne par campagne.
+    """
+
+    __tablename__ = "rapport_parametres"
+
+    __table_args__ = (
+        UniqueConstraint("campagne", name="uq_rapport_parametres_campagne"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Campagne au format 'AAAA-MM'
+    campagne: Mapped[str] = mapped_column(String(7), nullable=False)
+    # Contenu du classeur importé, normalisé
+    donnees: Mapped[dict] = mapped_column(
+        postgresql.JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    nom_fichier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    importe_le: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<RapportParametres campagne={self.campagne!r}>"

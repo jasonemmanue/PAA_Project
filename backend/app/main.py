@@ -41,6 +41,7 @@ from app.api.incidents import router as incidents_router
 from app.api.predire import router as predire_router
 from app.api.profils import router as profils_router
 from app.api.rapport import router as rapport_router
+from app.api.rapport_officiel import router as rapport_officiel_router
 from app.api.terrain import router as terrain_router
 from app.api.segments import router as segments_router
 from app.api.troncons import router as troncons_router
@@ -344,6 +345,7 @@ app.include_router(evolution_router)
 app.include_router(terrain_router)
 app.include_router(segments_router)
 app.include_router(rapport_router)
+app.include_router(rapport_officiel_router)
 app.include_router(predire_router)
 app.include_router(administration_router)
 app.include_router(incidents_router)

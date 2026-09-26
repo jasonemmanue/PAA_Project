@@ -12,16 +12,20 @@ import type {
   CalibrationResponse,
   CarteEtat,
   CollecteStatus,
+  EtatParametresRapport,
   EvolutionResponse,
   HeureOptimaleResponse,
   ImportGpxResponse,
   Incident,
+  IncidentSaisie,
   IncidentsPage,
   IndicateursPeriode,
   JourSemaine,
   Mesure,
   ProfilHoraire,
+  ReponseImportRapport,
   ResumePrediction,
+  ResumeRafraichissementRapport,
   ResumeSegments,
   SegmentImporte,
   SousTroncon,
@@ -497,6 +501,14 @@ export const api = {
   getIncidents,
   getStatsIncidents,
   getIncident,
+  creerIncident: postIncident,
+  majIncident: patchIncident,
+  supprimerIncident: deleteIncident,
+  rapportOfficielParametres: getParametresRapportOfficiel,
+  rapportOfficielModeleExcelUrl: urlModeleExcelRapport,
+  rapportOfficielImporterExcel: postImporterExcelRapport,
+  rapportOfficielRafraichir: postRafraichirRapportOfficiel,
+  rapportOfficielWordUrl: urlRapportOfficielWord,
 };
 
 // ---------------------------------------------------------------------------
@@ -682,4 +694,98 @@ export function getStatsIncidents(): Promise<StatsIncidents> {
 
 export function getIncident(id: number): Promise<Incident> {
   return appel<Incident>(`/incidents/${id}`);
+}
+
+/** Enregistre un incident constaté sur le terrain (hors scraping presse). */
+export function postIncident(payload: IncidentSaisie): Promise<Incident> {
+  return appel<Incident>("/incidents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Corrige un incident — classification, lieu, tronçon rattaché, vérification. */
+export function patchIncident(
+  id: number,
+  payload: Partial<IncidentSaisie>,
+): Promise<Incident> {
+  return appel<Incident>(`/incidents/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Supprime définitivement un incident (article hors sujet, doublon). */
+export async function deleteIncident(id: number): Promise<void> {
+  const url = `${baseUrl()}/incidents/${id}`;
+  const reponse = await fetch(url, { method: "DELETE" });
+  if (!reponse.ok) {
+    throw new ApiError(reponse.status, await reponse.text().catch(() => ""));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rapport DEESP officiel (.docx)
+// ---------------------------------------------------------------------------
+
+/** Paramètres de période et de créneau partagés par tous les appels du rapport. */
+export interface FiltreRapportOfficiel {
+  campagne: string;
+  debut?: string | null;
+  fin?: string | null;
+  heureDebut?: number;
+  heureFin?: number;
+}
+
+function parametresRapport(filtre: FiltreRapportOfficiel): URLSearchParams {
+  const p = new URLSearchParams({ campagne: filtre.campagne });
+  if (filtre.debut) p.set("debut", filtre.debut);
+  if (filtre.fin) p.set("fin", filtre.fin);
+  if (filtre.heureDebut !== undefined) p.set("heure_debut", String(filtre.heureDebut));
+  if (filtre.heureFin !== undefined) p.set("heure_fin", String(filtre.heureFin));
+  return p;
+}
+
+/** État de préparation : présence et contenu du classeur importé. */
+export function getParametresRapportOfficiel(
+  campagne: string,
+): Promise<EtatParametresRapport> {
+  return appel<EtatParametresRapport>(
+    `/rapport/officiel/parametres?campagne=${encodeURIComponent(campagne)}`,
+  );
+}
+
+/** URL du classeur Excel à compléter (téléchargement direct). */
+export function urlModeleExcelRapport(campagne: string): string {
+  return `${baseUrl()}/rapport/officiel/modele-excel?campagne=${encodeURIComponent(campagne)}`;
+}
+
+/** Dépose le classeur complété pour la campagne. */
+export async function postImporterExcelRapport(
+  campagne: string,
+  fichier: File,
+): Promise<ReponseImportRapport> {
+  const corps = new FormData();
+  corps.append("fichier", fichier);
+  return appel<ReponseImportRapport>(
+    `/rapport/officiel/importer-excel?campagne=${encodeURIComponent(campagne)}`,
+    { method: "POST", body: corps },
+  );
+}
+
+/** Recalcule les chiffres et les textes, sans générer le document. */
+export function postRafraichirRapportOfficiel(
+  filtre: FiltreRapportOfficiel,
+): Promise<ResumeRafraichissementRapport> {
+  return appel<ResumeRafraichissementRapport>(
+    `/rapport/officiel/rafraichir?${parametresRapport(filtre)}`,
+    { method: "POST" },
+  );
+}
+
+/** URL du document Word final (téléchargement direct). */
+export function urlRapportOfficielWord(filtre: FiltreRapportOfficiel): string {
+  return `${baseUrl()}/rapport/officiel/word?${parametresRapport(filtre)}`;
 }

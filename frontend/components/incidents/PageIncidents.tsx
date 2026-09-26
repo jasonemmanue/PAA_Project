@@ -17,7 +17,10 @@ import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import type { Incident, IncidentsPage, StatsIncidents, Troncon } from "@/lib/types";
 
+import { useAuth } from "@/contexts/AuthContext";
+
 import { FiltresIncidents, type FiltresEtat, type TypeIncidentApi } from "./FiltresIncidents";
+import { FormulaireIncident } from "./FormulaireIncident";
 import { GestionSources } from "./GestionSources";
 import { GestionTypes } from "./GestionTypes";
 import { ListeIncidents } from "./ListeIncidents";
@@ -47,6 +50,11 @@ function filtrerParPeriode(incidents: Incident[], periode: FiltresEtat["periode"
 
 export function PageIncidents() {
   const { t } = useI18n();
+  const { peutEcrire } = useAuth();
+
+  // Édition manuelle : `null` = fermé, `{ incident: null }` = création.
+  const [edition, setEdition] = useState<{ incident: Incident | null } | null>(null);
+  const [suppressionEnCours, setSuppressionEnCours] = useState<number | null>(null);
 
   const [troncons, setTroncons]   = useState<Troncon[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -89,6 +97,23 @@ export function PageIncidents() {
       setErreur(e instanceof Error ? e.message : String(e));
     } finally {
       setChargement(false);
+    }
+  }
+
+  async function supprimerIncident(incident: Incident) {
+    const confirme = window.confirm(
+      `Supprimer définitivement « ${incident.titre} » ?\n\n` +
+        "L'incident sera retiré de la liste, des cartes et des exports.",
+    );
+    if (!confirme) return;
+    setSuppressionEnCours(incident.id);
+    try {
+      await api.supprimerIncident(incident.id);
+      await charger();
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSuppressionEnCours(null);
     }
   }
 
@@ -268,11 +293,42 @@ export function PageIncidents() {
 
       {/* Liste chronologique */}
       <div className="paa-card p-4">
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-          {incidentsFiltres.length} {t("incidents.incidentsRecenses")}
-        </h2>
-        <ListeIncidents incidents={incidentsFiltres} />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            {incidentsFiltres.length} {t("incidents.incidentsRecenses")}
+          </h2>
+          {peutEcrire && (
+            <button
+              type="button"
+              onClick={() => setEdition({ incident: null })}
+              className="rounded-md bg-paa-navy-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-paa-navy-800"
+            >
+              ＋ Nouvel incident
+            </button>
+          )}
+        </div>
+        <ListeIncidents
+          incidents={incidentsFiltres}
+          peutEcrire={peutEcrire}
+          onModifier={(inc) => setEdition({ incident: inc })}
+          onSupprimer={supprimerIncident}
+        />
+        {suppressionEnCours !== null && (
+          <p className="pt-2 text-xs text-gray-500 dark:text-gray-400">
+            Suppression en cours…
+          </p>
+        )}
       </div>
+
+      {edition && (
+        <FormulaireIncident
+          incident={edition.incident}
+          types={typesIncidents}
+          troncons={troncons}
+          onFerme={() => setEdition(null)}
+          onEnregistre={charger}
+        />
+      )}
     </div>
   );
 }

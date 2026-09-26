@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { BarreRapportOfficiel } from "@/components/rapport/BarreRapportOfficiel";
 import { MatriceCongestion } from "@/components/rapport/MatriceCongestion";
 import { MatriceTemps } from "@/components/rapport/MatriceTemps";
 import { TableauTempsTheoriques } from "@/components/rapport/TableauTempsTheoriques";
@@ -84,6 +85,10 @@ export function PageRapport() {
   const [tempsSousId, setTempsSousId] = useState<number | null>(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
+  // Créneau propre au rapport officiel : le protocole DEESP impose 07h-19h,
+  // alors que le filtre global de l'application peut couvrir 24h/24.
+  const [rapportHeureDebut, setRapportHeureDebut] = useState(7);
+  const [rapportHeureFin, setRapportHeureFin] = useState(19);
 
   const recharger = useCallback(async () => {
     setChargement(true);
@@ -111,30 +116,6 @@ export function PageRapport() {
     recharger();
   }, [recharger]);
 
-  const [exportEnCours, setExportEnCours] = useState(false);
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8081";
-
-  async function exporterWord() {
-    setExportEnCours(true);
-    try {
-      const url = `${API_BASE}/rapport/export/word?campagne=${campagne}&debut=${debutRange}&fin=${finRange}&heure_debut=${heureDebut}&heure_fin=${heureFin}`;
-      const rep = await fetch(url);
-      if (!rep.ok) throw new Error(`HTTP ${rep.status}`);
-      const blob = await rep.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `rapport_deesp_${campagne}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(a.href);
-    } catch (e) {
-      alert(`Échec de l'export Word : ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setExportEnCours(false);
-    }
-  }
-
   return (
     <div className="flex flex-col gap-fluid-4">
       <PageHeader
@@ -142,20 +123,20 @@ export function PageRapport() {
         sousTitre="Reproduit la structure officielle du rapport DEESP/DEEF (17 tableaux, 12 graphiques)"
       />
 
-      {/* Bouton d'export Word — page complète en temps réel */}
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={exporterWord}
-          disabled={exportEnCours || chargement}
-          className="inline-flex items-center gap-2 rounded-md bg-paa-blue-500 px-4 py-2
-                     text-fluid-sm font-semibold text-white shadow-paa-sm
-                     hover:bg-paa-blue-600 transition-colors
-                     disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {exportEnCours ? "Génération du document…" : "📄 Télécharger en Word (.docx)"}
-        </button>
-      </div>
+      {/* Préparation et génération du document officiel */}
+      <BarreRapportOfficiel
+        campagne={campagne}
+        debut={debutRange}
+        fin={finRange}
+        heureDebut={rapportHeureDebut}
+        heureFin={rapportHeureFin}
+        onPeriodeChange={(d, f, hd, hf) => {
+          setDebutRange(d);
+          setFinRange(f);
+          setRapportHeureDebut(hd);
+          setRapportHeureFin(hf);
+        }}
+      />
 
       {/* Sélecteur de campagne + plage de dates */}
       <div className="paa-card flex flex-col gap-4 p-fluid-4">

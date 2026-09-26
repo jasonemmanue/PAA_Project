@@ -1,12 +1,15 @@
 """Router FastAPI pour les incidents de circulation (P8).
 
 Endpoints :
-  GET  /incidents               — liste paginée avec filtres
-  GET  /incidents/stats         — KPI globaux (compteurs + dernière collecte)
-  GET  /incidents/export        — export CSV (P8.5)
-  GET  /incidents/{id}          — détail d'un incident
-  POST /incidents/scraper-now   — déclenchement manuel scraping RSS + HTML
-  POST /incidents/enrichir      — déclenchement manuel NLP + géocodage (P8.2)
+  GET    /incidents             — liste paginée avec filtres
+  GET    /incidents/stats       — KPI globaux (compteurs + dernière collecte)
+  GET    /incidents/export      — export CSV (P8.5)
+  GET    /incidents/{id}        — détail d'un incident
+  POST   /incidents             — création manuelle (constat terrain)
+  PATCH  /incidents/{id}        — correction d'un incident
+  DELETE /incidents/{id}        — suppression définitive
+  POST   /incidents/scraper-now — déclenchement manuel scraping RSS + HTML
+  POST   /incidents/enrichir    — déclenchement manuel NLP + géocodage (P8.2)
 
 Tag Swagger : "incidents"
 """
@@ -717,3 +720,241 @@ def get_incident(
             detail=f"Incident {incident_id} introuvable.",
         )
     return _incident_to_out(inc)
+
+
+# ---------------------------------------------------------------------------
+# CRUD manuel des incidents
+#
+# Le scraping alimente la table automatiquement, mais un opérateur du port
+# doit pouvoir saisir un incident constaté sur le terrain (avant toute reprise
+# par la presse), corriger une classification erronée ou retirer un article
+# hors sujet que les filtres ont laissé passer.
+# ---------------------------------------------------------------------------
+
+
+class IncidentCreation(BaseModel):
+    """Incident saisi manuellement depuis l'interface."""
+
+    titre: str = Field(..., min_length=3, max_length=500)
+    resume: str | None = Field(None, max_length=5000)
+    source_url: str | None = Field(
+        None,
+        max_length=2000,
+        description=(
+            "Lien vers l'article d'origine. Laissé vide pour un constat terrain : "
+            "une référence interne unique est alors générée."
+        ),
+    )
+    source_nom: str = Field("saisie_manuelle", max_length=50)
+    horodatage_publication: datetime | None = Field(
+        None, description="Date de l'incident (UTC). Par défaut : maintenant."
+    )
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
+    lieu_extrait: str | None = Field(None, max_length=200)
+    troncon_id: int | None = None
+    type_incident: str | None = Field(None, max_length=50)
+    severite: str | None = Field(None, description="mineur | moyen | grave | inconnu")
+    verifie: bool = False
+
+
+class IncidentModification(BaseModel):
+    """Champs modifiables d'un incident — tous optionnels (PATCH partiel)."""
+
+    titre: str | None = Field(None, min_length=3, max_length=500)
+    resume: str | None = Field(None, max_length=5000)
+    source_url: str | None = Field(None, max_length=2000)
+    source_nom: str | None = Field(None, max_length=50)
+    horodatage_publication: datetime | None = None
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
+    lieu_extrait: str | None = Field(None, max_length=200)
+    troncon_id: int | None = None
+    type_incident: str | None = Field(None, max_length=50)
+    severite: str | None = None
+    verifie: bool | None = None
+    fiabilite_source: float | None = Field(None, ge=0, le=1)
+
+
+_SEVERITES_VALIDES = {"mineur", "moyen", "grave", "inconnu"}
+
+
+def _valider_severite(valeur: str | None) -> str | None:
+    if valeur is None:
+        return None
+    if valeur not in _SEVERITES_VALIDES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Sévérité invalide. Valeurs acceptées : "
+                + ", ".join(sorted(_SEVERITES_VALIDES))
+            ),
+        )
+    return valeur
+
+
+def _valider_type(valeur: str | None, db: Session) -> str | None:
+    """Vérifie que le slug existe dans la table des types configurables."""
+    if valeur is None:
+        return None
+    existe = db.execute(
+        select(TypesIncident.slug).where(TypesIncident.slug == valeur)
+    ).scalar_one_or_none()
+    if existe is None:
+        connus = db.execute(select(TypesIncident.slug)).scalars().all()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Type d'incident inconnu : {valeur!r}. "
+                f"Types disponibles : {', '.join(sorted(connus)) or 'aucun'}."
+            ),
+        )
+    return valeur
+
+
+def _valider_troncon(troncon_id: int | None, db: Session) -> int | None:
+    if troncon_id is None:
+        return None
+    if db.get(Troncon, troncon_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Tronçon {troncon_id} introuvable.",
+        )
+    return troncon_id
+
+
+@router.post(
+    "",
+    summary="Créer un incident manuellement",
+    description=(
+        "Enregistre un incident constaté sur le terrain ou signalé hors presse. "
+        "Sans URL source, une référence interne unique est générée pour "
+        "respecter la contrainte d'unicité qui sert à la déduplication du "
+        "scraping."
+    ),
+    response_model=IncidentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def creer_incident(
+    payload: IncidentCreation,
+    db: Session = Depends(get_db),
+) -> IncidentOut:
+    maintenant = datetime.now(timezone.utc)
+    source_url = (payload.source_url or "").strip()
+    if not source_url:
+        # Référence interne : unique et reconnaissable dans les exports.
+        source_url = f"interne://fluidis/incident/{maintenant.timestamp():.6f}"
+
+    doublon = db.execute(
+        select(Incident).where(Incident.source_url == source_url)
+    ).scalar_one_or_none()
+    if doublon is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Un incident portant cette URL source existe déjà "
+                f"(id={doublon.id})."
+            ),
+        )
+
+    incident = Incident(
+        titre=payload.titre.strip(),
+        resume=(payload.resume or "").strip() or None,
+        source_url=source_url,
+        source_nom=payload.source_nom.strip() or "saisie_manuelle",
+        horodatage_publication=payload.horodatage_publication or maintenant,
+        horodatage_collecte=maintenant,
+        lat=payload.lat,
+        lon=payload.lon,
+        lieu_extrait=payload.lieu_extrait,
+        troncon_id=_valider_troncon(payload.troncon_id, db),
+        type_incident=_valider_type(payload.type_incident, db),
+        severite=_valider_severite(payload.severite),
+        verifie=payload.verifie,
+        # Une saisie humaine est considérée comme fiable : elle provient d'un
+        # agent du port, pas d'un article filtré automatiquement.
+        fiabilite_source=1.0,
+    )
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+    logger.info("Incident créé manuellement id=%s titre=%r", incident.id, incident.titre)
+    return _incident_to_out(incident)
+
+
+@router.patch(
+    "/{incident_id:int}",
+    summary="Modifier un incident",
+    description=(
+        "Met à jour les champs fournis. Sert notamment à corriger une "
+        "classification automatique erronée (type, sévérité, tronçon rattaché) "
+        "ou à marquer un incident comme vérifié."
+    ),
+    response_model=IncidentOut,
+)
+def modifier_incident(
+    incident_id: int,
+    payload: IncidentModification,
+    db: Session = Depends(get_db),
+) -> IncidentOut:
+    incident = db.get(Incident, incident_id)
+    if incident is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Incident {incident_id} introuvable.",
+        )
+
+    champs = payload.model_dump(exclude_unset=True)
+    if "type_incident" in champs:
+        champs["type_incident"] = _valider_type(champs["type_incident"], db)
+    if "severite" in champs:
+        champs["severite"] = _valider_severite(champs["severite"])
+    if "troncon_id" in champs:
+        champs["troncon_id"] = _valider_troncon(champs["troncon_id"], db)
+    if "source_url" in champs and champs["source_url"]:
+        conflit = db.execute(
+            select(Incident).where(
+                Incident.source_url == champs["source_url"],
+                Incident.id != incident_id,
+            )
+        ).scalar_one_or_none()
+        if conflit is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cette URL source est déjà utilisée par l'incident {conflit.id}.",
+            )
+
+    for nom, valeur in champs.items():
+        setattr(incident, nom, valeur)
+    db.commit()
+    db.refresh(incident)
+    logger.info("Incident %s modifié — champs=%s", incident_id, sorted(champs))
+    return _incident_to_out(incident)
+
+
+@router.delete(
+    "/{incident_id:int}",
+    summary="Supprimer un incident",
+    description=(
+        "Suppression définitive. Contrairement aux tronçons, dont l'historique "
+        "de mesures impose une suppression logique, un incident est une "
+        "référence bibliographique sans donnée dépendante : le retirer ne crée "
+        "aucun trou dans les séries."
+    ),
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def supprimer_incident(
+    incident_id: int,
+    db: Session = Depends(get_db),
+) -> Response:
+    incident = db.get(Incident, incident_id)
+    if incident is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Incident {incident_id} introuvable.",
+        )
+    titre = incident.titre
+    db.delete(incident)
+    db.commit()
+    logger.info("Incident %s supprimé — titre=%r", incident_id, titre)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -113,9 +113,18 @@ function PanneauDetail({ incident: inc, onClose }: PanneauProps) {
 
 interface Props {
   incidents: Incident[];
+  /** Affiche les actions de correction et de suppression. */
+  peutEcrire?: boolean;
+  onModifier?: (incident: Incident) => void;
+  onSupprimer?: (incident: Incident) => void;
 }
 
-export function ListeIncidents({ incidents }: Props) {
+export function ListeIncidents({
+  incidents,
+  peutEcrire = false,
+  onModifier,
+  onSupprimer,
+}: Props) {
   const { t } = useI18n();
   const [page, setPage] = useState(0);
   const [selectionne, setSelectionne] = useState<Incident | null>(null);
@@ -149,34 +158,61 @@ export function ListeIncidents({ incidents }: Props) {
 
       <div className="divide-y divide-gray-100 dark:divide-gray-700">
         {page_incidents.map((inc) => (
-          <button
+          <div
             key={inc.id}
-            onClick={() => setSelectionne(inc)}
-            className="w-full text-left py-3 px-1 flex items-start gap-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-lg transition-colors"
+            className="flex items-start gap-3 rounded-lg py-3 px-1 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
           >
-            {/* Badge type */}
-            <span
-              className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium mt-0.5 ${couleurBadge(inc.type_incident)}`}
+            <button
+              onClick={() => setSelectionne(inc)}
+              className="flex flex-1 min-w-0 items-start gap-3 text-left"
             >
-              {typeLibelle[inc.type_incident ?? ""] ?? inc.type_incident ?? "—"}
-            </span>
+              {/* Badge type */}
+              <span
+                className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium mt-0.5 ${couleurBadge(inc.type_incident)}`}
+              >
+                {typeLibelle[inc.type_incident ?? ""] ?? inc.type_incident ?? "—"}
+              </span>
 
-            {/* Contenu */}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                {inc.titre}
-                {inc.actif && (
-                  <span className="ml-2 text-xs bg-red-500 text-white px-1.5 py-0.5 rounded animate-pulse">
-                    ACTIF
-                  </span>
-                )}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                {inc.source_nom} · {ageRelatif(inc.horodatage_publication)}
-                {inc.lieu_extrait ? ` · 📍 ${inc.lieu_extrait}` : ""}
-              </p>
-            </div>
-          </button>
+              {/* Contenu */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                  {inc.titre}
+                  {inc.actif && (
+                    <span className="ml-2 text-xs bg-red-500 text-white px-1.5 py-0.5 rounded animate-pulse">
+                      ACTIF
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {inc.source_nom} · {ageRelatif(inc.horodatage_publication)}
+                  {inc.lieu_extrait ? ` · 📍 ${inc.lieu_extrait}` : ""}
+                </p>
+              </div>
+            </button>
+
+            {peutEcrire && (
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onModifier?.(inc)}
+                  title="Corriger cet incident"
+                  aria-label={`Corriger : ${inc.titre}`}
+                  className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-paa-blue-600 dark:hover:bg-gray-700"
+                >
+                  ✏️
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSupprimer?.(inc)}
+                  title="Supprimer cet incident"
+                  aria-label={`Supprimer : ${inc.titre}`}
+                  className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"
+                >
+                  🗑
+                </button>
+              </div>
+            )}
+          </div>
         ))}
       </div>
 
