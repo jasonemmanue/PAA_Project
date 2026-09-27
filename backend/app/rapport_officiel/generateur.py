@@ -32,6 +32,7 @@ from __future__ import annotations
 import copy
 import io
 import logging
+import re
 import zipfile
 from datetime import date
 from pathlib import Path
@@ -360,6 +361,20 @@ def _fixer_largeurs(tableau: Table, largeurs_cm: list[float]) -> None:
             cellule.width = dimension
 
 
+def _repeter_entete(tableau: Table, nb_lignes: int = 1) -> None:
+    """Répète la ou les lignes d'en-tête en haut de chaque page.
+
+    Les tableaux générés dépendent du volume de mesures : celui des zones
+    congestionnées peut dépasser la page. Sans cette répétition, les colonnes
+    des pages suivantes ne sont plus identifiables.
+    """
+    for ligne in tableau.rows[:nb_lignes]:
+        proprietes = ligne._tr.get_or_add_trPr()
+        entete = OxmlElement("w:tblHeader")
+        entete.set(qn("w:val"), "true")
+        proprietes.append(entete)
+
+
 def _fusionner(tableau: Table, ligne: int, col_debut: int, col_fin: int):
     cellule = tableau.cell(ligne, col_debut)
     if col_fin > col_debut:
@@ -650,7 +665,7 @@ def _maj_tableau_1(document: Document, contexte: mod_donnees.ContexteRapport) ->
             _cloner_derniere_ligne(tableau)
         ligne = index + 1
         ecrire_cellule(
-            tableau.cell(ligne, 0), theorique.axe, gras=True, taille=10,
+            tableau.cell(ligne, 0), _court(theorique.axe), gras=True, taille=10,
             couleur=BLANC, centre=False,
         )
         ecrire_cellule(
@@ -748,7 +763,7 @@ def _maj_tableaux_synthese(
             if ligne_valeurs >= len(tableau.rows):
                 break
             cellule = _fusionner(tableau, ligne_libelle, 1, 2)
-            ecrire_cellule(cellule, sens.libelle, italique=True, taille=11)
+            ecrire_cellule(cellule, _court(sens.libelle), italique=True, taille=11)
             ecrire_cellule(
                 tableau.cell(ligne_valeurs, 1),
                 _mn(contexte.valeur(sens.libelle, agregat, "jour_ouvrable")),
@@ -779,12 +794,19 @@ def _agregat_du_tableau(tableau: Table) -> str:
 def _sens_de_l_axe_du_tableau(
     tableau: Table, contexte: mod_donnees.ContexteRapport
 ) -> list[mod_donnees.SensCirculation]:
-    """Retrouve l'axe d'un tableau à deux sens d'après son contenu d'origine."""
-    texte = " ".join(c.text for ligne in tableau.rows for c in ligne.cells)
+    """Retrouve l'axe d'un tableau à deux sens d'après son contenu d'origine.
+
+    Sans cette résolution, tous les tableaux par axe (Tableaux 5, 6, 13, 14)
+    retomberaient sur le premier axe et publieraient ses valeurs.
+    """
+    texte = " ".join(c.text for ligne in tableau.rows for c in ligne.cells).lower()
     for axe in contexte.axes:
-        origine = axe.split(" - ")[0].strip()
-        if origine and origine.lower() in texte.lower():
+        origine = _origine_axe(axe).lower()
+        if origine and origine in texte:
             return [s for s in contexte.sens_circulation if s.axe == axe]
+    logger.warning(
+        "Axe non identifié pour un tableau à deux sens — premier axe utilisé.",
+    )
     return contexte.sens_circulation[:2]
 
 
@@ -804,9 +826,28 @@ def _sens_axe(
     return aller, retour
 
 
+def _court(libelle: str) -> str:
+    """Retire les qualificatifs de commune d'un libellé d'axe ou de sens.
+
+    La base nomme les tronçons « CARENA (Plateau) → Pharmacie Palm Beach ».
+    Le rapport publié écrit « CARENA - Pharmacie Palm Beach ». La forme courte
+    est reprise partout dans le document : elle est conforme au modèle et
+    évite d'écraser les colonnes des tableaux comparatifs, qui en comptent
+    jusqu'à quatorze.
+    """
+    return re.sub(r"\s*\([^)]*\)", "", libelle).strip()
+
+
 def _origine_axe(axe: str) -> str:
-    """Première extrémité d'un axe — sert d'ancre textuelle courte et stable."""
-    return axe.split(" - ")[0].strip()
+    """Première extrémité d'un axe, sans qualificatif de commune.
+
+    Les tronçons portent en base un libellé enrichi — « CARENA (Plateau) »,
+    « Toyota CFAO (Treichville) », « Agence SODECI (Zone 4) » — alors que le
+    rapport de référence écrit simplement « CARENA ». Le qualificatif entre
+    parenthèses est donc retiré pour que l'ancre textuelle retrouve bien le
+    paragraphe du modèle.
+    """
+    return _court(axe.split(" - ")[0])
 
 
 def _maj_commentaires_axes(
@@ -849,7 +890,7 @@ def _phrase_commentaire(
     retour_we = _mn(contexte.valeur(retour.libelle, agregat, "week_end"))
     return (
         f"Après avoir observé sur la période concernée les différents temps de "
-        f"traversée de l’axe « {axe} » dans les deux sens, il ressort que les temps "
+        f"traversée de l’axe « {_court(axe)} » dans les deux sens, il ressort que les temps "
         f"{qualificatif} évalués pour les jours ouvrables et les week-ends sont "
         f"respectivement de {aller_jo} Mn et de {aller_we} Mn dans le sens "
         f"« aller » ; dans le sens « retour », ces temps sont respectivement de "
@@ -1135,7 +1176,7 @@ def _maj_observations_temps_moyen(
         ponctuation = "." if index == len(contexte.axes) - 1 else " ;"
         remplacer_texte(
             puces[index],
-            f"l’axe {axe} est de {valeur_aller} minutes dans le sens « aller » contre "
+            f"l’axe {_court(axe)} est de {valeur_aller} minutes dans le sens « aller » contre "
             f"{valeur_retour} minutes dans le sens « retour » en {campagne}{ponctuation}",
         )
 
@@ -1189,8 +1230,23 @@ def _maj_phrase_comparatif(
             ecarts.append(courant - precedent)
 
     if not ecarts:
-        tendance = "ne peut pas être comparé faute de campagne de référence renseignée"
-    elif all(e < 0 for e in ecarts):
+        # Sans campagne de référence, la comparaison n'a pas de sens : on
+        # annonce simplement les valeurs de la campagne courante.
+        max_courant = max(
+            (v for (_l, a, _t), v in contexte.temps.items() if a == "max" and v is not None),
+            default=None,
+        )
+        phrase = (
+            f"Aucune campagne de référence n’est renseignée pour {campagne} : la "
+            f"comparaison du temps moyen de traversée sera disponible dès qu’une "
+            f"campagne antérieure aura été saisie dans le classeur."
+        )
+        if max_courant is not None:
+            phrase += f" Sur la période analysée, le temps maximal observé est de {max_courant} mn."
+        remplacer_texte(cible, phrase)
+        return
+
+    if all(e < 0 for e in ecarts):
         tendance = "est en baisse principalement dans le sens « retour » les jours ouvrables peu importe l’axe"
     elif all(e > 0 for e in ecarts):
         tendance = "est en hausse principalement dans le sens « retour » les jours ouvrables peu importe l’axe"
@@ -1437,10 +1493,12 @@ def _construire_tableau_2(
         )
         return
     tableau = inserer_tableau(document, ancre, len(lignes) + 1, 3)
+    _fixer_largeurs(tableau, [5.0, 8.5, 2.5])
+    _repeter_entete(tableau)
     _entete(tableau, 0, ["AXE", "TRONÇON", "CODE"], NAVY)
     axe_precedent = None
     for index, (axe, nom, code) in enumerate(lignes, start=1):
-        libelle_axe = "" if axe == axe_precedent else axe
+        libelle_axe = "" if axe == axe_precedent else _court(axe)
         axe_precedent = axe
         ecrire_cellule(tableau.cell(index, 0), libelle_axe, gras=True, taille=9, centre=False)
         ecrire_cellule(tableau.cell(index, 1), nom, taille=9, centre=False)
@@ -1465,6 +1523,8 @@ def _construire_tableau_3(
         )
         return
     tableau = inserer_tableau(document, ancre, len(entrees) + 1, 4)
+    _fixer_largeurs(tableau, [3.2, 2.3, 4.0, 6.5])
+    _repeter_entete(tableau)
     _entete(
         tableau, 0,
         [f"HEURE ({contexte.heure_debut:02d}H-{contexte.heure_fin:02d}H)",
@@ -1506,19 +1566,21 @@ def _construire_tableau_moyen(
         (s for s in contexte.sens_circulation if s.axe == axe and s.sens == "retour"), None
     )
     if not lignes or aller is None or retour is None:
-        remplacer_texte(ancre, f"Aucune mesure disponible pour l’axe « {axe} ».")
+        remplacer_texte(ancre, f"Aucune mesure disponible pour l’axe « {_court(axe)} ».")
         return
 
     tableau = inserer_tableau(document, ancre, len(lignes) + 4, 5)
+    _fixer_largeurs(tableau, [3.6, 3.1, 3.1, 3.1, 3.1])
+    _repeter_entete(tableau, nb_lignes=2)
 
     # Deux lignes d'en-tête : le sens, puis le type de jour.
     ecrire_cellule(tableau.cell(0, 0), "AXES / JOURS", gras=True, taille=9, couleur=BLANC)
     ombrer(tableau.cell(0, 0), NAVY)
     cellule_aller = _fusionner(tableau, 0, 1, 2)
-    ecrire_cellule(cellule_aller, aller.libelle, gras=True, taille=9, couleur=BLANC)
+    ecrire_cellule(cellule_aller, _court(aller.libelle), gras=True, taille=9, couleur=BLANC)
     ombrer(cellule_aller, BLEU_MOYEN)
     cellule_retour = _fusionner(tableau, 0, 3, 4)
-    ecrire_cellule(cellule_retour, retour.libelle, gras=True, taille=9, couleur=BLANC)
+    ecrire_cellule(cellule_retour, _court(retour.libelle), gras=True, taille=9, couleur=BLANC)
     ombrer(cellule_retour, BLEU_MOYEN)
 
     ecrire_cellule(tableau.cell(1, 0), "", taille=9)
@@ -1635,7 +1697,7 @@ def _commentaire_temps_moyen(
     retour_we = _mn(contexte.valeur(retour.libelle, "moyen", "week_end"))
     return (
         f"Au regard du {numero.lower()}, il ressort que le temps moyen de traversée de "
-        f"l’axe « {axe} » pour les jours ouvrables est de {aller_jo} Mn contre "
+        f"l’axe « {_court(axe)} » pour les jours ouvrables est de {aller_jo} Mn contre "
         f"{retour_jo} Mn dans le sens « retour ». Pour ce qui est des week-ends, ce "
         f"temps est de {aller_we} Mn en « aller » et de {retour_we} Mn « au retour »."
     )
@@ -1665,6 +1727,8 @@ def _construire_tableau_16(
 
     lignes.sort(key=lambda ligne: ligne[0])
     tableau = inserer_tableau(document, ancre, len(lignes) + 1, 5)
+    _fixer_largeurs(tableau, [2.4, 3.2, 3.2, 3.6, 3.6])
+    _repeter_entete(tableau)
     _entete(
         tableau, 0,
         ["TRONCON", "SENS DE CIRCULATION", "NOMBRE DE TRANCHE HORAIRE",
@@ -1717,7 +1781,7 @@ def _construire_tableau_17(
     ombrer(cellule_vide, GRIS_CLAIR)
     for decalage, sens in enumerate(allers + retours):
         colonne = 2 + decalage
-        ecrire_cellule(tableau.cell(1, colonne), sens.libelle, gras=True, taille=8)
+        ecrire_cellule(tableau.cell(1, colonne), _court(sens.libelle), gras=True, taille=8)
         ombrer(tableau.cell(1, colonne), GRIS_CLAIR)
 
     rubriques = (
@@ -1776,7 +1840,7 @@ def _construire_tableau_19(
     for index, sens in enumerate(sens_liste):
         gauche = 2 + index * 2
         cellule = _fusionner(tableau, 0, gauche, gauche + 1)
-        ecrire_cellule(cellule, sens.libelle, gras=True, taille=7, couleur=BLANC)
+        ecrire_cellule(cellule, _court(sens.libelle), gras=True, taille=7, couleur=BLANC)
         ombrer(cellule, BLEU_MOYEN)
 
     cellule_vide = _fusionner(tableau, 1, 0, 1)
