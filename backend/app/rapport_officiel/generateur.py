@@ -82,9 +82,12 @@ BALISE_EXTENT = f"{{{NS_WP}}}extent"
 # Un objet d'épaisseur nulle est un filet de séparation.
 HAUTEUR_MAX_CONTENU_EMU = int(20 * 360000)   # 20 cm
 HAUTEUR_MIN_CONTENU_EMU = int(0.3 * 360000)  # 3 mm
-# Au-delà, reporter le tableau en entier sur la page suivante creuserait un
-# grand blanc : mieux vaut le laisser courir en répétant son en-tête.
-SEUIL_TABLEAU_INSECABLE = 10
+# Les tableaux de synthèse (jusqu'à treize lignes) tiennent dans une page :
+# les reporter d'un bloc évite une suite coupée dont la colonne fusionnée
+# « RUBRIQUE » arriverait vide. Au-delà, le tableau est trop haut pour une
+# page : le reporter creuserait un blanc, on le laisse courir en répétant
+# son en-tête.
+SEUIL_TABLEAU_INSECABLE = 16
 # Nombre de caractères qu'un libellé de sens tient sur une ligne en 11 pt
 # dans la cellule fusionnée des tableaux de synthèse.
 LONGUEUR_LIBELLE_UNE_LIGNE = 34
