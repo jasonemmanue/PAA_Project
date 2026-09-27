@@ -98,6 +98,11 @@ def _ecrire_nom_serie(serie: etree._Element, nom: str) -> None:
         etree.SubElement(point, _q("v")).text = nom
 
 
+def graphique_sans_donnee(matrice: list[list[int | None]]) -> bool:
+    """Indique qu'aucun jour de la période n'a été mesuré pour ce graphique."""
+    return not any(valeur is not None for ligne in matrice for valeur in ligne)
+
+
 def reecrire_graphique(
     xml_source: bytes,
     libelles_semaines: list[str],

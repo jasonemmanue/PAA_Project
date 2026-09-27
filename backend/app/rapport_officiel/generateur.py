@@ -63,7 +63,34 @@ NS_MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 NS_WPS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
 
+NS_WP = (
+    "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+)
+
 BALISE_ALTERNATE_CONTENT = f"{{{NS_MC}}}AlternateContent"
+BALISE_ANCRAGE = f"{{{NS_WP}}}anchor"
+# Modes d'habillage qui laissent l'objet hors du flux : Word ne lui réserve
+# aucune hauteur, le rogne en bas de page et laisse le texte passer dessous.
+BALISES_HABILLAGE_FLOTTANT = tuple(
+    f"{{{NS_WP}}}{nom}"
+    for nom in ("wrapNone", "wrapSquare", "wrapTight", "wrapThrough")
+)
+BALISE_HABILLAGE_BLOC = f"{{{NS_WP}}}wrapTopAndBottom"
+BALISE_EXTENT = f"{{{NS_WP}}}extent"
+# Un objet ancré aussi haut qu'une page est un cadre de décoration, pas un
+# contenu : le remettre dans le flux réserverait une page blanche entière.
+# Un objet d'épaisseur nulle est un filet de séparation.
+HAUTEUR_MAX_CONTENU_EMU = int(20 * 360000)   # 20 cm
+HAUTEUR_MIN_CONTENU_EMU = int(0.3 * 360000)  # 3 mm
+# Au-delà, reporter le tableau en entier sur la page suivante creuserait un
+# grand blanc : mieux vaut le laisser courir en répétant son en-tête.
+SEUIL_TABLEAU_INSECABLE = 10
+# Nombre de caractères qu'un libellé de sens tient sur une ligne en 11 pt
+# dans la cellule fusionnée des tableaux de synthèse.
+LONGUEUR_LIBELLE_UNE_LIGNE = 34
+# Word saisit les espaces typographiques en espace insécable : il faut les
+# normaliser avant toute comparaison de texte.
+ESPACE_INSECABLE = " "
 BALISE_BODY_PR_WPS = f"{{{NS_WPS}}}bodyPr"
 BALISE_BODY_PR_A = f"{{{NS_A}}}bodyPr"
 BALISE_NORM_AUTOFIT = f"{{{NS_A}}}normAutofit"
@@ -411,10 +438,10 @@ def generer_rapport(
     _appliquer_donnees_directes(contexte, params)
 
     modele = CHEMIN_MODELE.read_bytes()
-    modele = _reecrire_graphiques(modele, contexte)
+    modele, graphiques_vides = _reecrire_graphiques(modele, contexte)
 
     document = Document(io.BytesIO(modele))
-    _appliquer_modifications(document, contexte, params)
+    _appliquer_modifications(document, contexte, params, graphiques_vides)
 
     sortie = io.BytesIO()
     document.save(sortie)
@@ -443,8 +470,14 @@ def _appliquer_donnees_directes(
 
 def _reecrire_graphiques(
     modele: bytes, contexte: mod_donnees.ContexteRapport
-) -> bytes:
-    """Réinjecte les données de la campagne dans les 12 graphiques natifs."""
+) -> tuple[bytes, set[str]]:
+    """Réinjecte les données de la campagne dans les 12 graphiques natifs.
+
+    Returns:
+        Le paquet modifié, et le nom des graphiques qui n'ont reçu aucune
+        mesure — le document remplacera leur cadre vide par une mention.
+    """
+    vides: set[str] = set()
     sens_par_axe: list[tuple[str, str | None, str | None]] = []
     for axe in contexte.axes:
         aller = next(
@@ -470,6 +503,8 @@ def _reecrire_graphiques(
                 serie = contexte.series_graphiques.get((libelle, agregat))
                 if serie is not None:
                     libelles_semaines, matrice = serie
+                    if mod_graphiques.graphique_sans_donnee(matrice):
+                        vides.add(nom_court)
                     try:
                         contenu = mod_graphiques.reecrire_graphique(
                             contenu, libelles_semaines, matrice
@@ -480,7 +515,9 @@ def _reecrire_graphiques(
                             nom_court,
                         )
             sortie.writestr(info, contenu)
-    return tampon.getvalue()
+    if vides:
+        logger.info("Graphiques sans aucune mesure : %s", ", ".join(sorted(vides)))
+    return tampon.getvalue(), vides
 
 
 # ===========================================================================
@@ -492,6 +529,7 @@ def _appliquer_modifications(
     document: Document,
     contexte: mod_donnees.ContexteRapport,
     params: dict[str, Any],
+    graphiques_vides: set[str] | None = None,
 ) -> None:
     paragraphes = tous_paragraphes(document)
 
@@ -505,9 +543,376 @@ def _appliquer_modifications(
     _maj_conclusion(paragraphes, contexte, params)
     _maj_signatures(document, params)
     _maj_libelles_sources(paragraphes, contexte)
+    _remplacer_graphiques_vides(document, paragraphes, graphiques_vides or set())
+    _supprimer_legendes_obsoletes(document)
     _neutraliser_liaisons_externes(document)
+    _equilibrer_champs(document)
     _corriger_styles_de_titre(paragraphes)
+    # La mise en page se règle en dernier, sur le document abouti.
+    _detacher_objets_des_paragraphes_de_texte(paragraphes)
+    _remettre_les_flottants_dans_le_flux(document)
+    _garder_les_petits_tableaux_entiers(document)
+    _solidariser_les_titres(document)
+    _resserrer_les_blancs(document, paragraphes)
     _reparer_table_des_matieres(document, paragraphes)
+
+
+def _remplacer_graphiques_vides(
+    document: Document, paragraphes: list[Paragraph], vides: set[str]
+) -> None:
+    """Remplace un cadre de graphique resté vide par une mention explicite.
+
+    Une campagne partiellement collectée laisse certains sens sans aucune
+    mesure. Publier un cadre vide, avec sa seule légende, donne l'impression
+    d'une anomalie ; la phrase indique que la donnée manque, ce qui est la
+    lecture exacte (cf. la règle d'intégrité : aucune valeur n'est inventée).
+    """
+    if not vides:
+        return
+    relations = document.part.rels
+    for paragraphe in paragraphes:
+        dessins = _dessins(paragraphe)
+        if not dessins:
+            continue
+        concerne = False
+        for dessin in dessins:
+            for identifiant in re.findall(r'r:(?:id|embed)="(rId\d+)"', dessin.xml):
+                relation = relations.get(identifiant)
+                cible = getattr(relation, "target_ref", "") if relation else ""
+                if cible.rsplit("/", 1)[-1] in vides:
+                    concerne = True
+        if not concerne:
+            continue
+        titre = paragraphe.text.strip()
+        _supprimer_images(paragraphe)
+        mention = (
+            "Aucune mesure n’a été collectée sur cette période pour ce sens de "
+            "circulation : le graphique ne peut pas être établi."
+        )
+        remplacer_texte(paragraphe, f"{titre}\n{mention}" if titre else mention)
+        for run in paragraphe.runs:
+            run.bold = False
+            run.italic = True
+            run.font.size = Pt(11)
+
+
+def _resserrer_les_blancs(document: Document, paragraphes: list[Paragraph]) -> None:
+    """Supprime les paragraphes vides devenus inutiles dans le corps.
+
+    Le modèle réserve des paragraphes vides autour des images qu'il contient.
+    Une fois ces images remplacées par des tableaux ou du texte — souvent plus
+    compacts — ces respirations deviennent des trous. Les séries de
+    paragraphes vides sont ramenées à un seul, ce qui resserre la pagination
+    sans jamais toucher au contenu.
+
+    Un paragraphe n'est retiré que s'il ne porte rien d'autre que du vide :
+    ni dessin, ni signet, ni champ, ni fin de section.
+    """
+    corps = document.element.body
+    depart = _index_introduction(paragraphes)
+    a_preserver = {id(p._p) for p in paragraphes[:depart]}
+
+    def est_vide(element) -> bool:
+        if element.tag != qn("w:p"):
+            return False
+        if id(element) in a_preserver:
+            return False
+        if element.xpath("string(.)").strip():
+            return False
+        for balise in ("w:drawing", "w:pict", "w:object", "w:bookmarkStart",
+                       "w:fldChar", "w:instrText", "w:hyperlink", "w:sectPr", "w:br"):
+            if element.findall(f".//{qn(balise)}"):
+                return False
+        return element.find(BALISE_ALTERNATE_CONTENT) is None
+
+    supprimes = 0
+    vides_consecutifs = 0
+    for element in list(corps):
+        if est_vide(element):
+            vides_consecutifs += 1
+            # Le premier paragraphe vide d'une série est conservé : il sépare
+            # visuellement deux blocs, comme dans le document d'origine.
+            if vides_consecutifs > 1:
+                corps.remove(element)
+                supprimes += 1
+        else:
+            vides_consecutifs = 0
+
+    # Un paragraphe vide entre une légende et son tableau rompt la solidarité
+    # que Word applique au titre : la légende resterait seule en bas de page.
+    enfants = list(corps)
+    for index, element in enumerate(enfants):
+        if element.tag != qn("w:p"):
+            continue
+        texte = Paragraph(element, document).text.strip()
+        if not texte.startswith(("Tableau ", "Graphique ")):
+            continue
+        intercalaires: list = []
+        suivant = index + 1
+        while suivant < len(enfants) and len(intercalaires) <= 2:
+            frere = enfants[suivant]
+            if frere.tag == qn("w:tbl"):
+                for vide in intercalaires:
+                    corps.remove(vide)
+                    supprimes += 1
+                break
+            if not est_vide(frere):
+                break
+            intercalaires.append(frere)
+            suivant += 1
+
+    # Un saut de page rend inutiles les paragraphes vides qui le précèdent :
+    # laissés en place, ils débordent sur la page suivante et la laissent
+    # entièrement blanche, le saut reportant ensuite le texte encore après.
+    for element in list(corps):
+        if element.tag != qn("w:p"):
+            continue
+        sauts = [
+            saut for saut in element.iter(qn("w:br"))
+            if saut.get(qn("w:type")) == "page"
+        ]
+        if not sauts:
+            continue
+        precedent = element.getprevious()
+        while precedent is not None and est_vide(precedent):
+            a_retirer, precedent = precedent, precedent.getprevious()
+            corps.remove(a_retirer)
+            supprimes += 1
+
+    logger.info("Paragraphes vides superflus retirés : %d", supprimes)
+
+
+def _index_introduction(paragraphes: list[Paragraph]) -> int:
+    """Rang du titre INTRODUCTION — frontière entre les pages liminaires et le corps."""
+    for index, paragraphe in enumerate(paragraphes):
+        if paragraphe.text.strip().upper().startswith("INTRODUCTION"):
+            return index
+    return 0
+
+
+def _ancrage_decoratif(ancrage) -> bool:
+    """Indique qu'un objet ancré relève du décor et non du contenu.
+
+    Le modèle superpose à certaines pages un cadre vide de la taille de la
+    feuille, et sépare des blocs par des filets d'épaisseur nulle. Ces objets
+    doivent rester hors du flux : leur réserver une hauteur ajouterait une
+    page blanche ou une bande vide.
+    """
+    extent = ancrage.find(BALISE_EXTENT)
+    if extent is None:
+        return True
+    try:
+        hauteur = int(extent.get("cy") or 0)
+    except (TypeError, ValueError):
+        return True
+    return hauteur >= HAUTEUR_MAX_CONTENU_EMU or hauteur <= HAUTEUR_MIN_CONTENU_EMU
+
+
+def _run_purement_decoratif(run) -> bool:
+    """Vrai si ce `run` ne porte que des objets de décor."""
+    ancrages = list(run.iter(BALISE_ANCRAGE))
+    if not ancrages:
+        # Un objet aligné sur le texte (`wp:inline`) est du contenu.
+        return False
+    return all(_ancrage_decoratif(ancrage) for ancrage in ancrages)
+
+
+def _detacher_objets_des_paragraphes_de_texte(paragraphes: list[Paragraph]) -> None:
+    """Sort les objets graphiques des paragraphes qui portent aussi du texte.
+
+    Chaque graphique du modèle est ancré dans le paragraphe de son propre
+    titre (« Graphique 1 : … »). Une fois l'objet remis dans le flux, Word lui
+    réserve une bande de hauteur qui commence au début du paragraphe : le
+    graphique se retrouve donc **au-dessus** de son titre.
+
+    Déplacer l'objet dans un paragraphe qui lui est propre, juste après le
+    titre, rétablit l'ordre de lecture attendu.
+    """
+    deplaces = 0
+    depart = _index_introduction(paragraphes)
+    for paragraphe in paragraphes[depart:]:
+        if not paragraphe.text.strip():
+            continue
+        porteurs = [
+            run for run in paragraphe._p.findall(qn("w:r"))
+            if (
+                run.find(qn("w:drawing")) is not None
+                or run.find(BALISE_ALTERNATE_CONTENT) is not None
+                or run.find(qn("w:pict")) is not None
+            )
+            and not _run_purement_decoratif(run)
+        ]
+        if not porteurs:
+            continue
+        nouveau = OxmlElement("w:p")
+        proprietes = paragraphe._p.find(qn("w:pPr"))
+        if proprietes is not None:
+            copie = copy.deepcopy(proprietes)
+            # Le paragraphe d'accueil ne porte pas de texte : lui laisser un
+            # style de titre créerait une entrée fantôme dans la table des
+            # matières. L'alignement et le retrait sont conservés.
+            for balise in ("w:pStyle", "w:outlineLvl", "w:numPr"):
+                element = copie.find(qn(balise))
+                if element is not None:
+                    copie.remove(element)
+            nouveau.append(copie)
+        for run in porteurs:
+            paragraphe._p.remove(run)
+            nouveau.append(run)
+        paragraphe._p.addnext(nouveau)
+        deplaces += 1
+    logger.info("Objets détachés de leur paragraphe de titre : %d", deplaces)
+
+
+def _supprimer_legendes_obsoletes(document: Document) -> None:
+    """Retire le bloc de cartouches laissé par les captures remplacées.
+
+    Dans le modèle, les Tableaux 2 et 3 sont des captures d'écran accompagnées
+    de deux cartouches flottants : la source, et une légende expliquant les
+    abréviations de jours. Les tableaux régénérés portent leur propre ligne de
+    source et écrivent les jours en toutes lettres : ces cartouches n'ont plus
+    d'objet, et une fois remis dans le flux ils s'empilaient en bas de page.
+
+    On ne supprime que les blocs qui contiennent une de ces légendes : les
+    cartouches de source des graphiques, eux, restent en place.
+    """
+    corps = document.element.body
+    retires = 0
+    for hote in list(corps):
+        if hote.tag != qn("w:p"):
+            continue
+        if Paragraph(hote, document).text.strip():
+            continue  # le paragraphe porte du texte : on n'y touche pas
+        textes = [
+            Paragraph(interne, document).text.replace(ESPACE_INSECABLE, " ")
+            for interne in hote.iter(qn("w:p"))
+        ]
+        if not any("Légende « Jours »" in texte for texte in textes):
+            continue
+        corps.remove(hote)
+        retires += 1
+    if retires:
+        logger.info("Blocs de cartouches obsolètes retirés : %d", retires)
+
+
+def _garder_les_petits_tableaux_entiers(document: Document) -> None:
+    """Empêche les tableaux courts d'être coupés par un saut de page.
+
+    Un tableau de synthèse de cinq lignes scindé en deux pages ne se lit plus.
+    Marquer ses lignes comme insécables et solidaires de la suivante le fait
+    basculer d'un bloc sur la page suivante, comme le ferait un metteur en
+    page.
+    """
+    for tableau in document.tables:
+        lignes = tableau.rows
+        if not lignes:
+            continue
+        nombre = len(lignes)
+        if nombre <= SEUIL_TABLEAU_INSECABLE:
+            # Court : il tient dans une page, on le garde d'un seul bloc.
+            solidaires = set(range(nombre - 1))
+        else:
+            # Long : le reporter en entier laisserait une demi-page blanche.
+            # On le laisse courir sur deux pages en répétant l'en-tête, mais
+            # on interdit les lignes isolées en tête et en fin de tableau.
+            _repeter_entete(tableau)
+            solidaires = {0, 1, nombre - 2}
+        for rang, ligne in enumerate(lignes):
+            proprietes = ligne._tr.get_or_add_trPr()
+            proprietes.append(OxmlElement("w:cantSplit"))
+            if rang not in solidaires:
+                continue
+            # On parcourt les cellules dans le XML plutôt que par `row.cells` :
+            # pour une fusion verticale, cette propriété renvoie la cellule
+            # d'origine, et le paragraphe de la cellule de continuation
+            # resterait sans `keepNext`. Word autorise alors la coupure juste
+            # après cette ligne — c'est ce qui laissait une dernière ligne
+            # seule en haut de la page suivante.
+            for cellule in ligne._tr.findall(qn("w:tc")):
+                for paragraphe in cellule.findall(qn("w:p")):
+                    proprietes_p = paragraphe.find(qn("w:pPr"))
+                    if proprietes_p is None:
+                        proprietes_p = OxmlElement("w:pPr")
+                        paragraphe.insert(0, proprietes_p)
+                    if proprietes_p.find(qn("w:keepNext")) is None:
+                        proprietes_p.insert(0, OxmlElement("w:keepNext"))
+
+
+def _remettre_les_flottants_dans_le_flux(document: Document) -> None:
+    """Fait réserver au texte la place des objets flottants du corps.
+
+    Les graphiques et les cartouches de source du modèle sont ancrés en
+    habillage « aucun » : Word les dessine sans leur réserver de hauteur. Tant
+    que le texte avait exactement la longueur d'origine, le rendu tombait
+    juste. Dès que le contenu change, l'objet qui arrive en bas de page est
+    **rogné** au lieu d'être reporté, et les cartouches se superposent aux
+    titres.
+
+    Passer en habillage haut et bas rétablit un comportement de bloc : Word
+    réserve la hauteur, reporte l'objet à la page suivante s'il n'y tient pas,
+    et le texte ne passe plus dessous. La position et la taille sont
+    inchangées.
+
+    Les pages liminaires (couverture, bloc qualité) gardent leurs objets
+    flottants : leur mise en page dépend de ce positionnement libre.
+    """
+    # Le balayage est refait sur le document : des paragraphes ont pu être
+    # créés depuis la capture initiale pour accueillir les objets détachés.
+    paragraphes = tous_paragraphes(document)
+    depart = _index_introduction(paragraphes)
+    convertis = 0
+    for paragraphe in paragraphes[depart:]:
+        for ancrage in paragraphe._p.iter(BALISE_ANCRAGE):
+            if _ancrage_decoratif(ancrage):
+                continue
+            habillages = [
+                enfant for enfant in ancrage
+                if enfant.tag in BALISES_HABILLAGE_FLOTTANT
+            ]
+            if not habillages:
+                continue
+            bloc = OxmlElement("wp:wrapTopAndBottom")
+            habillages[0].addprevious(bloc)
+            for ancien in habillages:
+                ancrage.remove(ancien)
+            # Deux objets ne doivent plus pouvoir se chevaucher une fois la
+            # hauteur réservée.
+            ancrage.set("allowOverlap", "0")
+            ancrage.set("behindDoc", "0")
+            convertis += 1
+    logger.info("Objets flottants remis dans le flux : %d", convertis)
+
+
+def _equilibrer_champs(document: Document) -> None:
+    """Retire les marques de champ devenues orphelines.
+
+    Neutraliser un champ LINK vide le paragraphe qui porte son instruction,
+    mais la marque de fin vit parfois dans le paragraphe suivant. Restée
+    seule, elle maintient une ligne vide que rien ne justifie — et cette
+    ligne, arrivée en bas de page, repousse le saut de page suivant et crée
+    une page entièrement blanche.
+
+    Seules les marques non appariées sont retirées : la table des matières,
+    dont le champ est complet, n'est pas touchée.
+    """
+    profondeur = 0
+    orphelines: list = []
+    for marque in document.element.body.iter(qn("w:fldChar")):
+        genre = marque.get(qn("w:fldCharType"))
+        if genre == "begin":
+            profondeur += 1
+        elif genre == "end":
+            if profondeur == 0:
+                orphelines.append(marque)
+            else:
+                profondeur -= 1
+
+    for marque in orphelines:
+        run = marque.getparent()
+        if run is not None and run.getparent() is not None:
+            run.getparent().remove(run)
+    if orphelines:
+        logger.info("Marques de champ orphelines retirées : %d", len(orphelines))
 
 
 def _neutraliser_liaisons_externes(document: Document) -> None:
@@ -555,6 +960,35 @@ def _corriger_styles_de_titre(paragraphes: list[Paragraph]) -> None:
             paragraphe.style = "Normal"
         except (KeyError, AttributeError):
             logger.debug("Style Normal indisponible — paragraphe laissé tel quel.")
+
+
+def _solidariser_les_titres(document: Document) -> None:
+    """Empêche un titre ou une légende de rester seul en bas de page.
+
+    Un intertitre séparé du paragraphe qu'il annonce, ou une légende
+    « Tableau n : … » séparée de son tableau, est la marque d'une mise en page
+    automatique. On les rend solidaires de ce qui suit.
+
+    Pour que Word l'applique jusqu'au tableau qui suit une légende, les
+    paragraphes vides intercalés doivent avoir été retirés au préalable
+    (cf. `_resserrer_les_blancs`).
+    """
+    corps = document.element.body
+    enfants = list(corps)
+
+    for index, element in enumerate(enfants):
+        if element.tag != qn("w:p"):
+            continue
+        paragraphe = Paragraph(element, document)
+        texte = paragraphe.text.strip()
+        if not texte:
+            continue
+        nom = (getattr(paragraphe.style, "name", "") or "").lower()
+        est_titre = nom.startswith(("heading", "titre"))
+        est_legende = texte.startswith(("Tableau ", "Graphique "))
+        if not (est_titre or est_legende):
+            continue
+        paragraphe.paragraph_format.keep_with_next = True
 
 
 # --- Couverture, bloc qualité ---------------------------------------------
@@ -773,7 +1207,12 @@ def _maj_tableaux_synthese(
             if ligne_valeurs >= len(tableau.rows):
                 break
             cellule = _fusionner(tableau, ligne_libelle, 1, 2)
-            ecrire_cellule(cellule, _court(sens.libelle), italique=True, taille=11)
+            libelle = _court(sens.libelle)
+            # La cellule fusionnée fait environ sept centimètres : au-delà
+            # d'une trentaine de caractères, le libellé passe sur deux lignes
+            # et le tableau gagne assez de hauteur pour déborder de la page.
+            taille_libelle = 11 if len(libelle) <= LONGUEUR_LIBELLE_UNE_LIGNE else 9.5
+            ecrire_cellule(cellule, libelle, italique=True, taille=taille_libelle)
             ecrire_cellule(
                 tableau.cell(ligne_valeurs, 1),
                 _mn(contexte.valeur(sens.libelle, agregat, "jour_ouvrable")),
