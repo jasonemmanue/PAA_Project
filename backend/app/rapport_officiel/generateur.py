@@ -78,6 +78,11 @@ BLANC = RGBColor(0xFF, 0xFF, 0xFF)
 
 # Bookmark référencé par la table des matières mais absent du modèle : sans
 # lui, Word affiche « Erreur ! Signet non défini. » sur l'entrée concernée.
+# Campagne du document de référence. Sert d'étalon de longueur : les zones de
+# texte du modèle sont dimensionnées pour ce libellé, et un mois plus long doit
+# être réduit pour y tenir.
+CAMPAGNE_MODELE = "Février 2026"
+
 BOOKMARK_MANQUANT = "_Toc216781642"
 ANCRE_BOOKMARK_MANQUANT = "Etat des zones congestionnées dans le sens « aller »"
 
@@ -227,6 +232,7 @@ def reduire_pour_tenir(
     nouveau: str,
     *,
     taille_par_defaut: float | None = None,
+    marge: float = 1.0,
 ) -> None:
     """Réduit la police quand le nouveau libellé est plus long que l'ancien.
 
@@ -237,7 +243,9 @@ def reduire_pour_tenir(
     """
     if not ancien or len(nouveau) <= len(ancien):
         return
-    facteur = len(ancien) / len(nouveau)
+    # `marge` resserre davantage la réduction quand le cadre d'origine était
+    # déjà juste pour le libellé qu'il contenait.
+    facteur = (len(ancien) / len(nouveau)) * marge
     for run in paragraphe.runs:
         taille = run.font.size
         points = taille.pt if taille is not None else taille_par_defaut
@@ -573,13 +581,15 @@ def _maj_couverture_et_entete(
 
     # La période du modèle est datée : elle doit être substituée AVANT le
     # libellé de campagne, dont elle contient le mois et l'année.
-    remplacer_fragment(paragraphes, "01 au 28 Février 2026", contexte.libelle_periode())
+    remplacer_fragment(
+        paragraphes, f"01 au 28 {CAMPAGNE_MODELE}", contexte.libelle_periode()
+    )
     for paragraphe in paragraphes:
-        if paragraphe.text.strip() == "Février 2026":
+        if paragraphe.text.strip() == CAMPAGNE_MODELE:
             remplacer_texte(paragraphe, contexte.libelle_campagne())
             activer_autofit_zone_texte(paragraphe)
-            reduire_pour_tenir(paragraphe, "Février 2026", contexte.libelle_campagne())
-    remplacer_fragment(paragraphes, "Février 2026", contexte.libelle_campagne())
+            reduire_pour_tenir(paragraphe, CAMPAGNE_MODELE, contexte.libelle_campagne())
+    remplacer_fragment(paragraphes, CAMPAGNE_MODELE, contexte.libelle_campagne())
 
     correspondances = {
         "Code : ": meta.get("code_document", ""),
@@ -1331,9 +1341,15 @@ def _maj_libelles_sources(
         if dans_zone_texte(paragraphe):
             # Ces mentions sont posées dans des cadres calibrés sur le libellé
             # d'origine : un mois plus long y passerait à la ligne et serait
-            # rogné.
+            # rogné. L'étalon est la mention telle qu'elle figure dans le
+            # modèle — le texte courant a déjà reçu la campagne générée lors
+            # de la mise à jour de la couverture, et ne mesurerait donc aucun
+            # débordement.
+            etalon = f"Source : {organisme}{variante}, {CAMPAGNE_MODELE}"
             activer_autofit_zone_texte(paragraphe)
-            reduire_pour_tenir(paragraphe, texte, nouveau, taille_par_defaut=9.0)
+            reduire_pour_tenir(
+                paragraphe, etalon, nouveau, taille_par_defaut=9.0, marge=0.88
+            )
         precedent_etait_source = True
 
 
@@ -1663,7 +1679,14 @@ def _remplacer_commentaires_images(
                 break
         if depart is None:
             continue
-        for paragraphe in paragraphes[depart + 1: depart + 14]:
+        # La fenêtre doit être large : quand le tableau qui précède est un
+        # vrai tableau Word, ses cellules occupent une vingtaine de
+        # paragraphes avant le commentaire. Le balayage s'arrête au titre
+        # suivant pour ne pas déborder sur la section d'après.
+        for paragraphe in paragraphes[depart + 1: depart + 45]:
+            entete = paragraphe.text.strip()
+            if entete.startswith(("Tableau ", "Graphique ")):
+                break
             dimensions = _dimensions_pouces(paragraphe)
             if not any(
                 largeur >= 6.0 and 0.5 <= hauteur <= 1.3 for largeur, hauteur in dimensions
@@ -2042,6 +2065,10 @@ def _remplacer_sources_images(paragraphes: list[Paragraph]) -> None:
         _supprimer_images(paragraphe)
         remplacer_texte(paragraphe, "Source : DEESP/DEEF/S=Semaine, ")
         _styliser_source(paragraphe)
+        # Les graphiques sont des formes flottantes plus hautes que leur
+        # paragraphe d'ancrage. La vignette remplacée étant plus courte que
+        # l'image, la mention remontait sous le cadre du graphique.
+        paragraphe.paragraph_format.space_before = Pt(14)
 
 
 def _styliser_source(paragraphe: Paragraph) -> None:
