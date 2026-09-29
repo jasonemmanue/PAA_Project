@@ -6,22 +6,30 @@ les contenus variables, ce qui garantit que la page de garde, les logos, les
 styles, les bordures et la pagination restent rigoureusement identiques à
 l'original.
 
-Trois familles de remplacements :
+Refonte 2026-09-29 — rapport épuré, sans commentaires textuels :
 
-1. **Textes** — paragraphes rédactionnels (introduction, conclusion,
-   commentaires d'axe) et libellés datés. Repérés par des ancres textuelles
-   stables plutôt que par un index de paragraphe, qui se décale dès qu'un
-   tableau est inséré.
+Le rapport généré ne contient plus **aucun paragraphe de commentaire ou
+d'explication**. Il ne conserve que :
 
-2. **Tableaux existants** — Tableaux 1, 4-7, 11-15, signatures. Seul le
-   contenu des cellules est réécrit : la mise en forme du modèle est
-   conservée.
+  - la page de garde, le bloc qualité et la table des matières ;
+  - les **titres** des tableaux et des graphiques (« Tableau n : … »,
+    « Graphique n : … »), qui restent à jour de la campagne ;
+  - les **tableaux** (Tableaux 1, 2, 3, 4-7, 8-10, 11-15, 16, 17 et 19),
+    régénérés avec les valeurs de la période ;
+  - les **12 graphiques natifs**, réécrits avec les mesures de la campagne
+    (cf. `graphiques`) ;
+  - les **mentions de source** (« Source : DEESP/DEEF, <campagne> ») ;
+  - les **signatures** et les **annexes** issues du classeur Excel.
 
-3. **Images à remplacer** — dans le document d'origine, les Tableaux 2, 3,
-   8, 9, 10, 16, 17 et 19, certains commentaires et toutes les lignes
-   « Source : » situées sous les graphiques sont des images (captures Excel).
-   Elles sont donc figées. La génération les remplace par de vrais tableaux
-   et de vrais paragraphes Word, seuls capables de porter des valeurs à jour.
+Tous les paragraphes rédactionnels du modèle (introduction, méthodologie,
+commentaires par axe, interprétation du Tableau 16, observations de temps
+moyen, phrase comparative du Tableau 19, conclusion et recommandations) sont
+**effacés en fin de génération** par `_effacer_commentaires_rediges`.
+
+Le classeur Excel n'expose donc plus la feuille « Textes » (cf. `parametres`) :
+les paragraphes rédactionnels ne sont plus repris dans le rapport, seuls les
+métadonnées, la campagne de référence du Tableau 19, les surcharges directes,
+les annexes et les signatures continuent d'être importés.
 
 Les 12 graphiques natifs sont traités à part, au niveau du paquet OPC
 (cf. `graphiques`).
@@ -115,12 +123,6 @@ CAMPAGNE_MODELE = "Février 2026"
 
 BOOKMARK_MANQUANT = "_Toc216781642"
 ANCRE_BOOKMARK_MANQUANT = "Etat des zones congestionnées dans le sens « aller »"
-
-# Écriture en toutes lettres des petits nombres, comme dans le rapport.
-_EN_LETTRES = {
-    1: "une", 2: "deux", 3: "trois", 4: "quatre", 5: "cinq", 6: "six",
-    7: "sept", 8: "huit", 9: "neuf", 10: "dix", 11: "onze", 12: "douze",
-}
 
 
 # ===========================================================================
@@ -343,10 +345,6 @@ def _mn(valeur: int | None) -> str:
     return "—" if valeur is None else str(valeur)
 
 
-def _en_lettres(nombre: int) -> str:
-    return _EN_LETTRES.get(nombre, str(nombre))
-
-
 # ===========================================================================
 # Insertion de tableaux à la place des images figées
 # ===========================================================================
@@ -537,19 +535,20 @@ def _appliquer_modifications(
     paragraphes = tous_paragraphes(document)
 
     _maj_couverture_et_entete(document, paragraphes, contexte, params)
-    _maj_textes_rediges(paragraphes, params)
-    _maj_methodologie(paragraphes, contexte)
     _maj_tableau_1(document, contexte)
     _remplacer_images_figees(document, paragraphes, contexte, params)
     _maj_tableaux_synthese(document, contexte)
-    _maj_commentaires_axes(paragraphes, contexte)
-    _maj_conclusion(paragraphes, contexte, params)
+    _maj_titres_tableaux_dates(paragraphes, contexte, params)
     _maj_signatures(document, params)
     _maj_libelles_sources(paragraphes, contexte)
     _remplacer_graphiques_vides(document, paragraphes, graphiques_vides or set())
     _supprimer_legendes_obsoletes(document)
     _neutraliser_liaisons_externes(document)
     _equilibrer_champs(document)
+    # Refonte 2026-09-29 : purge tous les paragraphes rédactionnels du modèle.
+    # À faire avant `_corriger_styles_de_titre` pour que les paragraphes vidés
+    # soient retirés en même temps que les blancs superflus.
+    _effacer_commentaires_rediges(document, paragraphes)
     _corriger_styles_de_titre(paragraphes)
     # La mise en page se règle en dernier, sur le document abouti.
     _detacher_objets_des_paragraphes_de_texte(paragraphes)
@@ -1050,52 +1049,148 @@ def _maj_couverture_et_entete(
             remplacer_texte(paragraphe, f"Date : {meta.get('date_document', '')}")
 
 
-# --- Paragraphes rédigés (introduction, conclusion, recommandations) ------
+# --- Titres datés des Tableaux 16, 17 et 19 --------------------------------
 
 
-def _maj_textes_rediges(paragraphes: list[Paragraph], params: dict[str, Any]) -> None:
-    """Réinjecte les paragraphes saisis dans le classeur.
-
-    Chaque texte du classeur est rapproché du paragraphe du modèle par ses
-    premiers mots. La correspondance reste valable même après plusieurs
-    campagnes, puisqu'elle s'appuie sur le modèle — jamais modifié — et non
-    sur le document précédemment généré.
-    """
-    textes = params["textes"]
-    defauts = mod_parametres.TEXTES_DEFAUT
-    for cle, texte in textes.items():
-        reference = defauts.get(cle)
-        if not reference:
-            continue
-        ancre = reference[:60]
-        cible = premier(paragraphes, ancre)
-        if cible is None:
-            logger.debug("Ancre introuvable pour le texte %s — ignoré.", cle)
-            continue
-        if texte != cible.text.strip():
-            remplacer_texte(cible, texte)
-
-
-def _maj_methodologie(
-    paragraphes: list[Paragraph], contexte: mod_donnees.ContexteRapport
+def _maj_titres_tableaux_dates(
+    paragraphes: list[Paragraph],
+    contexte: mod_donnees.ContexteRapport,
+    params: dict[str, Any],
 ) -> None:
-    """Réécrit le paragraphe de méthodologie avec la période et le créneau réels."""
-    cible = premier(paragraphes, "Les informations enregistrées ont été prises")
-    if cible is None:
-        return
-    base = premier(paragraphes, "Cette étude a été réalisée en utilisant")
-    prefixe = (
-        base.text.split("Les informations enregistrées")[0].strip()
-        if base is cible
-        else ""
+    """Met à jour les titres qui portent le libellé de campagne.
+
+    Extrait de l'ancien `_maj_conclusion` : seuls les **titres** des Tableaux
+    16, 17 et 19 sont conservés dans le rapport épuré. Les phrases
+    d'interprétation et le commentaire comparatif ne sont plus injectés — le
+    lecteur se réfère directement aux valeurs du tableau.
+    """
+    campagne = contexte.libelle_campagne()
+    libelle_majuscules = campagne.upper()
+    reference_comparatif = params.get("comparatif", {}).get(
+        "libelle_reference", "campagne précédente"
     )
-    phrase = (
-        f"Les informations enregistrées ont été prises sur la période allant du "
-        f"{contexte.libelle_periode()} de {contexte.libelle_creneau()}. En effet, les "
-        f"données sur les zones congestionnées ont été relevées à chaque heure "
-        f"pendant toute la période d’observation."
+    for paragraphe in paragraphes:
+        texte = paragraphe.text.strip()
+        if texte.startswith("Tableau 16"):
+            remplacer_texte(
+                paragraphe,
+                "Tableau 16 : Tableau récapitulatif des tronçons congestionnés "
+                f"({libelle_majuscules})",
+            )
+        elif texte.startswith("Tableau 17"):
+            remplacer_texte(
+                paragraphe,
+                "Tableau 17 : Tableau récapitulatif du temps de traversée en zone "
+                f"portuaire ({campagne})",
+            )
+        elif texte.startswith("Tableau 19"):
+            remplacer_texte(
+                paragraphe,
+                "Tableau 19 : Tableau comparatif du temps de traversée en zone "
+                f"portuaire ({reference_comparatif} - {campagne})",
+            )
+
+
+# --- Purge des commentaires rédigés du modèle ------------------------------
+
+
+# Titres de section conservés tels quels : ils structurent le document mais ne
+# portent pas de contenu rédactionnel à effacer.
+_TITRES_SECTION_CONSERVES = (
+    "INTRODUCTION",
+    "I. METHODOLOGIE",
+    "II. ANALYSE DES DONNEES",
+    "III. INTERPRETATION",
+    "III. INTERPRÉTATION",
+    "CONCLUSION",
+    "RECOMMANDATIONS",
+    "ANNEXE",
+    "TABLE DES MATIERES",
+    "TABLE DES MATIÈRES",
+    "SOMMAIRE",
+    "LISTE DES TABLEAUX",
+    "LISTE DES GRAPHIQUES",
+    "LISTE DES SIGLES",
+    "RESULTATS",
+    "RÉSULTATS",
+    "ETAT DES ZONES CONGESTIONNEES",
+    "ÉTAT DES ZONES CONGESTIONNÉES",
+    "EVALUATION DU TEMPS",
+    "ÉVALUATION DU TEMPS",
+    "COMPARAISON DES TEMPS",
+)
+
+
+def _est_dans_tableau(paragraphe: Paragraph) -> bool:
+    """Vrai si le paragraphe est une cellule d'un tableau Word."""
+    element = paragraphe._p.getparent()
+    while element is not None:
+        if element.tag == qn("w:tbl"):
+            return True
+        element = element.getparent()
+    return False
+
+
+def _est_titre_conservable(paragraphe: Paragraph) -> bool:
+    """Le paragraphe porte-t-il un titre à préserver ?
+
+    On garde les libellés de tableaux et de graphiques, les mentions de
+    source (mises à jour ailleurs) et les grands titres de section qui
+    structurent le document, même sans corps de texte en-dessous.
+    """
+    texte = paragraphe.text.strip()
+    if not texte:
+        return True  # paragraphe déjà vide : à préserver tel quel
+    if texte.startswith(("Tableau ", "Graphique ", "Source", "Source :")):
+        return True
+    texte_maj = texte.upper()
+    for prefixe in _TITRES_SECTION_CONSERVES:
+        if texte_maj.startswith(prefixe):
+            return True
+    style = getattr(paragraphe.style, "name", "") or ""
+    nom_style = style.lower()
+    if nom_style.startswith(("heading", "titre")) and len(texte) <= 160:
+        return True
+    return False
+
+
+def _effacer_commentaires_rediges(
+    document: Document, paragraphes: list[Paragraph]
+) -> None:
+    """Efface les paragraphes de commentaire du corps du rapport.
+
+    Sont retirés : introduction, méthodologie, commentaires par axe,
+    interprétation du Tableau 16, observations sur le temps moyen, phrase
+    comparative du Tableau 19, conclusion et recommandations.
+
+    Sont préservés : la page de garde, le bloc qualité, la table des matières,
+    les titres de section, les libellés de tableaux et de graphiques, les
+    mentions de source, le contenu des tableaux Word et les 12 graphiques
+    natifs.
+
+    Les images de commentaire qui étaient figées dans le modèle (les
+    captures sous les Tableaux 5, 8, 9 et 10) sont supprimées en même temps
+    que le paragraphe qui les portait.
+    """
+    depart = _index_introduction(paragraphes)
+    effaces = 0
+    for paragraphe in paragraphes[depart:]:
+        if dans_zone_texte(paragraphe):
+            continue  # cadres de la page de garde et du bloc qualité
+        if _est_dans_tableau(paragraphe):
+            continue  # cellules des tableaux régénérés
+        if _est_titre_conservable(paragraphe):
+            continue
+        # Le paragraphe portait un commentaire rédactionnel ou une image de
+        # commentaire figée : on vide l'un et l'autre. Le paragraphe lui-même
+        # est conservé (retiré ensuite par `_resserrer_les_blancs`), ce qui
+        # évite de casser une numérotation ou une propriété de section.
+        _supprimer_images(paragraphe)
+        remplacer_texte(paragraphe, "")
+        effaces += 1
+    logger.info(
+        "Rapport épuré — paragraphes de commentaire vidés : %d", effaces
     )
-    remplacer_texte(cible, f"{prefixe} {phrase}".strip())
 
 
 # --- Tableau 1 -------------------------------------------------------------
@@ -1262,20 +1357,7 @@ def _sens_de_l_axe_du_tableau(
     return contexte.sens_circulation[:2]
 
 
-# --- Commentaires d'axe ----------------------------------------------------
-
-
-def _sens_axe(
-    contexte: mod_donnees.ContexteRapport, axe: str
-) -> tuple[mod_donnees.SensCirculation | None, mod_donnees.SensCirculation | None]:
-    """Retourne le couple (aller, retour) d'un axe."""
-    aller = next(
-        (s for s in contexte.sens_circulation if s.axe == axe and s.sens == "aller"), None
-    )
-    retour = next(
-        (s for s in contexte.sens_circulation if s.axe == axe and s.sens == "retour"), None
-    )
-    return aller, retour
+# --- Libellés d'axe --------------------------------------------------------
 
 
 def _court(libelle: str) -> str:
@@ -1302,227 +1384,17 @@ def _origine_axe(axe: str) -> str:
     return _court(axe.split(" - ")[0])
 
 
-def _maj_commentaires_axes(
-    paragraphes: list[Paragraph], contexte: mod_donnees.ContexteRapport
-) -> None:
-    """Réécrit les commentaires chiffrés qui suivent chaque tableau d'axe.
-
-    L'ancre combine le qualificatif (« minimaux » / « maximaux ») et le nom de
-    l'origine de l'axe : le libellé complet varie d'une occurrence à l'autre
-    dans le modèle (tirets, espaces insécables), alors que l'origine est
-    toujours écrite à l'identique.
-    """
-    deja_traites: list[Paragraph] = []
-    for axe in contexte.axes:
-        origine = _origine_axe(axe)
-        for agregat, qualificatif in (("min", "minimaux"), ("max", "maximaux")):
-            ancre = f"les temps {qualificatif} évalués"
-            for paragraphe in paragraphes:
-                texte = paragraphe.text
-                if ancre not in texte or origine not in texte:
-                    continue
-                if any(p._p is paragraphe._p for p in deja_traites):
-                    continue
-                remplacer_texte(paragraphe, _phrase_commentaire(contexte, axe, agregat))
-                deja_traites.append(paragraphe)
-                break
+# --- (Refonte 2026-09-29) Fonctions de commentaires par axe supprimées ----
+# Les paragraphes qui portaient ces commentaires sont désormais effacés par
+# `_effacer_commentaires_rediges` : le rapport n'affiche plus que les tableaux
+# et les graphiques.
 
 
-def _phrase_commentaire(
-    contexte: mod_donnees.ContexteRapport, axe: str, agregat: str
-) -> str:
-    """Commentaire chiffré d'un axe pour le temps minimal ou maximal."""
-    qualificatif = "minimaux" if agregat == "min" else "maximaux"
-    aller, retour = _sens_axe(contexte, axe)
-    if aller is None or retour is None:
-        return ""
-    aller_jo = _mn(contexte.valeur(aller.libelle, agregat, "jour_ouvrable"))
-    aller_we = _mn(contexte.valeur(aller.libelle, agregat, "week_end"))
-    retour_jo = _mn(contexte.valeur(retour.libelle, agregat, "jour_ouvrable"))
-    retour_we = _mn(contexte.valeur(retour.libelle, agregat, "week_end"))
-    return (
-        f"Après avoir observé sur la période concernée les différents temps de "
-        f"traversée de l’axe « {_court(axe)} » dans les deux sens, il ressort que les temps "
-        f"{qualificatif} évalués pour les jours ouvrables et les week-ends sont "
-        f"respectivement de {aller_jo} Mn et de {aller_we} Mn dans le sens "
-        f"« aller » ; dans le sens « retour », ces temps sont respectivement de "
-        f"{retour_jo} Mn et de {retour_we} Mn."
-    )
-
-
-# --- Conclusion ------------------------------------------------------------
-
-
-def _maj_conclusion(
-    paragraphes: list[Paragraph],
-    contexte: mod_donnees.ContexteRapport,
-    params: dict[str, Any],
-) -> None:
-    """Met à jour les passages chiffrés de la conclusion."""
-    campagne = contexte.libelle_campagne()
-    congestion_aller = contexte.congestion_par_sens.get("aller", [])
-    congestion_retour = contexte.congestion_par_sens.get("retour", [])
-
-    # Commentaire qui suit le Tableau 3, en amont du document.
-    _maj_commentaire_tableau_3(paragraphes, contexte, congestion_retour)
-
-    # Phrase d'introduction du Tableau 16.
-    cible = premier(paragraphes, "Dans le sens « aller », les tronçons")
-    if cible is not None:
-        remplacer_texte(cible, _phrase_synthese_congestion(
-            contexte, congestion_aller, congestion_retour
-        ))
-
-    # Interprétation du Tableau 16 — construite sur le tronçon le plus touché.
-    _maj_interpretation_tableau_16(paragraphes, congestion_retour + congestion_aller)
-
-    # Observations sur le temps moyen, axe par axe.
-    _maj_observations_temps_moyen(paragraphes, contexte, campagne)
-
-    # Phrase de comparaison du Tableau 19.
-    _maj_phrase_comparatif(paragraphes, contexte, params)
-
-    # Titres datés des Tableaux 16, 17 et 19.
-    libelle_majuscules = campagne.upper()
-    for paragraphe in paragraphes:
-        texte = paragraphe.text.strip()
-        if texte.startswith("Tableau 16"):
-            remplacer_texte(
-                paragraphe,
-                "Tableau 16 : Tableau récapitulatif des tronçons congestionnés "
-                f"({libelle_majuscules})",
-            )
-        elif texte.startswith("Tableau 17"):
-            remplacer_texte(
-                paragraphe,
-                "Tableau 17 : Tableau récapitulatif du temps de traversée en zone "
-                f"portuaire ({campagne})",
-            )
-        elif texte.startswith("Tableau 19"):
-            reference = params["comparatif"].get("libelle_reference", "campagne précédente")
-            remplacer_texte(
-                paragraphe,
-                "Tableau 19 : Tableau comparatif du temps de traversée en zone "
-                f"portuaire ({reference} - {campagne})",
-            )
-
-
-def _maj_commentaire_tableau_3(
-    paragraphes: list[Paragraph],
-    contexte: mod_donnees.ContexteRapport,
-    congestion_retour: list[rapport_paa.CongestionHoraire],
-) -> None:
-    """Réécrit la phrase d'analyse et les puces qui suivent le Tableau 3.
-
-    Le modèle comporte une phrase d'introduction puis une puce par tronçon
-    congestionné. Le nombre de tronçons variant d'une campagne à l'autre, les
-    puces excédentaires sont vidées et les manquantes regroupées sur la
-    dernière disponible.
-    """
-    rang = None
-    for index, paragraphe in enumerate(paragraphes):
-        if paragraphe.text.strip().startswith("Au regard du tableau 3"):
-            rang = index
-            break
-    if rang is None:
-        return
-
-    debut, fin = contexte.heure_debut, contexte.heure_fin
-    if not congestion_retour:
-        remplacer_texte(
-            paragraphes[rang],
-            f"Au regard du tableau 3, dans le sens retour, il ressort qu’aucun "
-            f"tronçon n’a été congestionné de {debut:02d}h à {fin:02d}h.",
-        )
-    else:
-        remplacer_texte(
-            paragraphes[rang],
-            f"Au regard du tableau 3, dans le sens retour, il ressort que "
-            f"certains tronçons ont été congestionnés entre {debut:02d}h et "
-            f"{fin:02d}h. Il s’agit du ou des tronçon(s) :",
-        )
-
-    # Puces disponibles dans le modèle : celles qui suivent immédiatement.
-    puces = [
-        paragraphe
-        for paragraphe in paragraphes[rang + 1: rang + 6]
-        if paragraphe.text.strip().startswith("-")
-    ]
-    groupes = list(_grouper_congestions(congestion_retour).items())
-    for index, puce in enumerate(puces):
-        if index < len(groupes):
-            code, entrees = groupes[index]
-            remplacer_texte(
-                puce,
-                f"-  {code} a été congestionné sur {_en_lettres(len(entrees))} "
-                f"({len(entrees):02d}) tranches horaires "
-                f"({_plages_horaires(entrees)}) ;",
-            )
-        else:
-            remplacer_texte(puce, "")
-
-
-def _phrase_synthese_congestion(
-    contexte: mod_donnees.ContexteRapport,
-    aller: list[rapport_paa.CongestionHoraire],
-    retour: list[rapport_paa.CongestionHoraire],
-) -> str:
-    debut, fin = contexte.heure_debut, contexte.heure_fin
-
-    def segment(sens: str, entrees: list[rapport_paa.CongestionHoraire]) -> str:
-        if not entrees:
-            return (
-                f"dans le sens « {sens} », les tronçons ne sont pas congestionnés de "
-                f"{debut:02d}h à {fin:02d}h"
-            )
-        heures = sorted({e.heure for e in entrees})
-        return (
-            f"dans le sens « {sens} » de {min(heures):02d}h à {max(heures) + 1:02d}h "
-            f"certains tronçons sont congestionnés"
-        )
-
-    phrase = f"{segment('aller', aller).capitalize()} par contre {segment('retour', retour)}."
-    if aller or retour:
-        phrase += (
-            f" En effet, la congestion s’est plus remarquée sur certains tronçons qui "
-            f"étaient embouteillés à certaines heures et ce au moins sur "
-            f"{_en_lettres(2)} (2) tranches horaires et au moins "
-            f"{_en_lettres(rapport_paa.SEUIL_SEMAINE_DEESP)} "
-            f"({rapport_paa.SEUIL_SEMAINE_DEESP}) jours dans la semaine ; Ce sont :"
-        )
-    return phrase
-
-
-def _maj_interpretation_tableau_16(
-    paragraphes: list[Paragraph], congestions: list[rapport_paa.CongestionHoraire]
-) -> None:
-    # La phrase de détail est cherchée APRÈS le titre : la même tournure est
-    # utilisée dans le commentaire du Tableau 3, bien plus haut dans le
-    # document, et serait sinon modifiée à sa place.
-    rang_titre = None
-    for index, paragraphe in enumerate(paragraphes):
-        if "Interprétation du tableau 16" in paragraphe.text:
-            rang_titre = index
-            break
-    if rang_titre is None:
-        return
-    titre = paragraphes[rang_titre]
-    detail = premier(paragraphes[rang_titre + 1:], "a été congestionné sur")
-    if detail is None:
-        return
-    if not congestions:
-        remplacer_texte(
-            titre,
-            "Aucun tronçon ne remplit les critères de congestion du tableau 16 sur "
-            "la période analysée.",
-        )
-        remplacer_texte(detail, "")
-        return
-
-    par_troncon = _grouper_congestions(congestions)
-    code, entrees = max(par_troncon.items(), key=lambda kv: len(kv[1]))
-    remplacer_texte(titre, f"Interprétation du tableau 16 à partir du tronçon « {code} » :")
-    remplacer_texte(detail, _phrase_congestion_troncon(code, entrees, avec_jours=True))
+# --- (Refonte 2026-09-29) Fonctions de conclusion et de commentaires ------
+# `_maj_conclusion`, `_maj_commentaire_tableau_3`, `_phrase_synthese_congestion`
+# et `_maj_interpretation_tableau_16` ont été supprimées. Les mises à jour
+# des titres des Tableaux 16, 17 et 19 vivent désormais dans
+# `_maj_titres_tableaux_dates`.
 
 
 def _grouper_congestions(
@@ -1561,166 +1433,6 @@ def _plages_horaires(
     if len(morceaux) == 1:
         return f"de {morceaux[0]}"
     return "de " + " et de ".join(morceaux)
-
-
-def _phrase_congestion_troncon(
-    code: str,
-    entrees: list[rapport_paa.CongestionHoraire],
-    *,
-    avec_jours: bool = False,
-) -> str:
-    nombre = len(entrees)
-    phrase = (
-        f"Dans le sens « retour », le tronçon « {code} » a été congestionné sur "
-        f"{_en_lettres(nombre)} ({nombre:02d}) tranches horaires "
-        f"({_plages_horaires(entrees)})"
-    )
-    if avec_jours:
-        occurrences = [e.nb_total_semaine for e in entrees]
-        if occurrences:
-            mini, maxi = min(occurrences), max(occurrences)
-            jours = (
-                f"{_en_lettres(mini)} ({mini})"
-                if mini == maxi
-                else f"{_en_lettres(mini)} ({mini}) à {_en_lettres(maxi)} ({maxi})"
-            )
-            phrase += f" sur {jours} jours dans la semaine"
-    return phrase + " ;"
-
-
-def _maj_observations_temps_moyen(
-    paragraphes: list[Paragraph],
-    contexte: mod_donnees.ContexteRapport,
-    campagne: str,
-) -> None:
-    """Réécrit les trois puces « l'axe … est de X minutes … ».
-
-    Les puces sont cherchées après l'amorce « Au niveau du temps moyen… » :
-    la méthodologie, en début de rapport, énumère elle aussi les axes avec la
-    même tournure et serait sinon écrasée.
-    """
-    rang = None
-    for index, paragraphe in enumerate(paragraphes):
-        if paragraphe.text.strip().startswith("Au niveau du temps moyen de traversée"):
-            rang = index
-            break
-    if rang is None:
-        return
-    puces = [
-        p for p in paragraphes[rang + 1: rang + 12]
-        if p.text.strip().startswith("l’axe ")
-    ]
-    for index, axe in enumerate(contexte.axes):
-        if index >= len(puces):
-            break
-        aller = next(
-            (s for s in contexte.sens_circulation if s.axe == axe and s.sens == "aller"),
-            None,
-        )
-        retour = next(
-            (s for s in contexte.sens_circulation if s.axe == axe and s.sens == "retour"),
-            None,
-        )
-        if aller is None or retour is None:
-            continue
-        valeur_aller = _mn(contexte.valeur(aller.libelle, "moyen", "jour_ouvrable"))
-        valeur_retour = _mn(contexte.valeur(retour.libelle, "moyen", "jour_ouvrable"))
-        ponctuation = "." if index == len(contexte.axes) - 1 else " ;"
-        remplacer_texte(
-            puces[index],
-            f"l’axe {_court(axe)} est de {valeur_aller} minutes dans le sens « aller » contre "
-            f"{valeur_retour} minutes dans le sens « retour » en {campagne}{ponctuation}",
-        )
-
-    # Phrase sur les pics de congestion.
-    cible = premier(paragraphes, "Notons qu’en période de congestion")
-    if cible is None:
-        return
-    pires: dict[str, tuple[str, int]] = {}
-    for sens in contexte.sens_circulation:
-        valeur = contexte.valeur(sens.libelle, "max", "jour_ouvrable")
-        if valeur is None:
-            continue
-        actuel = pires.get(sens.sens)
-        if actuel is None or valeur > actuel[1]:
-            pires[sens.sens] = (sens.axe, valeur)
-    if "aller" not in pires:
-        remplacer_texte(cible, "")
-        return
-    axe_aller, max_aller = pires["aller"]
-    phrase = (
-        f"Notons qu’en période de congestion, le temps de traversée le plus long, "
-        f"dans le sens aller, est celui de l’axe {axe_aller} qui peut aller jusqu’à "
-        f"{max_aller} minutes."
-    )
-    if "retour" in pires:
-        phrase += f" Dans le sens retour, ce temps peut aller jusqu’à {pires['retour'][1]} minutes."
-    remplacer_texte(cible, phrase)
-
-
-def _maj_phrase_comparatif(
-    paragraphes: list[Paragraph],
-    contexte: mod_donnees.ContexteRapport,
-    params: dict[str, Any],
-) -> None:
-    """Réécrit la phrase de comparaison du Tableau 19, sens de variation inclus."""
-    cible = premier(paragraphes, "Une comparaison du temps moyen de traversée")
-    if cible is None:
-        return
-    comparatif = params["comparatif"]
-    reference = comparatif.get("libelle_reference", "la campagne précédente")
-    valeurs_ref = comparatif.get("valeurs") or {}
-    campagne = contexte.libelle_campagne()
-
-    ecarts: list[int] = []
-    for sens in contexte.sens_circulation:
-        if sens.sens != "retour":
-            continue
-        courant = contexte.valeur(sens.libelle, "moyen", "jour_ouvrable")
-        precedent = valeurs_ref.get(f"{sens.libelle}|moyen|jour_ouvrable")
-        if courant is not None and precedent is not None:
-            ecarts.append(courant - precedent)
-
-    if not ecarts:
-        # Sans campagne de référence, la comparaison n'a pas de sens : on
-        # annonce simplement les valeurs de la campagne courante.
-        max_courant = max(
-            (v for (_l, a, _t), v in contexte.temps.items() if a == "max" and v is not None),
-            default=None,
-        )
-        phrase = (
-            f"Aucune campagne de référence n’est renseignée pour {campagne} : la "
-            f"comparaison du temps moyen de traversée sera disponible dès qu’une "
-            f"campagne antérieure aura été saisie dans le classeur."
-        )
-        if max_courant is not None:
-            phrase += f" Sur la période analysée, le temps maximal observé est de {max_courant} mn."
-        remplacer_texte(cible, phrase)
-        return
-
-    if all(e < 0 for e in ecarts):
-        tendance = "est en baisse principalement dans le sens « retour » les jours ouvrables peu importe l’axe"
-    elif all(e > 0 for e in ecarts):
-        tendance = "est en hausse principalement dans le sens « retour » les jours ouvrables peu importe l’axe"
-    else:
-        tendance = "évolue de façon contrastée selon les axes dans le sens « retour » les jours ouvrables"
-
-    phrase = (
-        f"Une comparaison du temps moyen de traversée de {reference} et de celui de "
-        f"{campagne} montre que ce dernier {tendance}."
-    )
-
-    max_courant = max(
-        (v for (_l, a, _t), v in contexte.temps.items() if a == "max" and v is not None),
-        default=None,
-    )
-    max_reference = comparatif.get("temps_max_reference_mn")
-    if max_courant is not None and max_reference:
-        phrase += (
-            f" Aussi le temps maximal a été de {max_reference} mn en {reference} "
-            f"contre {max_courant} mn en {campagne}."
-        )
-    remplacer_texte(cible, phrase)
 
 
 # --- Signatures ------------------------------------------------------------
@@ -1876,7 +1588,10 @@ def _remplacer_images_figees(
         lambda doc, ancre: _construire_tableau_19(doc, ancre, contexte, params),
     )
 
-    _remplacer_commentaires_images(paragraphes, contexte)
+    # Refonte 2026-09-29 : les commentaires figés du modèle (images sous
+    # les Tableaux 5, 8, 9 et 10) sont effacés, pas réécrits. Le nettoyage
+    # est fait plus bas par `_effacer_commentaires_rediges`, qui supprime
+    # aussi les images de commentaire.
     _remplacer_sources_images(paragraphes)
     _remplacer_annexes(document, params)
 
@@ -2092,80 +1807,10 @@ def _construire_tableau_moyen(
         ombrer(tableau.cell(rang_moyenne, colonne), NAVY)
 
 
-def _remplacer_commentaires_images(
-    paragraphes: list[Paragraph], contexte: mod_donnees.ContexteRapport
-) -> None:
-    """Réécrit les commentaires que le modèle fige sous forme de capture d'écran.
-
-    Quatre phrases sont concernées : le commentaire du temps minimal du
-    deuxième axe (sous le Tableau 5) et les trois commentaires de temps moyen
-    (sous les Tableaux 8, 9 et 10). Elles sont repérées par leur gabarit —
-    image large et basse — dans les paragraphes qui suivent le titre du
-    tableau correspondant.
-    """
-    # (titre du tableau servant d'ancre, agrégat commenté, rang de l'axe)
-    cibles: tuple[tuple[str, str, int], ...] = (
-        ("Tableau 5", "min", 1),
-        ("Tableau 8", "moyen", 0),
-        ("Tableau 9", "moyen", 1),
-        ("Tableau 10", "moyen", 2),
-    )
-    for titre, agregat, rang_axe in cibles:
-        if rang_axe >= len(contexte.axes):
-            continue
-        axe = contexte.axes[rang_axe]
-        depart = None
-        for index, paragraphe in enumerate(paragraphes):
-            if paragraphe.text.strip().startswith(titre):
-                depart = index
-                break
-        if depart is None:
-            continue
-        # La fenêtre doit être large : quand le tableau qui précède est un
-        # vrai tableau Word, ses cellules occupent une vingtaine de
-        # paragraphes avant le commentaire. Le balayage s'arrête au titre
-        # suivant pour ne pas déborder sur la section d'après.
-        for paragraphe in paragraphes[depart + 1: depart + 45]:
-            entete = paragraphe.text.strip()
-            if entete.startswith(("Tableau ", "Graphique ")):
-                break
-            dimensions = _dimensions_pouces(paragraphe)
-            if not any(
-                largeur >= 6.0 and 0.5 <= hauteur <= 1.3 for largeur, hauteur in dimensions
-            ):
-                continue
-            _supprimer_images(paragraphe)
-            phrase = (
-                _phrase_commentaire(contexte, axe, agregat)
-                if agregat != "moyen"
-                else _commentaire_temps_moyen(contexte, titre, axe)
-            )
-            remplacer_texte(paragraphe, phrase)
-            # Le paragraphe portait une image : sa mise en forme de caractère
-            # est celle d'une légende. On la ramène au corps de texte.
-            for run in paragraphe.runs:
-                run.italic = False
-                run.bold = False
-                run.font.size = Pt(12)
-            break
-
-
-def _commentaire_temps_moyen(
-    contexte: mod_donnees.ContexteRapport, numero: str, axe: str
-) -> str:
-    aller, retour = _sens_axe(contexte, axe)
-    if aller is None or retour is None:
-        return ""
-    aller_jo = _mn(contexte.valeur(aller.libelle, "moyen", "jour_ouvrable"))
-    aller_we = _mn(contexte.valeur(aller.libelle, "moyen", "week_end"))
-    retour_jo = _mn(contexte.valeur(retour.libelle, "moyen", "jour_ouvrable"))
-    retour_we = _mn(contexte.valeur(retour.libelle, "moyen", "week_end"))
-    return (
-        f"Au regard du {numero.lower()}, il ressort que le temps moyen de traversée de "
-        f"l’axe « {_court(axe)} » pour les jours ouvrables est de {aller_jo} Mn contre "
-        f"{retour_jo} Mn dans le sens « retour ». Pour ce qui est des week-ends, ce "
-        f"temps est de {aller_we} Mn en « aller » et de {retour_we} Mn « au retour »."
-    )
+# --- (Refonte 2026-09-29) Commentaires figés en image supprimés -----------
+# Les captures d'écran de commentaires du modèle (sous les Tableaux 5, 8, 9
+# et 10) sont désormais effacées par `_effacer_commentaires_rediges` — les
+# images sont retirées en même temps que le paragraphe qui les portait.
 
 
 # --- Tableau 16 — tronçons congestionnés ----------------------------------

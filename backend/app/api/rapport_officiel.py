@@ -256,8 +256,8 @@ def rafraichir(
         )
     if not params.get("_importe"):
         avertissements.append(
-            "Aucun classeur importé : les textes de référence et des annexes vides "
-            "seront utilisés."
+            "Aucun classeur importé : les annexes resteront vides et le tableau "
+            "comparatif sera partiellement vide."
         )
     if not (params.get("comparatif") or {}).get("valeurs"):
         avertissements.append(

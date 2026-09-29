@@ -8,14 +8,17 @@
  *   1. ⚙ Période & créneau  — définit les données applicatives retenues
  *   2. 📥 Modèle Excel      — classeur des données hors application
  *   3. 📤 Importer Excel    — dépôt du classeur complété
- *   4. 🔄 Mettre à jour     — recalcule les chiffres et les textes
+ *   4. 🔄 Mettre à jour     — recalcule les chiffres à porter dans le rapport
  *   5. 📄 Télécharger en Word (.docx)
  *
- * Les temps de traversée, les tronçons congestionnés et les douze graphiques
- * proviennent des mesures collectées sur la période et le créneau choisis. Le
- * classeur ne porte que ce que l'application ne collecte pas : chiffres
- * macro-économiques, constats terrain, campagne de référence du tableau
- * comparatif, relevés des annexes et signataires.
+ * Refonte 2026-09-29 — rapport épuré : le document généré ne contient plus
+ * de paragraphes rédactionnels, seulement les tableaux, les douze graphiques
+ * mis à jour, les mentions de source et les signatures. Le classeur n'a donc
+ * plus besoin de porter d'introduction, de méthodologie, de conclusion ou de
+ * recommandations : il ne collecte que ce que l'application ne peut pas
+ * calculer — métadonnées du bloc qualité, campagne de référence du tableau
+ * comparatif, surcharges manuelles éventuelles, relevés terrain des annexes,
+ * signataires.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -124,8 +127,8 @@ export function BarreRapportOfficiel({
     try {
       const reponse = await api.rapportOfficielImporterExcel(campagne, fichier);
       const details = [
-        `${reponse.nb_textes} texte(s)`,
         `${reponse.nb_valeurs_comparatif} valeur(s) de référence`,
+        `${reponse.nb_donnees_directes} surcharge(s)`,
         `${reponse.nb_lignes_annexes} ligne(s) d'annexe`,
       ].join(", ");
       setMessage(`${reponse.message} — ${details}.`);
@@ -261,13 +264,13 @@ export function BarreRapportOfficiel({
             </>
           )}
 
-          {/* 4 — Recalcul des chiffres et des textes */}
+          {/* 4 — Recalcul des chiffres à porter dans le rapport */}
           <button
             type="button"
             onClick={mettreAJour}
             disabled={occupe !== null}
             className={`${classeBouton} bg-paa-navy-700 text-white hover:bg-paa-navy-800`}
-            title="Recalcule les chiffres et les textes du rapport"
+            title="Recalcule les chiffres à porter dans les tableaux et les graphiques"
           >
             {occupe === "maj" ? "Mise à jour…" : "🔄 Mettre à jour"}
           </button>
@@ -377,12 +380,12 @@ export function BarreRapportOfficiel({
       {etat && (
         <p className="text-fluid-xs app-text-muted">
           {etat.importe
-            ? `Classeur importé pour ${campagne} : ${etat.nb_textes} texte(s), ` +
+            ? `Classeur importé pour ${campagne} : ` +
               `${etat.nb_valeurs_comparatif} valeur(s) de référence, ` +
               `${etat.nb_donnees_directes} surcharge(s), ` +
               `${etat.nb_lignes_annexes} ligne(s) d'annexe.`
-            : `Aucun classeur importé pour ${campagne} : les textes de référence ` +
-              "seront utilisés et les annexes resteront vides."}
+            : `Aucun classeur importé pour ${campagne} : les annexes resteront ` +
+              "vides et le tableau comparatif sera partiellement vide."}
         </p>
       )}
 

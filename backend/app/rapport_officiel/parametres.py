@@ -1,9 +1,8 @@
 """Contrat de données Excel du Rapport DEESP — modèle, import, valeurs par défaut.
 
 Le rapport officiel contient des contenus que l'application ne peut pas
-connaître : chiffres macro-économiques de l'introduction, constats terrain de
-la conclusion, campagne de référence du tableau comparatif, relevés manuels
-des annexes, signataires.
+connaître : campagne de référence du tableau comparatif, relevés manuels des
+annexes, signataires.
 
 Ces contenus sont saisis par le rédacteur dans un classeur Excel :
 
@@ -14,14 +13,22 @@ Ces contenus sont saisis par le rédacteur dans un classeur Excel :
   3. il le ré-importe (`lire_classeur`), ce qui persiste le contenu normalisé
      dans la table `rapport_parametres`.
 
-Le classeur comporte six feuilles :
+Refonte 2026-09-29 — rapport épuré, sans commentaires textuels :
+
+Le classeur ne comporte plus que **cinq feuilles** (la feuille « Textes » a
+été retirée puisque les paragraphes rédactionnels ne sont plus injectés
+dans le rapport, cf. `generateur.py`) :
 
   - « Metadonnees »       : code document, version, dates, pagination
-  - « Textes »            : paragraphes rédigés (introduction, conclusion…)
   - « Comparatif »        : campagne de référence du Tableau 19
   - « Donnees directes »  : surcharge manuelle des temps calculés
   - « Annexes »           : relevés terrain du tableau des temps réels
   - « Signatures »        : rédacteur / vérificateur / approbateur
+
+Un classeur d'ancienne version qui contient encore une feuille « Textes »
+reste lisible : elle est ignorée silencieusement. `TEXTES_DEFAUT` est
+conservé pour la rétro-compat des documents `rapport_parametres` déjà
+stockés en base — le générateur n'y touche plus.
 """
 
 from __future__ import annotations
@@ -239,11 +246,6 @@ AIDE_FEUILLES: dict[str, str] = {
         "Identification du document (bloc qualité en tête de page 2). "
         "Ne renseigner que la colonne VALEUR."
     ),
-    FEUILLE_TEXTES: (
-        "Paragraphes rédactionnels du rapport. Modifiez la colonne TEXTE : le "
-        "contenu est repris tel quel dans le document Word. Laissez vide pour "
-        "conserver le texte de référence."
-    ),
     FEUILLE_COMPARATIF: (
         "Tableau 19 — campagne de référence à laquelle la campagne courante est "
         "comparée. La colonne VALEUR (Mn) attend un entier. Le sens de variation "
@@ -382,23 +384,8 @@ def construire_modele_excel(
         feuille.cell(row=ligne_idx, column=1, value=cle)
         feuille.cell(row=ligne_idx, column=2, value=valeur)
 
-    # --- Textes ------------------------------------------------------------
-    feuille = nouvelle_feuille(
-        FEUILLE_TEXTES, [("CLE", 22), ("SECTION", 18), ("TEXTE", 110)]
-    )
-    sections = {
-        "intro": "Introduction",
-        "methodologie": "Méthodologie",
-        "conclusion": "Conclusion",
-        "recommandation": "Recommandations",
-    }
-    for ligne_idx, (cle, texte) in enumerate(parametres["textes"].items(), start=3):
-        prefixe = cle.split("_")[0]
-        feuille.cell(row=ligne_idx, column=1, value=cle)
-        feuille.cell(row=ligne_idx, column=2, value=sections.get(prefixe, "Divers"))
-        cellule = feuille.cell(row=ligne_idx, column=3, value=texte)
-        cellule.alignment = Alignment(wrap_text=True, vertical="top")
-        feuille.row_dimensions[ligne_idx].height = 58
+    # --- (Refonte 2026-09-29) feuille « Textes » retirée du modèle Excel :
+    # les paragraphes rédactionnels ne sont plus injectés dans le rapport.
 
     # --- Comparatif (Tableau 19) ------------------------------------------
     feuille = nouvelle_feuille(
@@ -491,7 +478,12 @@ def construire_modele_excel(
         "Ce classeur ne contient QUE les données que l'application ne collecte pas. "
         "Les temps de traversée, les tronçons congestionnés et les 12 graphiques "
         "sont recalculés automatiquement depuis les mesures Google Routes de la "
-        "période et du créneau horaire sélectionnés sur la page Rapport."
+        "période et du créneau horaire sélectionnés sur la page Rapport.\n"
+        "\n"
+        "Note (refonte 2026-09-29) : le rapport généré n'affiche plus de "
+        "paragraphes rédactionnels — uniquement les tableaux, les 12 graphiques, "
+        "les mentions de source et les signatures. La feuille « Textes » des "
+        "versions précédentes est donc retirée du modèle."
     )
     garde["A3"].alignment = Alignment(wrap_text=True, vertical="top")
     garde.merge_cells("A3:H8")
@@ -559,14 +551,20 @@ def lire_classeur(contenu: bytes) -> tuple[dict[str, Any], list[str]]:
             metadonnees[cle] = valeur
 
     # --- Textes ------------------------------------------------------------
+    # Refonte 2026-09-29 — feuille retirée du modèle. La lecture reste
+    # tolérante pour les classeurs d'ancienne version : les textes trouvés
+    # sont persistés en base pour rétro-compat mais ne sont plus rendus dans
+    # le rapport généré. La feuille absente n'émet pas d'avertissement (ce
+    # n'est plus une anomalie).
     textes: dict[str, str] = {}
-    for ligne in lignes(FEUILLE_TEXTES):
-        if not ligne:
-            continue
-        cle = _texte(ligne[0])
-        texte = _texte(ligne[2] if len(ligne) > 2 else None)
-        if cle and texte:
-            textes[cle] = texte
+    if FEUILLE_TEXTES in classeur.sheetnames:
+        for ligne in classeur[FEUILLE_TEXTES].iter_rows(min_row=3, values_only=True):
+            if not ligne:
+                continue
+            cle = _texte(ligne[0])
+            texte = _texte(ligne[2] if len(ligne) > 2 else None)
+            if cle and texte:
+                textes[cle] = texte
 
     # --- Comparatif --------------------------------------------------------
     comparatif: dict[str, Any] = {"valeurs": {}}
