@@ -1,6 +1,7 @@
 """Routeur /carte — état temps réel des tronçons + WebSocket de diffusion.
 
   - GET       /carte/etat → snapshot synchrone (rafraîchissement périodique).
+  - GET       /carte/resume-axes → temps actuel + min/moy/max de tous les axes.
   - WebSocket /ws/etat    → push à chaque nouvelle mesure (rafraîchissement live).
 
 Le WebSocket n'est pas sous le préfixe `/carte` pour respecter la convention
@@ -12,13 +13,21 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.collecte.plage import lire_plage_collecte
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.etat.carte import construire_etat_carte
+from app.models.models import Troncon
+from app.predicteur.profils import _prediction_google, _prediction_jour_type
 from app.realtime.diffusion import get_diffuseur
 
 
@@ -92,6 +101,80 @@ router_ws = APIRouter(tags=["temps réel (WebSocket)"])
 )
 async def etat_carte(db: Session = Depends(get_db)) -> dict[str, Any]:
     return construire_etat_carte(db)
+
+
+# ---------------------------------------------------------------------------
+# GET /carte/resume-axes — temps actuel + min/moy/max de tous les axes (§ 39)
+# ---------------------------------------------------------------------------
+
+
+class ResumeAxe(BaseModel):
+    """Temps de traversée d'un axe, au format de la page Temps de traversée."""
+    troncon_id: int
+    nom: str
+    temps_actuel_s: int | None = Field(
+        None, description="Mesure Google du créneau horaire courant (null si aucune)",
+    )
+    min_s: int | None = Field(None, description="Minimum sur 7 j, même type de jour")
+    moyen_s: int | None = Field(None, description="Moyenne sur 7 j, même type de jour")
+    max_s: int | None = Field(None, description="Maximum sur 7 j, même type de jour")
+    temps_reference_50kmh_s: float
+
+
+class ResumeAxes(BaseModel):
+    """Synthèse de tous les axes actifs pour la page Accueil."""
+    instant_local: str
+    type_jour: str
+    hors_plage_collecte: bool
+    plage_collecte: str
+    axes: list[ResumeAxe]
+
+
+@router.get(
+    "/resume-axes",
+    summary="Temps actuel et min/moyen/max de tous les axes",
+    description=(
+        "Pour chaque axe actif, en un seul appel :\n\n"
+        "- **temps_actuel_s** : mesure Google du créneau courant (fenêtre 65 min), "
+        "identique au bloc « Temps actuel » de la page Temps de traversée ; "
+        "null hors plage de collecte ou sans mesure récente ;\n"
+        "- **min_s / moyen_s / max_s** : 7 derniers jours du même type de jour "
+        "(jours ouvrables ou week-ends).\n\n"
+        "Un axe découpé en tronçons codifiés est agrégé par somme des tronçons."
+    ),
+    response_model=ResumeAxes,
+)
+def resume_axes(db: Session = Depends(get_db)) -> ResumeAxes:
+    fuseau = ZoneInfo(get_settings().tz)
+    maintenant_local = datetime.now(tz=fuseau)
+    maintenant_utc = maintenant_local.astimezone(timezone.utc)
+    plage = lire_plage_collecte(db)
+
+    axes = db.execute(
+        select(Troncon).where(Troncon.actif.is_(True)).order_by(Troncon.id)
+    ).scalars().all()
+
+    resumes: list[ResumeAxe] = []
+    for axe in axes:
+        actuel = _prediction_google(db, axe, maintenant_utc, fenetre_minutes=65)
+        bornes = _prediction_jour_type(db, axe, maintenant_utc)
+        resumes.append(ResumeAxe(
+            troncon_id=axe.id,
+            nom=axe.nom,
+            temps_actuel_s=actuel.moyen_s if actuel else None,
+            min_s=bornes.min_s if bornes else None,
+            moyen_s=bornes.moyen_s if bornes else None,
+            max_s=bornes.max_s if bornes else None,
+            temps_reference_50kmh_s=round(axe.temps_reference_s(), 1),
+        ))
+
+    return ResumeAxes(
+        instant_local=maintenant_local.isoformat(),
+        type_jour="jour_ouvrable" if maintenant_local.weekday() < 5 else "week_end",
+        hors_plage_collecte=not plage.contient(maintenant_local.hour),
+        plage_collecte=plage.libelle,
+        axes=resumes,
+    )
 
 
 # ---------------------------------------------------------------------------

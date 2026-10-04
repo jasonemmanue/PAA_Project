@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger("paa.administration")
 
+from app.collecte.plan_axes import construire_plan_collecte
 from app.collecte.scheduler import (
     QUOTA_GOOGLE_JOUR_MAX,
     estimer_requetes_par_jour,
@@ -822,53 +823,22 @@ def _resume_adoption_collecte(db: Session) -> dict[str, Any]:
     Permet à la page Administration d'afficher dès l'enregistrement :
       - combien de tronçons actifs sont désormais surveillés,
       - le nombre de requêtes/jour estimées,
-      - un avertissement si on franchit le plafond Google (250 req/jour).
+      - un avertissement si on franchit le plafond Google (200 req/jour).
 
     Le scheduler ne nécessite pas de redémarrage : `cycle_de_collecte()`
     relit la liste des tronçons actifs à chaque tick.
     """
     settings = get_settings()
-    # Parents sans sous-tronçon actif + liens M2M sous-tronçons
-    axes_couverts_par_sous = {
-        aid for (aid,) in db.execute(
-            select(axe_sous_troncons.c.axe_id).distinct()
-        ).all()
-    }
-    for (tid,) in db.execute(
-        select(SousTroncon.troncon_id).where(SousTroncon.actif.is_(True)).distinct()
-    ).all():
-        axes_couverts_par_sous.add(tid)
-    ids_parents_actifs = [
-        tid for (tid,) in db.execute(
-            select(Troncon.id).where(Troncon.actif.is_(True))
-        ).all()
-    ]
-    nb_parents_a_mesurer = sum(
-        1 for tid in ids_parents_actifs if tid not in axes_couverts_par_sous
-    )
-    nb_liens_sous = db.execute(
-        select(func.count()).select_from(
-            axe_sous_troncons.join(
-                SousTroncon,
-                axe_sous_troncons.c.sous_troncon_id == SousTroncon.id,
-            )
-        ).where(SousTroncon.actif.is_(True))
-    ).scalar_one() or 0
-    nb_sous_orphelins = db.execute(
-        select(func.count(SousTroncon.id))
-        .where(
-            SousTroncon.actif.is_(True),
-            ~SousTroncon.id.in_(select(axe_sous_troncons.c.sous_troncon_id)),
-        )
-    ).scalar_one() or 0
-    nb_actifs = nb_parents_a_mesurer + nb_liens_sous + nb_sous_orphelins
-    estimation = estimer_requetes_par_jour(settings, nb_actifs)
+    # Une requête Google par axe (étapes = bornes des tronçons), cf. § 39
+    plan = construire_plan_collecte(db)
+    nb_actifs = plan.nb_resultats
+    estimation = estimer_requetes_par_jour(settings, plan.nb_appels)
     avertissement: str | None = None
     if estimation > QUOTA_GOOGLE_JOUR_MAX:
         avertissement = (
             f"Le quota Google estimé ({estimation} req/jour) dépasse la "
-            f"limite {QUOTA_GOOGLE_JOUR_MAX}. Augmenter COLLECT_INTERVAL_MINUTES "
-            "ou réduire la plage horaire."
+            f"limite {QUOTA_GOOGLE_JOUR_MAX}. Réduire la plage horaire de "
+            "collecte (sélecteur horaire en haut de page)."
         )
     return {
         "nb_troncons_actifs": nb_actifs,

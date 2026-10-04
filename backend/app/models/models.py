@@ -884,3 +884,33 @@ class RapportParametres(Base):
 
     def __repr__(self) -> str:
         return f"<RapportParametres campagne={self.campagne!r}>"
+
+
+# =============================================================================
+# Paramètres d'exploitation modifiables sans redéploiement (migration 0018)
+# =============================================================================
+
+
+class ParametreApplication(Base):
+    """Réglage d'exploitation persisté en base, clé → valeur JSON (migration 0018).
+
+    Sert aux réglages que l'opérateur modifie depuis l'interface et qui
+    doivent survivre aux redéploiements Railway. Clé utilisée aujourd'hui :
+      - `plage_collecte` : `{"heure_debut": 7, "heure_fin": 19}` — fenêtre
+        horaire (heure locale Africa/Abidjan) hors de laquelle aucune
+        requête Google n'est émise.
+    """
+
+    __tablename__ = "parametres_application"
+
+    cle: Mapped[str] = mapped_column(String(64), primary_key=True)
+    valeur: Mapped[dict] = mapped_column(
+        postgresql.JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    maj_le: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        server_default=func.now(), onupdate=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ParametreApplication cle={self.cle!r}>"

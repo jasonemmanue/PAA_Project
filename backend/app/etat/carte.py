@@ -33,6 +33,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.collecte.plan_axes import sens_par_continuite
 from app.analyse.congestion import (
     COULEURS_DEESP,
     LIBELLES_DEESP_FR,
@@ -41,7 +42,92 @@ from app.analyse.congestion import (
 from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.models import Incident, Mesure, SousTroncon, Troncon, axe_sous_troncons
-from app.sources.polyline import calculer_sens_par_axe
+from app.sources.polyline import calculer_sens_par_axe, distance_haversine_m
+
+
+# Part de la distance d'un axe en tronçons congestionnés au-delà de laquelle
+# l'axe entier est déclaré congestionné (décision opérateur du 2026-10-04).
+SEUIL_DISTANCE_CONGESTIONNEE_AXE_PCT = 50.0
+
+# Rayon de tolérance pour reconnaître l'axe retour d'un axe aller
+# (extrémités inversées).
+_TOLERANCE_PAIRE_AXES_M = 300
+
+
+def _etat_axe(entree: dict[str, Any]) -> dict[str, Any]:
+    """Classe d'un axe à partir de ses tronçons codifiés (§ 39).
+
+    - Axe découpé : congestionné si les tronçons congestionnés couvrent au
+      moins 50 % de la distance des tronçons qualifiés ; indéterminé si aucun
+      tronçon n'est qualifié par Google ; fluide sinon.
+    - Axe sans tronçon : sa propre classe DEESP.
+    """
+    sous = entree.get("sous_troncons") or []
+    if not sous:
+        classe = entree.get("classe_congestion") or "indetermine"
+        return {
+            "classe_axe": classe,
+            "libelle_classe_axe": LIBELLES_DEESP_FR[classe],
+            "couleur_classe_axe": COULEURS_DEESP[classe],
+            "pct_distance_congestionnee": (
+                100.0 if classe == "congestionne" else 0.0 if classe == "fluide" else None
+            ),
+            "nb_troncons_congestionnes": 0,
+        }
+
+    distance_qualifiee = 0
+    distance_congestionnee = 0
+    nb_congestionnes = 0
+    for s in sous:
+        if s["classe_congestion"] == "indetermine":
+            continue
+        distance = s.get("distance_m") or 0
+        distance_qualifiee += distance
+        if s["classe_congestion"] == "congestionne":
+            distance_congestionnee += distance
+            nb_congestionnes += 1
+
+    if distance_qualifiee <= 0:
+        classe, pct = "indetermine", None
+    else:
+        pct = round(distance_congestionnee * 100.0 / distance_qualifiee, 1)
+        classe = "congestionne" if pct >= SEUIL_DISTANCE_CONGESTIONNEE_AXE_PCT else "fluide"
+    return {
+        "classe_axe": classe,
+        "libelle_classe_axe": LIBELLES_DEESP_FR[classe],
+        "couleur_classe_axe": COULEURS_DEESP[classe],
+        "pct_distance_congestionnee": pct,
+        "nb_troncons_congestionnes": nb_congestionnes,
+    }
+
+
+def _sens_et_libelles_axe(axe: Troncon, axes: list[Troncon]) -> dict[str, Any]:
+    """Sens aller/retour d'un axe et libellés de ses extrémités.
+
+    Deux axes aux extrémités inversées forment une paire : celui d'id le plus
+    petit est l'aller (convention des 6 axes officiels : 1/3/5 aller, 2/4/6
+    retour). Un axe sans paire n'a pas de sens déclaré.
+    """
+    morceaux = [m.strip() for m in axe.nom.replace("->", "→").split("→")]
+    origine = morceaux[0] if morceaux else axe.nom
+    destination = morceaux[-1] if len(morceaux) > 1 else ""
+
+    sens: str | None = None
+    if axe.lat_origine is not None and axe.lat_destination is not None:
+        for autre in axes:
+            if autre.id == axe.id or autre.lat_origine is None or autre.lat_destination is None:
+                continue
+            if (
+                distance_haversine_m(axe.lat_origine, axe.lon_origine,
+                                     autre.lat_destination, autre.lon_destination)
+                <= _TOLERANCE_PAIRE_AXES_M
+                and distance_haversine_m(axe.lat_destination, axe.lon_destination,
+                                         autre.lat_origine, autre.lon_origine)
+                <= _TOLERANCE_PAIRE_AXES_M
+            ):
+                sens = "aller" if axe.id < autre.id else "retour"
+                break
+    return {"sens_axe": sens, "origine_libelle": origine, "destination_libelle": destination}
 
 
 def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
@@ -159,7 +245,11 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 "source": m.source.value,
             }
 
-        def _carte_sous_troncon(s: SousTroncon, axe_parent: Troncon | None = None) -> dict[str, Any]:
+        def _carte_sous_troncon(
+            s: SousTroncon,
+            axe_parent: Troncon | None = None,
+            sens_continuite: dict[int, str] | None = None,
+        ) -> dict[str, Any]:
             axe_id = axe_parent.id if axe_parent else s.troncon_id
             m = dernieres_par_axe_sous.get((axe_id, s.id))
             pct_rouge = m.pourcentage_rouge if m is not None else None
@@ -171,8 +261,12 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 statut_s = "mesure_disponible" if m.duree_trafic_s is not None else "trou_de_mesure"
             # Sens de circulation dans le contexte de cet axe parent —
             # direct = lat_debut → lat_fin ; inverse = lat_fin → lat_debut.
+            # Priorité au sens par continuité du tracé (même règle que la
+            # collecte, cf. plan_axes.sens_par_continuite).
             sens_axe = "direct"
-            if axe_parent is not None and axe_parent.lat_origine is not None:
+            if sens_continuite is not None and s.id in sens_continuite:
+                sens_axe = sens_continuite[s.id]
+            elif axe_parent is not None and axe_parent.lat_origine is not None:
                 sens_axe = calculer_sens_par_axe(
                     axe_parent.lat_origine, axe_parent.lon_origine,
                     s.lat_debut, s.lon_debut, s.lat_fin, s.lon_fin,
@@ -237,7 +331,15 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                 else:
                     statut = "trou_de_mesure"
 
-            sous_serialises = [_carte_sous_troncon(s, troncon) for s in sous_du_parent]
+            sens_continuite: dict[int, str] | None = None
+            if sous_du_parent and troncon.lat_origine is not None and all(
+                None not in (s.lat_debut, s.lon_debut, s.lat_fin, s.lon_fin)
+                for s in sous_du_parent
+            ):
+                sens_continuite = sens_par_continuite(troncon, sous_du_parent)
+            sous_serialises = [
+                _carte_sous_troncon(s, troncon, sens_continuite) for s in sous_du_parent
+            ]
 
             if sous_serialises:
                 # Axe avec sous-tronçons : le temps est la somme des temps
@@ -340,6 +442,11 @@ def construire_etat_carte(session: Session | None = None) -> dict[str, Any]:
                         "pourcentage_vert": pct_vert,
                     },
                 })
+
+        # 3bis. État propre à chaque axe (§ 39) — classe d'axe, sens, libellés
+        for entree, troncon in zip(etat_troncons, troncons):
+            entree.update(_etat_axe(entree))
+            entree.update(_sens_et_libelles_axe(troncon, troncons))
 
         # 4. Incidents actifs géolocalisés — max 20 les plus récents
         seuil_actif = instant_utc - timedelta(hours=settings.incident_actif_heures)

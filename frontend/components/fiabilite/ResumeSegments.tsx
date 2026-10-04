@@ -5,7 +5,7 @@
  *
  * Deux blocs :
  *   1. Explication du principe « précision progressive » (toujours visible).
- *   2. Tableau de synthèse par tronçon : sessions, durée estimée, confiance.
+ *   2. Tableau de synthèse par tronçon : sessions, durée estimée, couverture.
  *
  * Source : GET /terrain/segments/resume (tous les tronçons actifs).
  */
@@ -27,25 +27,6 @@ function formaterMn(s: number | null): string {
   const mn = Math.floor(s / 60);
   const sec = Math.round(s % 60);
   return `${mn}:${String(sec).padStart(2, "0")} min`;
-}
-
-function BarreConfiance({ confiance }: { confiance: number }) {
-  const pct = Math.round(confiance * 100);
-  const couleur =
-    pct >= 75
-      ? "bg-statut-fluide"
-      : pct >= 40
-        ? "bg-yellow-400"
-        : "bg-statut-congestionne";
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="h-2 w-20 overflow-hidden rounded-full bg-paa-blue-100 dark:bg-paa-navy-700">
-        <div className={`h-full ${couleur} transition-all`} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-fluid-xs font-medium tabular-nums">{pct} %</span>
-    </div>
-  );
 }
 
 function BadgeSource({ source }: { source: string }) {
@@ -131,32 +112,6 @@ export function ResumeSegmentsBlock({ rafraichir = 0 }: ResumeSegmentsProps) {
             </p>
           </section>
 
-          {/* Schéma de confiance */}
-          <section>
-            <h4 className="font-semibold text-paa-navy-800 dark:text-paa-blue-100 mb-2">
-              {t("segments.confianceTitle")}
-            </h4>
-            <div className="grid gap-2 sm:grid-cols-2 text-fluid-xs">
-              {[
-                { pct: "0–25 %", label: t("segments.confiance0"), couleur: "bg-statut-congestionne" },
-                { pct: "25–50 %", label: t("segments.confiance1"), couleur: "bg-yellow-400" },
-                { pct: "50–75 %", label: t("segments.confiance2"), couleur: "bg-yellow-400" },
-                { pct: "75–100 %", label: t("segments.confiance3"), couleur: "bg-statut-fluide" },
-              ].map(({ pct, label, couleur }) => (
-                <div key={pct} className="flex items-center gap-3 rounded border app-border px-3 py-2">
-                  <div className={`h-3 w-3 shrink-0 rounded-full ${couleur}`} />
-                  <div>
-                    <span className="font-semibold">{pct}</span>
-                    <span className="app-text-muted"> — {label}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="app-text-muted mt-2">
-              {t("segments.explication3")}
-            </p>
-          </section>
-
           {/* Procédure */}
           <section>
             <h4 className="font-semibold text-paa-navy-800 dark:text-paa-blue-100 mb-2">
@@ -183,17 +138,9 @@ export function ResumeSegmentsBlock({ rafraichir = 0 }: ResumeSegmentsProps) {
       {/* ------------------------------------------------------------------ */}
       {/* KPI résumé                                                          */}
       {/* ------------------------------------------------------------------ */}
-      <div className="mb-4 grid gap-2 sm:grid-cols-3 text-fluid-xs">
+      <div className="mb-4 grid gap-2 sm:grid-cols-2 text-fluid-xs">
         <KpiBox label={t("segments.kpiSessions")} valeur={String(totalSessions)} />
         <KpiBox label={t("segments.kpiTroncons")} valeur={`${tronconsAvecDonnees} / ${resumes.length}`} />
-        <KpiBox
-          label={t("segments.kpiConfianceMoy")}
-          valeur={
-            resumes.length > 0
-              ? `${Math.round((resumes.reduce((a, r) => a + r.confiance, 0) / resumes.length) * 100)} %`
-              : "—"
-          }
-        />
       </div>
 
       {/* ------------------------------------------------------------------ */}
@@ -220,7 +167,6 @@ export function ResumeSegmentsBlock({ rafraichir = 0 }: ResumeSegmentsProps) {
                 <Th>{t("segments.colMin")}</Th>
                 <Th>{t("segments.colMax")}</Th>
                 <Th>{t("segments.colCouverture")}</Th>
-                <Th>{t("segments.colConfiance")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -248,15 +194,6 @@ export function ResumeSegmentsBlock({ rafraichir = 0 }: ResumeSegmentsProps) {
                     </Td>
                     <Td className="tabular-nums">
                       {r.couverture_moyenne_pct.toFixed(0)} %
-                    </Td>
-                    <Td>
-                      {r.nb_sessions > 0 ? (
-                        <BarreConfiance confiance={r.confiance} />
-                      ) : (
-                        <span className="app-text-muted text-fluid-xs">
-                          {t("segments.aucunSegmentRow")}
-                        </span>
-                      )}
                     </Td>
                   </tr>
                 );

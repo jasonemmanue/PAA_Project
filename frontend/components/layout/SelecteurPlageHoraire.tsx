@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
+
+import { useAuth } from "@/contexts/AuthContext";
 import { usePlageHoraire } from "@/contexts/PlageHoraireContext";
+import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
+import type { PlageCollecte } from "@/lib/types";
 
 const HEURES = Array.from({ length: 25 }, (_, i) => i);
 
@@ -11,11 +16,48 @@ export function SelecteurPlageHoraire() {
   const [dLocal, setDLocal] = useState(heureDebut);
   const [fLocal, setFLocal] = useState(heureFin);
 
+  // Plage de collecte Google (côté serveur) — distincte de la plage d'analyse
+  const { t } = useI18n();
+  const { peutEcrire } = useAuth();
+  const [collecte, setCollecte] = useState<PlageCollecte | null>(null);
+  const [dCollecte, setDCollecte] = useState(0);
+  const [fCollecte, setFCollecte] = useState(24);
+  const [enregistrement, setEnregistrement] = useState(false);
+  const [messageCollecte, setMessageCollecte] = useState<string | null>(null);
+
   const ouvrir = () => {
     setDLocal(heureDebut);
     setFLocal(heureFin);
     setOuvert(true);
+    setMessageCollecte(null);
+    api.plageCollecte()
+      .then((p) => {
+        setCollecte(p);
+        setDCollecte(p.heure_debut);
+        setFCollecte(p.heure_fin);
+      })
+      .catch(() => setCollecte(null));
   };
+
+  const enregistrerCollecte = async () => {
+    if (dCollecte >= fCollecte) return;
+    setEnregistrement(true);
+    setMessageCollecte(null);
+    try {
+      const p = await api.majPlageCollecte(dCollecte, fCollecte);
+      setCollecte(p);
+      setMessageCollecte(t("plageCollecte.enregistree"));
+    } catch (e) {
+      setMessageCollecte(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnregistrement(false);
+    }
+  };
+
+  // Estimation instantanée pendant l'édition : appels/cycle × heures actives
+  const estimationEdition = collecte
+    ? collecte.appels_google_par_cycle * Math.max(0, fCollecte - dCollecte)
+    : null;
 
   const appliquer = () => {
     if (dLocal < fLocal) {
@@ -57,7 +99,7 @@ export function SelecteurPlageHoraire() {
       {ouvert && (
         <>
           <div className="fixed inset-0 z-[1200]" onClick={() => setOuvert(false)} />
-          <div className="fixed sm:absolute right-4 sm:right-0 top-14 sm:top-full sm:mt-2 z-[1201] w-[260px]
+          <div className="fixed sm:absolute right-4 sm:right-0 top-14 sm:top-full sm:mt-2 z-[1201] w-[280px] max-h-[80vh] overflow-y-auto
                           rounded-lg border border-paa-blue-200 dark:border-paa-navy-700
                           bg-white dark:bg-paa-navy-900 shadow-xl p-4">
             <h3 className="text-[12px] font-semibold text-paa-navy-800 dark:text-paa-blue-100 mb-3">
@@ -136,6 +178,80 @@ export function SelecteurPlageHoraire() {
               >
                 Réinitialiser 24h/24
               </button>
+            </div>
+
+            {/* Plage de collecte Google — aucune requête hors de cette fenêtre */}
+            <div className="mt-4 border-t border-gray-200 dark:border-paa-navy-700 pt-3">
+              <h3 className="text-[12px] font-semibold text-paa-navy-800 dark:text-paa-blue-100 mb-1">
+                {t("plageCollecte.titre")}
+              </h3>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-2">
+                {t("plageCollecte.description")}
+              </p>
+              {collecte === null ? (
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">{t("common.loading")}</p>
+              ) : peutEcrire ? (
+                <>
+                  <div className="flex items-center gap-2 mb-2">
+                    <select
+                      value={dCollecte}
+                      onChange={(e) => setDCollecte(Number(e.target.value))}
+                      aria-label={t("plageCollecte.debut")}
+                      className="flex-1 rounded-md border border-gray-300 dark:border-paa-navy-600
+                                 bg-white dark:bg-paa-navy-800 px-2 py-1.5 text-[12px]
+                                 text-paa-navy-900 dark:text-paa-blue-100
+                                 focus:outline-none focus:ring-2 focus:ring-paa-blue-400"
+                    >
+                      {HEURES.filter((h) => h < 24).map((h) => (
+                        <option key={h} value={h}>{String(h).padStart(2, "0")}h00</option>
+                      ))}
+                    </select>
+                    <span className="text-gray-400 dark:text-gray-500 text-sm font-bold">→</span>
+                    <select
+                      value={fCollecte}
+                      onChange={(e) => setFCollecte(Number(e.target.value))}
+                      aria-label={t("plageCollecte.fin")}
+                      className="flex-1 rounded-md border border-gray-300 dark:border-paa-navy-600
+                                 bg-white dark:bg-paa-navy-800 px-2 py-1.5 text-[12px]
+                                 text-paa-navy-900 dark:text-paa-blue-100
+                                 focus:outline-none focus:ring-2 focus:ring-paa-blue-400"
+                    >
+                      {HEURES.filter((h) => h >= 1 && h > dCollecte).map((h) => (
+                        <option key={h} value={h}>{String(h).padStart(2, "0")}h00</option>
+                      ))}
+                    </select>
+                  </div>
+                  {estimationEdition !== null && (
+                    <p className={`text-[10px] mb-2 ${
+                      estimationEdition > collecte.plafond_google_par_jour
+                        ? "text-red-500"
+                        : "text-gray-500 dark:text-gray-400"
+                    }`}>
+                      ≈ {estimationEdition} {t("plageCollecte.reqJour")} ({t("plageCollecte.plafond")} {collecte.plafond_google_par_jour})
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={enregistrerCollecte}
+                    disabled={enregistrement || dCollecte >= fCollecte
+                      || (dCollecte === collecte.heure_debut && fCollecte === collecte.heure_fin)}
+                    className="w-full rounded-md bg-paa-navy-700 px-3 py-2 text-[12px] font-semibold
+                               text-white hover:bg-paa-navy-800 disabled:opacity-40 transition-colors shadow-sm"
+                  >
+                    {enregistrement ? t("common.loading") : t("plageCollecte.enregistrer")}
+                  </button>
+                </>
+              ) : (
+                <p className="text-[12px] font-semibold text-paa-navy-800 dark:text-paa-blue-100">
+                  {String(collecte.heure_debut).padStart(2, "0")}h00 → {String(collecte.heure_fin).padStart(2, "0")}h00
+                  <span className="ml-2 font-normal text-[10px] text-gray-500 dark:text-gray-400">
+                    ≈ {collecte.estimation_requetes_google_par_jour} {t("plageCollecte.reqJour")}
+                  </span>
+                </p>
+              )}
+              {messageCollecte && (
+                <p className="mt-2 text-[10px] text-paa-navy-600 dark:text-paa-blue-200">{messageCollecte}</p>
+              )}
             </div>
           </div>
         </>

@@ -39,7 +39,9 @@ import type {
   RapportTempsTraversee,
   RapportZonesCongestionnees,
   ReleveTerrainResponse,
+  PlageCollecte,
   ReponseGeocoder,
+  ResumeAxes,
   SerieTemporelle,
   Troncon,
 } from "./types";
@@ -160,6 +162,25 @@ export function getIndicateursTroncon(
 
 export function getCarteEtat(): Promise<CarteEtat> {
   return appel<CarteEtat>("/carte/etat");
+}
+
+/** Temps actuel + min/moy/max (7 j) de tous les axes, pour l'Accueil. */
+export function getResumeAxes(): Promise<ResumeAxes> {
+  return appel<ResumeAxes>("/carte/resume-axes");
+}
+
+/** Plage horaire de collecte Google en vigueur. */
+export function getPlageCollecte(): Promise<PlageCollecte> {
+  return appel<PlageCollecte>("/collecte/plage");
+}
+
+/** Modifie la plage de collecte — replanifie le scheduler sans redémarrage. */
+export function putPlageCollecte(heureDebut: number, heureFin: number): Promise<PlageCollecte> {
+  return appel<PlageCollecte>("/collecte/plage", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ heure_debut: heureDebut, heure_fin: heureFin }),
+  });
 }
 
 export function getCollecteStatus(): Promise<CollecteStatus> {
@@ -388,9 +409,6 @@ export function getSegmentsResume(): Promise<ResumeSegments[]> {
   return appel<ResumeSegments[]>("/terrain/segments/resume");
 }
 
-export function getSegmentsResumeTroncon(tronconId: number): Promise<ResumeSegments> {
-  return appel<ResumeSegments>(`/terrain/segments/resume/${tronconId}`);
-}
 
 export function getSegmentsListe(): Promise<Array<{ id: number; nom_fichier_gpx: string | null }>> {
   return appel<Array<{ id: number; nom_fichier_gpx: string | null }>>("/terrain/segments");
@@ -466,6 +484,9 @@ export const api = {
   mesures: getMesures,
   indicateurs: getIndicateursTroncon,
   carteEtat: getCarteEtat,
+  resumeAxes: getResumeAxes,
+  plageCollecte: getPlageCollecte,
+  majPlageCollecte: putPlageCollecte,
   collecteStatus: getCollecteStatus,
   collecteStart: postCollecteStart,
   collecteStop: postCollecteStop,
@@ -478,7 +499,6 @@ export const api = {
   terrainGpx: getTerrainGpx,
   segmentsImport: postSegmentImport,
   segmentsResume: getSegmentsResume,
-  segmentsResumeTroncon: getSegmentsResumeTroncon,
   segmentsListe: getSegmentsListe,
   segmentGpxTexte: getSegmentGpxTexte,
   rapportTempsTheoriques: getRapportTempsTheoriques,

@@ -85,7 +85,7 @@ class ResumeTempsSchema(BaseModel):
     temps_min_s: float | None
     temps_max_s: float | None
     couverture_moyenne_pct: float
-    confiance: float   # 0.0–1.0 (combinaison nb_sessions et couverture)
+    confiance: float   # conservé pour le frontend historique (plus affiché)
     sessions: list[EstimationSessionSchema]
 
     @classmethod

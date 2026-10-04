@@ -18,9 +18,10 @@ et exécute un cycle toutes les `COLLECT_INTERVAL_MINUTES`, uniquement entre
     seconde source temps réel sera intégrée, il suffira d'ajouter sa coroutine
     à la liste `_taches_par_troncon`.
 
-⚠️  Plafond Google : 250 requêtes/jour. Une vérification du quota théorique
-    est faite au démarrage et journalisée — l'opérateur doit ajuster
-    COLLECT_INTERVAL_MINUTES / plage horaire si la limite est dépassée.
+⚠️  Plafond Google : 200 requêtes/jour. Une requête par axe (étapes
+    intermédiaires = bornes des tronçons, cf. `plan_axes.py`). La plage
+    horaire de collecte est réglable depuis l'interface (`plage.py`) ;
+    hors de cette plage, aucune requête n'est émise.
 """
 
 from __future__ import annotations
@@ -35,14 +36,19 @@ from zoneinfo import ZoneInfo
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.agregation.profils import executer_agregation
 from app.core.config import Settings, get_settings
 from app.db.session import SessionLocal
 from app.etat.carte import construire_etat_carte
-from app.models.models import Mesure, SourceMesure, SousTroncon, Troncon, axe_sous_troncons
-from app.sources.polyline import calculer_sens_par_axe
+from app.models.models import Mesure, SourceMesure, SousTroncon, Troncon
+from app.collecte.plage import PlageCollecte, lire_plage_collecte
+from app.collecte.plan_axes import (
+    PlanAxe,
+    appels_google_par_cycle,
+    construire_plan_collecte,
+)
 from app.realtime.diffusion import get_diffuseur
 from app.sources import google_routes
 from app.sources.coordonnees import PointGPS
@@ -166,60 +172,6 @@ async def _collecter_google_pour_troncon(troncon: Troncon) -> ResultatSource:
     )
 
 
-async def _collecter_google_pour_sous_troncon(
-    sous_troncon: SousTroncon,
-    axe_id_contexte: int | None = None,
-    sens: str = "direct",
-) -> ResultatSource:
-    """Interroge Google Routes pour un sous-tronçon (portion fine T1A, T1B…).
-
-    - `axe_id_contexte` : axe parent auquel la mesure est attribuée. Permet à
-      un même sous-tronçon partagé entre plusieurs axes d'avoir une mesure
-      dédiée par axe (chaque axe = un contexte de circulation propre).
-      Si None, on retombe sur `sous_troncon.troncon_id` (parent principal).
-    - `sens` : "direct" (lat_debut → lat_fin) ou "inverse" (lat_fin → lat_debut).
-      Le sens est déterminé par l'orientation de l'axe parent (cf.
-      `calculer_sens_par_axe`) — un pont partagé par 2 axes opposés est ainsi
-      mesuré dans les 2 sens automatiquement à chaque cycle.
-    """
-    troncon_id_cible = axe_id_contexte if axe_id_contexte is not None else sous_troncon.troncon_id
-
-    async def _operation() -> ResultatSource:
-        if sens == "inverse":
-            origine = PointGPS(lat=sous_troncon.lat_fin, lon=sous_troncon.lon_fin)
-            destination = PointGPS(lat=sous_troncon.lat_debut, lon=sous_troncon.lon_debut)
-        else:
-            origine = PointGPS(lat=sous_troncon.lat_debut, lon=sous_troncon.lon_debut)
-            destination = PointGPS(lat=sous_troncon.lat_fin, lon=sous_troncon.lon_fin)
-        reponse = await google_routes.calcul_itineraire(origine, destination)
-        return ResultatSource(
-            source=SourceMesure.google,
-            troncon_id=troncon_id_cible,
-            sous_troncon_id=sous_troncon.id,
-            succes=True,
-            duree_trafic_s=reponse.duree_trafic_s,
-            duree_sans_trafic_s=reponse.duree_sans_trafic_s,
-            distance_m=reponse.distance_m,
-            pourcentage_rouge=reponse.pourcentage_rouge,
-            pourcentage_orange=reponse.pourcentage_orange,
-            pourcentage_vert=reponse.pourcentage_vert,
-            est_congestionne=reponse.est_congestionne,
-        )
-
-    return await _appel_avec_backoff(
-        _operation,
-        source=SourceMesure.google,
-        troncon_id=troncon_id_cible,
-    )
-
-
-# Map source → adaptateur. Ajouter ici toute nouvelle source temps réel.
-# TomTom retiré (CLAUDE.md § 2.5) — la chaîne ne contient plus que Google.
-_ADAPTATEURS_SOURCES: dict[SourceMesure, Callable[[Troncon], Awaitable[ResultatSource]]] = {
-    SourceMesure.google: _collecter_google_pour_troncon,
-}
-
-
 # ---------------------------------------------------------------------------
 # Persistance d'une mesure (succès ou trou)
 # ---------------------------------------------------------------------------
@@ -313,203 +265,144 @@ def _persister_mesures(resultats: list[ResultatSource], horodatage_utc: datetime
 # ---------------------------------------------------------------------------
 
 
+async def _collecter_google_pour_axe(plan: PlanAxe) -> list[ResultatSource]:
+    """Mesure tous les tronçons codifiés d'un axe avec une requête par chaîne.
+
+    Un échec (après les 3 tentatives) produit un trou de mesure pour chaque
+    tronçon de la chaîne concernée — aucune valeur n'est inventée (§ 5.3).
+    """
+    resultats: list[ResultatSource] = []
+    for appel in plan.appels:
+        derniere_erreur = ""
+        mesures: list[ResultatSource] | None = None
+        for tentative in range(1, 4):
+            try:
+                reponses = await google_routes.calcul_itineraire_multi(appel.points)
+                mesures = [
+                    ResultatSource(
+                        source=SourceMesure.google,
+                        troncon_id=plan.axe_id,
+                        sous_troncon_id=sous_id,
+                        succes=True,
+                        duree_trafic_s=reponse.duree_trafic_s,
+                        duree_sans_trafic_s=reponse.duree_sans_trafic_s,
+                        distance_m=reponse.distance_m,
+                        pourcentage_rouge=reponse.pourcentage_rouge,
+                        pourcentage_orange=reponse.pourcentage_orange,
+                        pourcentage_vert=reponse.pourcentage_vert,
+                        est_congestionne=reponse.est_congestionne,
+                    )
+                    for sous_id, reponse in zip(appel.legs, reponses)
+                    if sous_id is not None  # None = raccord entre tronçons disjoints
+                ]
+                break
+            except (httpx.HTTPError, RuntimeError, ValueError, asyncio.TimeoutError) as exc:
+                derniere_erreur = f"{type(exc).__name__}: {exc}"
+                logger.warning(
+                    "Source google axe %d : tentative %d/3 échouée (%s)",
+                    plan.axe_id, tentative, derniere_erreur,
+                )
+                if tentative < 3:
+                    await asyncio.sleep(2 ** (tentative - 1))
+
+        if mesures is None:
+            mesures = [
+                ResultatSource(
+                    source=SourceMesure.google, troncon_id=plan.axe_id,
+                    sous_troncon_id=sous_id, succes=False,
+                    message_erreur=derniere_erreur or "échec inconnu",
+                )
+                for sous_id in appel.legs if sous_id is not None
+            ]
+        resultats.extend(mesures)
+    return resultats
+
+
 async def cycle_de_collecte() -> dict[str, int]:
     """Un cycle complet : appels parallèles + persistance + journalisation.
 
-    Règle DEESP : si un tronçon parent a au moins un sous-tronçon actif,
-    on mesure **uniquement** les sous-tronçons (granularité fine, codification
-    T1A/T1B/T1C…). Sinon on mesure le parent dans son intégralité.
+    Règle DEESP : si un axe a au moins un tronçon codifié actif, on mesure
+    **uniquement** ses tronçons (granularité fine). Depuis le 2026-10-04,
+    tous les tronçons d'un axe sont mesurés par une seule requête Google à
+    étapes (`plan_axes.py`, CLAUDE.md § 39). Un axe sans tronçon est mesuré
+    d'un bout à l'autre comme avant.
 
-    Retourne un résumé `{nb_succes, nb_trous, nb_troncons, nb_sous_troncons,
-    nb_appels}` utile pour les endpoints de status.
+    Garde-fou : hors de la plage de collecte, le cycle ne fait rien.
     """
     horodatage_utc = datetime.now(tz=timezone.utc)
     settings = get_settings()
+    resume_vide = {
+        "nb_succes": 0, "nb_trous": 0, "nb_troncons": 0, "nb_sous_troncons": 0,
+        "nb_appels_google_reels": 0, "nb_resultats_persistes": 0,
+    }
 
-    # 1. Chargement des tronçons actifs (avec coordonnées résolues) ET de leurs
-    #    sous-tronçons actifs.
+    plage = lire_plage_collecte()
+    heure_locale = horodatage_utc.astimezone(ZoneInfo(settings.tz)).hour
+    if not plage.contient(heure_locale):
+        logger.info(
+            "Cycle ignoré : %dh hors de la plage de collecte %s.", heure_locale, plage.libelle,
+        )
+        return resume_vide
+
+    # 1. Plan du cycle (axes sans tronçon + chaînes par axe)
     session = SessionLocal()
     try:
-        troncons_actifs: list[Troncon] = list(
-            session.execute(
-                select(Troncon).where(
-                    Troncon.actif.is_(True),
-                    Troncon.lat_origine.is_not(None),
-                    Troncon.lon_origine.is_not(None),
-                    Troncon.lat_destination.is_not(None),
-                    Troncon.lon_destination.is_not(None),
-                )
-            ).scalars()
-        )
-        sous_troncons_actifs: list[SousTroncon] = list(
-            session.execute(
-                select(SousTroncon).where(SousTroncon.actif.is_(True))
-            ).scalars()
-        )
-        # Chargement des rattachements M2M (multi-parent, migration 0016).
-        # Permet à un sous-tronçon partagé entre 2 axes d'être mesuré dans
-        # les 2 sens automatiquement, chaque mesure étant attribuée à son
-        # axe de contexte.
-        liens_m2m = list(session.execute(
-            select(axe_sous_troncons.c.axe_id, axe_sous_troncons.c.sous_troncon_id)
-        ).all())
-        # Cache des axes par id pour lire l'origine (calcul du sens).
-        axes_par_id = {t.id: t for t in troncons_actifs}
+        plan = construire_plan_collecte(session)
     finally:
         session.close()
 
-    # Regroupe les axes parents rattachés à chaque sous-tronçon.
-    axes_par_sous: dict[int, list[int]] = {}
-    for axe_id, sous_id in liens_m2m:
-        axes_par_sous.setdefault(sous_id, []).append(axe_id)
+    if not plan.axes_sans_troncon and not plan.plans_axes:
+        logger.warning("Cycle de collecte : aucun axe actif.")
+        return resume_vide
 
-    if not troncons_actifs and not sous_troncons_actifs:
-        logger.warning("Cycle de collecte : aucun tronçon/sous-tronçon actif.")
-        return {
-            "nb_succes": 0, "nb_trous": 0,
-            "nb_troncons": 0, "nb_sous_troncons": 0, "nb_appels": 0,
-        }
+    nb_couples = sum(len(p.sous_troncon_ids) for p in plan.plans_axes)
 
-    # Axes couverts par au moins un sous-tronçon actif : exclus de la mesure
-    # "axe complet" (granularité fine prime). Le temps de l'axe est reconstitué
-    # par somme des sous-tronçons (module aggregation.py).
-    axes_avec_sous_couvert: set[int] = set()
-    for sous_id, axes_ids in axes_par_sous.items():
-        axes_avec_sous_couvert.update(axes_ids)
-    for st in sous_troncons_actifs:
-        if st.id not in axes_par_sous:
-            axes_avec_sous_couvert.add(st.troncon_id)
-    troncons_a_mesurer = [
-        t for t in troncons_actifs if t.id not in axes_avec_sous_couvert
-    ]
-
-    # 2. Décision des sources interrogées
-    sources_actives: list[SourceMesure] = []
-    if settings.google_routes_api_key:
-        sources_actives.append(SourceMesure.google)
-    else:
+    # 2. Appels Google (ou trous explicites si la clé est absente)
+    resultats: list[ResultatSource] = []
+    if not settings.google_routes_api_key:
         logger.error(
             "GOOGLE_ROUTES_API_KEY absente : aucune source temps réel disponible — "
             "trous de mesure pour ce cycle."
         )
-
-    # 3. Construction des tâches.
-    # Pour les sous-tronçons : une tâche par (axe parent, sous), avec sens
-    # calculé depuis l'origine de l'axe. Un pont partagé par 2 axes de sens
-    # opposés est donc mesuré 2 fois — une par sens de circulation réel.
-    # OPTIMISATION QUOTA : si 2 axes traversent le même sous dans le MÊME
-    # sens, un seul appel Google est fait et le résultat est cloné.
-    paires_sous: list[tuple[SousTroncon, int, str]] = []
-    for sous in sous_troncons_actifs:
-        ids_axes = axes_par_sous.get(sous.id, [sous.troncon_id])
-        for axe_id in ids_axes:
-            axe = axes_par_id.get(axe_id)
-            if axe is None or axe.lat_origine is None or axe.lon_origine is None:
-                sens = "direct"
-            else:
-                sens = calculer_sens_par_axe(
-                    axe.lat_origine, axe.lon_origine,
-                    sous.lat_debut, sous.lon_debut,
-                    sous.lat_fin, sous.lon_fin,
-                )
-            paires_sous.append((sous, axe_id, sens))
-
-    # Déduplication : regrouper par (sous_troncon_id, sens).
-    # Clé = (sous.id, sens) → un seul appel Google.
-    # Valeur = liste des axe_ids à alimenter avec le même résultat.
-    from collections import defaultdict
-    groupes_dedup: dict[tuple[int, str], list[tuple[SousTroncon, int]]] = defaultdict(list)
-    for sous, axe_id, sens in paires_sous:
-        groupes_dedup[(sous.id, sens)].append((sous, axe_id))
-
-    nb_appels_economises = len(paires_sous) - len(groupes_dedup)
-    if nb_appels_economises > 0:
-        logger.info(
-            "Déduplication quota : %d paires → %d appels Google "
-            "(%d économisés, sous-tronçons partagés même sens).",
-            len(paires_sous), len(groupes_dedup), nb_appels_economises,
-        )
-
-    taches: list[Awaitable[ResultatSource]] = []
-    for troncon in troncons_a_mesurer:
-        for src in sources_actives:
-            adaptateur = _ADAPTATEURS_SOURCES[src]
-            taches.append(adaptateur(troncon))
-
-    # Clé de dédup → index dans la liste de tâches (pour retrouver le résultat)
-    dedup_keys_ordre: list[tuple[int, str]] = []
-    for cle, groupe in groupes_dedup.items():
-        sous_representant, premier_axe = groupe[0]
-        if SourceMesure.google in sources_actives:
-            taches.append(_collecter_google_pour_sous_troncon(
-                sous_representant, axe_id_contexte=premier_axe, sens=cle[1],
-            ))
-            dedup_keys_ordre.append(cle)
-
-    # Si aucune source n'est dispo, on génère quand même des trous.
-    if not sources_actives:
-        resultats: list[ResultatSource] = []
-        for t in troncons_a_mesurer:
+        for axe in plan.axes_sans_troncon:
             resultats.append(ResultatSource(
-                source=SourceMesure.google, troncon_id=t.id, succes=False,
+                source=SourceMesure.google, troncon_id=axe.id, succes=False,
                 message_erreur="aucune source temps réel configurée",
             ))
-        for sous, axe_id_ctx, _sens in paires_sous:
-            resultats.append(ResultatSource(
-                source=SourceMesure.google,
-                troncon_id=axe_id_ctx, sous_troncon_id=sous.id, succes=False,
-                message_erreur="aucune source temps réel configurée",
-            ))
+        for plan_axe in plan.plans_axes:
+            for sous_id in plan_axe.sous_troncon_ids:
+                resultats.append(ResultatSource(
+                    source=SourceMesure.google, troncon_id=plan_axe.axe_id,
+                    sous_troncon_id=sous_id, succes=False,
+                    message_erreur="aucune source temps réel configurée",
+                ))
+        nb_appels_google = 0
     else:
-        resultats_bruts = list(await asyncio.gather(*taches, return_exceptions=False))
-        # Séparer les résultats des tronçons parents et les résultats dédupliqués
-        nb_troncons_parents = len(troncons_a_mesurer) * len(sources_actives)
-        resultats = list(resultats_bruts[:nb_troncons_parents])
+        taches_axes = [_collecter_google_pour_troncon(axe) for axe in plan.axes_sans_troncon]
+        taches_chaines = [_collecter_google_pour_axe(p) for p in plan.plans_axes]
+        resultats.extend(await asyncio.gather(*taches_axes))
+        for lot in await asyncio.gather(*taches_chaines):
+            resultats.extend(lot)
+        nb_appels_google = plan.nb_appels
 
-        # Cloner les résultats sous-tronçons pour chaque axe associé
-        resultats_dedup = resultats_bruts[nb_troncons_parents:]
-        for i, cle in enumerate(dedup_keys_ordre):
-            resultat_original = resultats_dedup[i]
-            groupe = groupes_dedup[cle]
-            # Le 1er axe du groupe a déjà son résultat
-            resultats.append(resultat_original)
-            # Les axes suivants reçoivent un clone avec leur propre troncon_id
-            for _sous, axe_id_secondaire in groupe[1:]:
-                clone = ResultatSource(
-                    source=resultat_original.source,
-                    troncon_id=axe_id_secondaire,
-                    sous_troncon_id=resultat_original.sous_troncon_id,
-                    succes=resultat_original.succes,
-                    duree_trafic_s=resultat_original.duree_trafic_s,
-                    duree_sans_trafic_s=resultat_original.duree_sans_trafic_s,
-                    distance_m=resultat_original.distance_m,
-                    message_erreur=resultat_original.message_erreur,
-                    pourcentage_rouge=resultat_original.pourcentage_rouge,
-                    pourcentage_orange=resultat_original.pourcentage_orange,
-                    pourcentage_vert=resultat_original.pourcentage_vert,
-                    est_congestionne=resultat_original.est_congestionne,
-                )
-                resultats.append(clone)
-
-    # 4. Persistance (dans un thread pour ne pas bloquer la boucle)
+    # 3. Persistance (dans un thread pour ne pas bloquer la boucle)
     await asyncio.to_thread(_persister_mesures, resultats, horodatage_utc)
 
     nb_succes = sum(1 for r in resultats if r.succes)
     nb_trous = len(resultats) - nb_succes
-    nb_appels_google = len(troncons_a_mesurer) * len(sources_actives) + len(dedup_keys_ordre)
     logger.info(
-        "Cycle terminé à %s — %d tronçons + %d paires sous-tronçons "
-        "(%d appels Google réels, %d résultats persistés, %d réussites, %d trous).",
+        "Cycle terminé à %s — %d axe(s) entiers + %d couple(s) axe/tronçon "
+        "(%d appels Google, %d résultats persistés, %d réussites, %d trous).",
         horodatage_utc.isoformat(),
-        len(troncons_a_mesurer),
-        len(paires_sous),
+        len(plan.axes_sans_troncon),
+        nb_couples,
         nb_appels_google,
         len(resultats),
         nb_succes,
         nb_trous,
     )
 
-    # 5. Push WebSocket : on diffuse le nouvel état carte à tous les abonnés.
+    # 4. Push WebSocket : on diffuse le nouvel état carte à tous les abonnés.
     #    Une erreur de diffusion ne doit JAMAIS faire échouer le cycle de collecte.
     try:
         diffuseur = get_diffuseur()
@@ -523,32 +416,35 @@ async def cycle_de_collecte() -> dict[str, int]:
     return {
         "nb_succes": nb_succes,
         "nb_trous": nb_trous,
-        "nb_troncons": len(troncons_a_mesurer),
-        "nb_sous_troncons": len(paires_sous),
+        "nb_troncons": len(plan.axes_sans_troncon),
+        "nb_sous_troncons": nb_couples,
         "nb_appels_google_reels": nb_appels_google,
         "nb_resultats_persistes": len(resultats),
     }
 
 
 # ---------------------------------------------------------------------------
-# Garde-fou quota Google (≤ 250 req/jour)
+# Garde-fou quota Google (≤ 200 req/jour)
 # ---------------------------------------------------------------------------
 
 
-# Plafond imposé par le cahier des charges (CLAUDE.md — contraintes)
-QUOTA_GOOGLE_JOUR_MAX = 250
+# Plafond quotidien visé : rester dans le volume gratuit Google (CLAUDE.md § 39)
+QUOTA_GOOGLE_JOUR_MAX = 200
 
 
-def estimer_requetes_par_jour(settings: Settings, nb_entites_mesurees: int) -> int:
-    """Estime le nombre de requêtes Google par jour pour la config courante.
+def estimer_requetes_par_jour(
+    settings: Settings, nb_appels_par_cycle: int, plage: PlageCollecte | None = None,
+) -> int:
+    """Estime le nombre de requêtes Google par jour.
 
-    `nb_entites_mesurees` = (nb_troncons sans sous-tronçon) + (nb_sous_troncons).
+    `nb_appels_par_cycle` vient de `plan_axes.appels_google_par_cycle` — une
+    requête par axe (étapes intermédiaires) + une par axe sans tronçon.
     """
-    nb_heures_actives = max(0, settings.collect_end_hour - settings.collect_start_hour)
-    if settings.collect_interval_minutes <= 0 or nb_heures_actives <= 0:
+    plage = plage or lire_plage_collecte()
+    if settings.collect_interval_minutes <= 0 or plage.nb_heures <= 0:
         return 0
-    nb_cycles = (nb_heures_actives * 60) // settings.collect_interval_minutes
-    return nb_cycles * nb_entites_mesurees
+    nb_cycles = (plage.nb_heures * 60) // settings.collect_interval_minutes
+    return nb_cycles * nb_appels_par_cycle
 
 
 def _verifier_quota_au_demarrage() -> None:
@@ -556,40 +452,21 @@ def _verifier_quota_au_demarrage() -> None:
     settings = get_settings()
     session = SessionLocal()
     try:
-        # Parents sans sous-tronçon actif + tous les sous-tronçons actifs
-        parents_avec_sous = {
-            tid for (tid,) in session.execute(
-                select(SousTroncon.troncon_id).where(SousTroncon.actif.is_(True)).distinct()
-            ).all()
-        }
-        ids_parents_actifs = [
-            tid for (tid,) in session.execute(
-                select(Troncon.id).where(Troncon.actif.is_(True))
-            ).all()
-        ]
-        nb_parents_a_mesurer = sum(1 for t in ids_parents_actifs if t not in parents_avec_sous)
-        nb_sous_actifs = session.scalar(
-            select(func.count(SousTroncon.id)).where(SousTroncon.actif.is_(True))
-        ) or 0
-        nb_actifs = nb_parents_a_mesurer + nb_sous_actifs
+        nb_appels = appels_google_par_cycle(session)
+        plage = lire_plage_collecte(session)
     finally:
         session.close()
 
-    estimation = estimer_requetes_par_jour(settings, nb_actifs)
+    estimation = estimer_requetes_par_jour(settings, nb_appels, plage)
     logger.info(
-        "Quota Google estimé : %d req/jour (cycles toutes les %d min, %dh→%dh, "
-        "%d tronçons actifs).",
-        estimation,
-        settings.collect_interval_minutes,
-        settings.collect_start_hour,
-        settings.collect_end_hour,
-        nb_actifs,
+        "Quota Google estimé : %d req/jour (%d appel(s)/cycle, toutes les %d min, %s).",
+        estimation, nb_appels, settings.collect_interval_minutes, plage.libelle,
     )
     if estimation > QUOTA_GOOGLE_JOUR_MAX:
         logger.warning(
             "⚠️  Configuration au-dessus du plafond Google de %d req/jour "
-            "(estimation : %d). Augmenter COLLECT_INTERVAL_MINUTES ou réduire la "
-            "plage horaire pour rester sous la limite.",
+            "(estimation : %d). Réduire la plage de collecte ou augmenter "
+            "COLLECT_INTERVAL_MINUTES.",
             QUOTA_GOOGLE_JOUR_MAX,
             estimation,
         )
@@ -612,7 +489,7 @@ def get_scheduler() -> AsyncIOScheduler:
     return _scheduler
 
 
-def _construire_trigger(settings: Settings) -> CronTrigger:
+def _construire_trigger(settings: Settings, plage: PlageCollecte | None = None) -> CronTrigger:
     """Construit un CronTrigger restreint à la plage horaire active.
 
     Exemples :
@@ -623,9 +500,10 @@ def _construire_trigger(settings: Settings) -> CronTrigger:
          par heure pleine".)
     """
     interval = max(1, settings.collect_interval_minutes)
+    plage = plage or lire_plage_collecte()
     # `7-18` couvre 07:00..18:59 ; on n'inclut pas l'heure de fin pour éviter
     # un cycle juste après la fermeture de la fenêtre.
-    plage_heures = f"{settings.collect_start_hour}-{max(settings.collect_start_hour, settings.collect_end_hour - 1)}"
+    plage_heures = f"{plage.heure_debut}-{max(plage.heure_debut, plage.heure_fin - 1)}"
 
     if interval >= 60:
         # 1 cycle / heure (ou plus rare) — tir à la minute 0 de chaque heure
@@ -781,14 +659,10 @@ def demarrer_scheduler() -> dict[str, str | int | None]:
     # Job de rétention — purge des mesures anciennes (23h30)
     _ajouter_job_retention(scheduler, settings)
 
-    # Affichage spécial pour la collecte 24h/24 (start=0 et end=24).
-    couvre_journee_complete = (
-        settings.collect_start_hour == 0 and settings.collect_end_hour == 24
-    )
+    plage = lire_plage_collecte()
     plage_horaire = (
-        f"24h/24 ({settings.tz})"
-        if couvre_journee_complete
-        else f"{settings.collect_start_hour}h-{settings.collect_end_hour}h ({settings.tz})"
+        f"24h/24 ({settings.tz})" if plage.est_24h
+        else f"{plage.libelle} ({settings.tz})"
     )
 
     return {
@@ -815,6 +689,20 @@ def arreter_scheduler() -> dict[str, str]:
     global _scheduler
     _scheduler = None
     return {"etat": "arrete"}
+
+
+def appliquer_plage_collecte(plage: PlageCollecte) -> str | None:
+    """Replanifie le cycle de collecte sur une nouvelle plage, sans redémarrage.
+
+    Retourne la date ISO du prochain cycle (None si le scheduler est arrêté).
+    """
+    scheduler = get_scheduler()
+    if scheduler.get_job(_JOB_ID) is None:
+        return None
+    scheduler.reschedule_job(_JOB_ID, trigger=_construire_trigger(get_settings(), plage))
+    job = scheduler.get_job(_JOB_ID)
+    logger.info("Plage de collecte appliquée : %s.", plage.libelle)
+    return job.next_run_time.isoformat() if job and job.next_run_time else None
 
 
 def etat_scheduler() -> dict[str, object]:

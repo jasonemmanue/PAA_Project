@@ -103,10 +103,10 @@ class ResumeTempsTraversee:
 
     @property
     def confiance(self) -> float:
-        """
-        Indice de confiance 0.0–1.0 combinant nombre de sessions et couverture.
-          - 4 sessions à 100 % = confiance 1.0
-          - 1 session à 64 % = confiance ≈ 0.16
+        """Indice 0.0–1.0 (couverture × min(sessions, 8) / 8).
+
+        N'est plus affiché par le nouveau frontend (2026-10-04) ; conservé
+        dans l'API pour le service frontend historique qui le lit encore.
         """
         if not self.sessions:
             return 0.0

@@ -298,7 +298,13 @@ def _generer_creneaux_attendus(
     """Liste tous les créneaux (date_iso, heure_locale) dans la fenêtre.
 
     Borne haute cappée à ``now()`` pour ne pas générer de créneaux futurs.
+    Seules les heures de la plage de collecte sont attendues (§ 39) : hors
+    plage aucune mesure n'est prise, et le carry-forward ne doit pas remplir
+    la nuit avec la dernière valeur du soir.
     """
+    from app.collecte.plage import lire_plage_collecte  # import local : évite un cycle
+
+    plage = lire_plage_collecte()
     now_utc = datetime.now(tz=timezone.utc)
     fin_effective = min(fin_utc, now_utc)
     if fin_effective < debut_utc:
@@ -313,7 +319,8 @@ def _generer_creneaux_attendus(
 
     creneaux: list[tuple[str, int]] = []
     while cur <= fin_local:
-        creneaux.append((cur.date().isoformat(), cur.hour))
+        if plage.contient(cur.hour):
+            creneaux.append((cur.date().isoformat(), cur.hour))
         cur = cur + timedelta(hours=1)
     return creneaux
 

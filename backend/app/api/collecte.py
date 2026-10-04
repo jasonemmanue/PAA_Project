@@ -5,6 +5,7 @@ Trois routes simples :
   - POST /collecte/start   → démarre (ou réarme) le job APScheduler
   - POST /collecte/stop    → arrête le job et le scheduler
   - GET  /collecte/status  → prochaine exécution + nombre de mesures du jour
+  - GET/PUT /collecte/plage → plage horaire de collecte réglable (§ 39)
 
 Le « nombre de mesures du jour » est calculé sur la **date locale d'Abidjan** ;
 les mesures sont stockées en UTC mais l'affichage se fait dans le fuseau métier.
@@ -14,11 +15,21 @@ from datetime import datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.collecte.plage import (
+    PlageCollecte,
+    enregistrer_plage_collecte,
+    lire_plage_collecte,
+    valider_plage,
+)
+from app.collecte.plan_axes import appels_google_par_cycle, construire_plan_collecte
 from app.collecte.scheduler import (
+    QUOTA_GOOGLE_JOUR_MAX,
+    appliquer_plage_collecte,
     arreter_scheduler,
     cycle_de_collecte,
     demarrer_scheduler,
@@ -27,8 +38,7 @@ from app.collecte.scheduler import (
 )
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.models.models import Mesure, SousTroncon, Troncon, axe_sous_troncons
-from app.sources.polyline import calculer_sens_par_axe
+from app.models.models import Mesure, Troncon
 
 
 router = APIRouter(prefix="/collecte", tags=["collecte"])
@@ -111,87 +121,108 @@ async def status_collecte(db: Session = Depends(get_db)) -> dict[str, Any]:
         select(func.count(Troncon.id)).where(Troncon.actif.is_(True))
     ) or 0
 
-    # Calcul réel du nombre d'entités mesurées par cycle avec déduplication
-    # (même logique que le scheduler § 18.4 + dédup par (sous_id, sens)).
-    axes_couverts_par_sous: set[int] = set()
-
-    # Charger les axes actifs avec coordonnées
-    axes_actifs = db.execute(
-        select(Troncon).where(Troncon.actif.is_(True))
-    ).scalars().all()
-    axes_par_id = {a.id: a for a in axes_actifs}
-
-    # Charger les sous-tronçons actifs
-    sous_actifs = db.execute(
-        select(SousTroncon).where(SousTroncon.actif.is_(True))
-    ).scalars().all()
-    sous_par_id = {s.id: s for s in sous_actifs}
-
-    # Liens M2M
-    liens_m2m = db.execute(
-        select(axe_sous_troncons.c.axe_id, axe_sous_troncons.c.sous_troncon_id)
-        .join(SousTroncon, axe_sous_troncons.c.sous_troncon_id == SousTroncon.id)
-        .where(SousTroncon.actif.is_(True))
-    ).all()
-    from collections import defaultdict
-    axes_par_sous: dict[int, list[int]] = defaultdict(list)
-    for axe_id, sous_id in liens_m2m:
-        axes_couverts_par_sous.add(axe_id)
-        axes_par_sous[sous_id].append(axe_id)
-
-    # Repli legacy (sous sans M2M)
-    sous_sans_m2m = [s for s in sous_actifs if s.id not in axes_par_sous]
-    for s in sous_sans_m2m:
-        axes_couverts_par_sous.add(s.troncon_id)
-
-    nb_parents_a_mesurer = sum(
-        1 for a in axes_actifs if a.id not in axes_couverts_par_sous
-    )
-
-    # Déduplication par (sous_id, sens) — même logique que le scheduler
-    paires_uniques: set[tuple[int, str]] = set()
-    nb_paires_brutes = 0
-    for sous in sous_actifs:
-        ids_axes = axes_par_sous.get(sous.id, [sous.troncon_id])
-        for axe_id in ids_axes:
-            nb_paires_brutes += 1
-            axe = axes_par_id.get(axe_id)
-            if axe is None or axe.lat_origine is None or axe.lon_origine is None:
-                sens = "direct"
-            else:
-                sens = calculer_sens_par_axe(
-                    axe.lat_origine, axe.lon_origine,
-                    sous.lat_debut, sous.lon_debut,
-                    sous.lat_fin, sous.lon_fin,
-                )
-            paires_uniques.add((sous.id, sens))
-
-    nb_appels_google_par_cycle = nb_parents_a_mesurer + len(paires_uniques)
-    nb_resultats_par_cycle = nb_parents_a_mesurer + nb_paires_brutes
-    nb_economises = nb_paires_brutes - len(paires_uniques)
+    # Plan du cycle : une requête Google par axe (étapes intermédiaires), cf. § 39
+    plan = construire_plan_collecte(db)
+    plage = lire_plage_collecte(db)
 
     settings = get_settings()
-    estimation_quota = estimer_requetes_par_jour(settings, nb_appels_google_par_cycle)
+    estimation_quota = estimer_requetes_par_jour(settings, plan.nb_appels, plage)
 
     return {
         **etat_scheduler(),
         "fuseau": settings.tz,
         "config": {
             "intervalle_min": settings.collect_interval_minutes,
-            "plage_horaire": f"{settings.collect_start_hour}h-{settings.collect_end_hour}h",
+            "plage_horaire": plage.libelle,
+            "heure_debut": plage.heure_debut,
+            "heure_fin": plage.heure_fin,
             "estimation_requetes_google_par_jour": estimation_quota,
-            "plafond_google_par_jour": 250,
+            "plafond_google_par_jour": QUOTA_GOOGLE_JOUR_MAX,
         },
         "compteurs_jour": {
             "nb_mesures_total": nb_mesures_jour,
             "nb_succes": nb_succes_jour,
             "nb_trous": nb_trous_jour,
             "nb_troncons_actifs": nb_troncons_actifs_total,
-            "nb_appels_google_par_cycle": nb_appels_google_par_cycle,
-            "nb_resultats_par_cycle": nb_resultats_par_cycle,
-            "nb_economises_dedup": nb_economises,
+            "nb_appels_google_par_cycle": plan.nb_appels,
+            "nb_resultats_par_cycle": plan.nb_resultats,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# GET / PUT /collecte/plage — plage horaire de collecte réglable (§ 39)
+# ---------------------------------------------------------------------------
+
+
+class PlageCollecteEntree(BaseModel):
+    """Nouvelle plage de collecte, heures locales Africa/Abidjan."""
+    heure_debut: int = Field(..., ge=0, le=23, description="Heure de début (incluse)")
+    heure_fin: int = Field(..., ge=1, le=24, description="Heure de fin (exclue)")
+
+
+class PlageCollecteSortie(BaseModel):
+    """Plage de collecte en vigueur et son impact sur le quota Google."""
+    heure_debut: int
+    heure_fin: int
+    libelle: str
+    appels_google_par_cycle: int
+    estimation_requetes_google_par_jour: int
+    plafond_google_par_jour: int
+    prochaine_execution: str | None = None
+
+
+def _sortie_plage(db: Session, plage: PlageCollecte, prochaine: str | None) -> PlageCollecteSortie:
+    nb_appels = appels_google_par_cycle(db)
+    return PlageCollecteSortie(
+        heure_debut=plage.heure_debut,
+        heure_fin=plage.heure_fin,
+        libelle=plage.libelle,
+        appels_google_par_cycle=nb_appels,
+        estimation_requetes_google_par_jour=estimer_requetes_par_jour(
+            get_settings(), nb_appels, plage,
+        ),
+        plafond_google_par_jour=QUOTA_GOOGLE_JOUR_MAX,
+        prochaine_execution=prochaine,
+    )
+
+
+@router.get(
+    "/plage",
+    summary="Plage horaire de collecte en vigueur",
+    description=(
+        "Fenêtre horaire locale `[heure_debut, heure_fin[` pendant laquelle le "
+        "scheduler interroge Google Routes. Hors de cette plage, aucune requête "
+        "n'est émise. Renvoie aussi l'estimation de requêtes par jour."
+    ),
+    response_model=PlageCollecteSortie,
+)
+async def get_plage_collecte(db: Session = Depends(get_db)) -> PlageCollecteSortie:
+    prochaine = etat_scheduler().get("prochaine_execution")
+    return _sortie_plage(db, lire_plage_collecte(db), prochaine if isinstance(prochaine, str) else None)
+
+
+@router.put(
+    "/plage",
+    summary="Modifie la plage horaire de collecte",
+    description=(
+        "Enregistre la nouvelle plage en base (survit aux redéploiements) puis "
+        "replanifie immédiatement le cycle de collecte, sans redémarrage. "
+        "Exemple : `{\"heure_debut\": 7, \"heure_fin\": 19}` → collecte de "
+        "07:00 à 18:59, aucune requête Google la nuit."
+    ),
+    response_model=PlageCollecteSortie,
+)
+async def put_plage_collecte(
+    entree: PlageCollecteEntree, db: Session = Depends(get_db),
+) -> PlageCollecteSortie:
+    try:
+        plage = valider_plage(entree.heure_debut, entree.heure_fin)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    enregistrer_plage_collecte(db, plage)
+    prochaine = appliquer_plage_collecte(plage)
+    return _sortie_plage(db, plage, prochaine)
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +235,8 @@ async def status_collecte(db: Session = Depends(get_db)) -> dict[str, Any]:
     summary="Déclenche un cycle de collecte immédiat (hors planning)",
     description=(
         "Utile en démo ou en test pour vérifier la chaîne de bout en bout "
-        "sans attendre le prochain tic du scheduler."
+        "sans attendre le prochain tic du scheduler. Hors de la plage de "
+        "collecte, le cycle ne fait aucun appel Google."
     ),
 )
 async def run_once() -> dict[str, Any]:

@@ -264,15 +264,25 @@ async def calcul_itineraire(
             f"Google Routes n'a retourné aucun itinéraire — réponse brute : {donnees!r}"
         )
 
-    premiere_route = routes[0]
-    duree_trafic = _parse_duration(premiere_route.get("duration"))
-    duree_fluide = _parse_duration(premiere_route.get("staticDuration"))
-    distance = premiere_route.get("distanceMeters")
-    polyline = (premiere_route.get("polyline") or {}).get("encodedPolyline")
+    return _interpreter_trajet(routes[0], libelle="itinéraire")
+
+
+def _interpreter_trajet(trajet: dict, *, libelle: str) -> ReponseGoogleRoutes:
+    """Convertit une route OU un leg Google en `ReponseGoogleRoutes`.
+
+    Les champs utilisés (`duration`, `staticDuration`, `distanceMeters`,
+    `polyline`, `travelAdvisory.speedReadingIntervals`) ont la même forme au
+    niveau route et au niveau leg — les indices des intervalles de vitesse
+    d'un leg sont relatifs à la polyline de ce leg.
+    """
+    duree_trafic = _parse_duration(trajet.get("duration"))
+    duree_fluide = _parse_duration(trajet.get("staticDuration"))
+    distance = trajet.get("distanceMeters")
+    polyline = (trajet.get("polyline") or {}).get("encodedPolyline")
 
     if duree_trafic is None or duree_fluide is None or distance is None or not polyline:
         raise RuntimeError(
-            "Google Routes : champs manquants dans la réponse "
+            f"Google Routes ({libelle}) : champs manquants dans la réponse "
             f"(duration={duree_trafic}, staticDuration={duree_fluide}, "
             f"distanceMeters={distance}, polyline={'présent' if polyline else 'absent'})."
         )
@@ -281,7 +291,7 @@ async def calcul_itineraire(
     # le tracé (zone sans données trafic). Dans ce cas, on garde duree_trafic
     # mais on signale "indéterminé" côté couleurs — l'opérateur saura que
     # le statut de congestion ne peut pas être tranché selon la règle DEESP.
-    travel_advisory = premiere_route.get("travelAdvisory") or {}
+    travel_advisory = trajet.get("travelAdvisory") or {}
     intervalles = travel_advisory.get("speedReadingIntervals")
 
     pct_rouge, pct_orange, pct_vert = calculer_pourcentages_couleur(
@@ -299,3 +309,89 @@ async def calcul_itineraire(
         pourcentage_vert=pct_vert,
         est_congestionne=est_congestionne,
     )
+
+
+# Limite Google Routes : 25 étapes intermédiaires par requête.
+NB_ETAPES_INTERMEDIAIRES_MAX = 25
+
+
+def _point_route(point: PointGPS) -> dict:
+    return {"location": {"latLng": {"latitude": point.lat, "longitude": point.lon}}}
+
+
+async def calcul_itineraire_multi(
+    points: list[PointGPS],
+    *,
+    timeout_s: float = 20.0,
+) -> list[ReponseGoogleRoutes]:
+    """Un seul appel Google pour une chaîne de points : un résultat par leg.
+
+    Les points intermédiaires sont des étapes (`via: false`), ce qui fait
+    renvoyer à Google un *leg* par portion entre deux points consécutifs,
+    chacun avec sa durée sous trafic, sa distance et ses couleurs
+    (`speedReadingIntervals`). C'est ce qui permet de mesurer tous les
+    tronçons codifiés d'un axe pour le prix d'une seule requête
+    (cf. CLAUDE.md § 39).
+
+    Raises:
+        ValueError: moins de 2 points, ou plus de 25 étapes intermédiaires.
+        RuntimeError: clé API absente, réponse vide ou nombre de legs inattendu.
+        httpx.HTTPStatusError: si Google renvoie une erreur HTTP.
+    """
+    if len(points) < 2:
+        raise ValueError("calcul_itineraire_multi : au moins 2 points sont requis.")
+    if len(points) - 2 > NB_ETAPES_INTERMEDIAIRES_MAX:
+        raise ValueError(
+            f"calcul_itineraire_multi : {len(points) - 2} étapes intermédiaires "
+            f"(maximum Google : {NB_ETAPES_INTERMEDIAIRES_MAX})."
+        )
+
+    cle_api = get_settings().google_routes_api_key
+    if not cle_api:
+        raise RuntimeError(
+            "GOOGLE_ROUTES_API_KEY absent — source Google indisponible "
+            "(dégradation gracieuse appliquée par l'appelant)."
+        )
+
+    corps_requete: dict = {
+        "origin": _point_route(points[0]),
+        "destination": _point_route(points[-1]),
+        "intermediates": [
+            {**_point_route(p), "via": False} for p in points[1:-1]
+        ],
+        "travelMode": "DRIVE",
+        "routingPreference": "TRAFFIC_AWARE_OPTIMAL",
+        "polylineEncoding": "ENCODED_POLYLINE",
+        "polylineQuality": "HIGH_QUALITY",
+        "extraComputations": ["TRAFFIC_ON_POLYLINE"],
+        "computeAlternativeRoutes": False,
+        "languageCode": "fr-FR",
+        "units": "METRIC",
+        "regionCode": "CI",
+    }
+    entetes = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": cle_api,
+        "X-Goog-FieldMask": (
+            "routes.legs.duration,routes.legs.staticDuration,"
+            "routes.legs.distanceMeters,routes.legs.polyline.encodedPolyline,"
+            "routes.legs.travelAdvisory.speedReadingIntervals"
+        ),
+    }
+
+    async with httpx.AsyncClient(timeout=timeout_s) as client:
+        reponse = await client.post(GOOGLE_ROUTES_URL, json=corps_requete, headers=entetes)
+        reponse.raise_for_status()
+        donnees = reponse.json()
+
+    routes = donnees.get("routes") or []
+    if not routes:
+        raise RuntimeError(
+            f"Google Routes n'a retourné aucun itinéraire — réponse brute : {donnees!r}"
+        )
+    legs = routes[0].get("legs") or []
+    if len(legs) != len(points) - 1:
+        raise RuntimeError(
+            f"Google Routes : {len(legs)} leg(s) reçus pour {len(points) - 1} attendus."
+        )
+    return [_interpreter_trajet(leg, libelle=f"leg {i}") for i, leg in enumerate(legs)]

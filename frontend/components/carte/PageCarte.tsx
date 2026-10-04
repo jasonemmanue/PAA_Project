@@ -6,6 +6,9 @@
  * Layout :
  *  - desktop (≥ lg) : carte à gauche (2/3), panneau liste à droite (1/3)
  *  - tablette/mobile : carte en haut, panneau dessous (empilés verticalement)
+ *
+ * Le panneau s'ouvre sur l'état des axes, les axes chauds et le tableau des
+ * temps de traversée (GET /carte/resume-axes, rafraîchi toutes les 5 min).
  */
 
 import dynamic from "next/dynamic";
@@ -13,8 +16,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { LegendeCarte } from "@/components/carte/LegendeCarte";
 import { PanneauTroncons } from "@/components/carte/PanneauTroncons";
-import { useI18n } from "@/lib/i18n";
-import type { CarteEtat } from "@/lib/types";
+import { api } from "@/lib/api";
+import type { CarteEtat, ResumeAxes } from "@/lib/types";
+
+// Fréquence de rafraîchissement du tableau des temps (la collecte est horaire)
+const INTERVALLE_RESUME_AXES_MS = 5 * 60 * 1000;
 
 // La carte Leaflet doit être chargée côté client uniquement
 const CarteLeaflet = dynamic(
@@ -30,8 +36,8 @@ const CarteLeaflet = dynamic(
 );
 
 export function PageCarte() {
-  const { t, locale } = useI18n();
   const [etat, setEtat] = useState<CarteEtat | null>(null);
+  const [resumeAxes, setResumeAxes] = useState<ResumeAxes | null>(null);
   const [selectionId, setSelectionId] = useState<number | null>(null);
   // Sélection d'un sous-tronçon (T1A, T2A…) — cliquable dans le panneau
   // pour zoomer sur sa portion précise de l'axe parent.
@@ -59,27 +65,18 @@ export function PageCarte() {
     [],
   );
 
-  const sousTitre = (() => {
-    if (!etat) return t("carte.subtitle");
-    const axes = etat.troncons.filter((tr) => tr.est_axe !== false);
-    const nbAxes = axes.length;
-    const nbTroncons = axes.reduce(
-      (n, tr) => n + (tr.sous_troncons?.length ?? 0),
-      0,
-    );
-    if (locale === "fr") {
-      const n = nbTroncons > 0 ? nbTroncons : nbAxes;
-      const unite = nbTroncons > 0
-        ? `tronçon${n > 1 ? "s" : ""}`
-        : `axe${n > 1 ? "s" : ""}`;
-      return `${n} ${unite} surveillé${n > 1 ? "s" : ""} en temps réel.`;
-    }
-    const n = nbTroncons > 0 ? nbTroncons : nbAxes;
-    const unite = nbTroncons > 0
-      ? `segment${n > 1 ? "s" : ""}`
-      : `ax${n > 1 ? "es" : "is"}`;
-    return `${n} ${unite} monitored in real time.`;
-  })();
+  // Temps actuel + min/moy/max de tous les axes
+  useEffect(() => {
+    let actif = true;
+    const charger = () => {
+      api.resumeAxes()
+        .then((r) => { if (actif) setResumeAxes(r); })
+        .catch(() => {});
+    };
+    charger();
+    const intervalle = setInterval(charger, INTERVALLE_RESUME_AXES_MS);
+    return () => { actif = false; clearInterval(intervalle); };
+  }, []);
 
   // Bloquer le scroll de la page — seul le panneau latéral défile
   useEffect(() => {
@@ -113,6 +110,7 @@ export function PageCarte() {
         >
           <PanneauTroncons
             etat={etat}
+            resumeAxes={resumeAxes}
             selectionId={selectionId}
             selectionSousId={selectionSousId}
             onSelectionner={handleSelectionner}
