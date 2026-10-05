@@ -20,6 +20,25 @@ export function formaterDuree(secondes: number | null | undefined): string {
   return `${heures} h ${restantMin.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Accueil « axes seuls » : la carte et le panneau n'affichent que les axes,
+ * sans leurs tronçons codifiés. Variable de build activée uniquement sur le
+ * service Railway dédié (cf. CLAUDE.md § 39).
+ */
+export const ACCUEIL_AXES_SEULS = process.env.NEXT_PUBLIC_ACCUEIL_AXES_SEULS === "true";
+
+/** Format compact « mm:ss » (ou « h:mm:ss ») pour les tableaux étroits. */
+export function formaterDureeCompacte(secondes: number | null | undefined): string {
+  if (secondes === null || secondes === undefined || Number.isNaN(secondes)) {
+    return "—";
+  }
+  const total = Math.round(secondes);
+  const heures = Math.floor(total / 3600);
+  const min = Math.floor((total % 3600) / 60);
+  const sec = (total % 60).toString().padStart(2, "0");
+  return heures > 0 ? `${heures}:${min.toString().padStart(2, "0")}:${sec}` : `${min}:${sec}`;
+}
+
 /** Formate un horodatage ISO en heure locale (Africa/Abidjan = UTC+0). */
 export function formaterHeureAbidjan(iso: string | null | undefined): string {
   if (!iso) return "—";

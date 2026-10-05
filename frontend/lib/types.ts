@@ -141,6 +141,52 @@ export interface EtatTronconCarte {
   statut?: string;
   derniere_mesure: Mesure | null;
   sous_troncons?: EtatSousTronconCarte[];
+  /** Référence 50 km/h de l'axe complet, en secondes. */
+  temps_reference_50kmh_s?: number;
+  /**
+   * Classe propre à l'axe (§ 39) : congestionné si ≥ 50 % de sa distance est
+   * en tronçons congestionnés ; un axe sans tronçon reprend sa propre classe.
+   */
+  classe_axe?: ClasseCongestion;
+  libelle_classe_axe?: string;
+  couleur_classe_axe?: string;
+  /** Part de la distance qualifiée en tronçons congestionnés (0-100). */
+  pct_distance_congestionnee?: number | null;
+  nb_troncons_congestionnes?: number;
+  /** "aller" / "retour" quand l'axe a un axe jumeau aux extrémités inversées. */
+  sens_axe?: "aller" | "retour" | null;
+  origine_libelle?: string;
+  destination_libelle?: string;
+}
+
+/** Temps de traversée d'un axe pour l'Accueil (GET /carte/resume-axes). */
+export interface ResumeAxe {
+  troncon_id: number;
+  nom: string;
+  temps_actuel_s: number | null;
+  min_s: number | null;
+  moyen_s: number | null;
+  max_s: number | null;
+  temps_reference_50kmh_s: number;
+}
+
+export interface ResumeAxes {
+  instant_local: string;
+  type_jour: "jour_ouvrable" | "week_end";
+  hors_plage_collecte: boolean;
+  plage_collecte: string;
+  axes: ResumeAxe[];
+}
+
+/** Plage horaire de collecte Google (GET/PUT /collecte/plage). */
+export interface PlageCollecte {
+  heure_debut: number;
+  heure_fin: number;
+  libelle: string;
+  appels_google_par_cycle: number;
+  estimation_requetes_google_par_jour: number;
+  plafond_google_par_jour: number;
+  prochaine_execution: string | null;
 }
 
 export interface IncidentCarte {
@@ -176,6 +222,8 @@ export interface CollecteStatus {
   config: {
     intervalle_min: number;
     plage_horaire: string;
+    heure_debut?: number;
+    heure_fin?: number;
     estimation_requetes_google_par_jour: number;
     plafond_google_par_jour: number;
   };

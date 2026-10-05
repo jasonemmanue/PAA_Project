@@ -4,8 +4,13 @@
  * Composant de carte Leaflet — client uniquement (Leaflet utilise `window`).
  * Affiche tous les tronçons actifs (les 6 officiels + ceux créés via la page
  * Administration) colorés selon la classe de congestion, met à jour en temps
- * réel via WebSocket, propose des popups détaillés, un recentrage animé et
- * une heatmap des congestions.
+ * réel via WebSocket, propose un recentrage animé et une heatmap des
+ * congestions.
+ *
+ * Sélection (axe ou tronçon) : pas de popup Leaflet — il s'ouvrait sur le
+ * tracé et le masquait. Les informations s'affichent dans une fiche fixe
+ * (`FicheSelection`) dont le zoom réserve la place, et le tracé sélectionné
+ * est renforcé (halo blanc + trait épaissi, autres axes estompés).
  */
 
 import "leaflet/dist/leaflet.css";
@@ -18,15 +23,10 @@ import type {
   Polyline as LeafletPolyline,
 } from "leaflet";
 
+import { FicheSelection } from "@/components/carte/FicheSelection";
 import { api } from "@/lib/api";
 import { decoderPolyline } from "@/lib/polyline";
-import {
-  couleurClasseCongestion,
-  formaterDuree,
-  formaterHeureAbidjan,
-  libelleClasseCongestion,
-  libelleSource,
-} from "@/lib/format";
+import { ACCUEIL_AXES_SEULS, couleurClasseCongestion } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import type { CarteEtat, EtatSousTronconCarte, EtatTronconCarte, IncidentCarte } from "@/lib/types";
 import { useWsCarteEtat } from "@/lib/ws";
@@ -46,9 +46,8 @@ const SATELLITE_ATTR =
 const CENTRE_ABIDJAN: [number, number] = [5.29, -4.0];
 const ZOOM_INITIAL = 12;
 
-// Classement des classes de congestion pour identifier le « point chaud »
-// au chargement (utilisé par le zoom intelligent). Critère DEESP : seul
-// "congestionné" est traité comme point chaud.
+// Classement des classes de congestion pour identifier l'axe le plus chaud
+// au chargement (utilisé par le zoom intelligent).
 const ORDRE_GRAVITE: Record<string, number> = {
   congestionne: 2,
   fluide: 1,
@@ -108,6 +107,10 @@ export function CarteLeaflet({
   // Marqueurs début (vert) et fin (rouge) du tronçon sélectionné
   const markerDebutSelRef = useRef<LeafletCircle | null>(null);
   const markerFinSelRef = useRef<LeafletCircle | null>(null);
+  // Style de base de chaque polyline (restauré quand la sélection change)
+  const styleBaseRef = useRef<Map<LeafletPolyline, { color: string; weight: number; opacity: number }>>(new Map());
+  // Halo blanc sous le tracé sélectionné
+  const haloRef = useRef<LeafletPolyline | null>(null);
   // Garde pour ne déclencher le zoom intelligent qu'une seule fois
   // (sinon la mise à jour WebSocket re-centre toutes les 20 min).
   const zoomInitialFaitRef = useRef(false);
@@ -116,6 +119,10 @@ export function CarteLeaflet({
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
   const [satellite, setSatellite] = useState(false);
+  // Fiche de sélection masquée par l'utilisateur (réaffichée au clic suivant)
+  const [ficheFermee, setFicheFermee] = useState(false);
+  // Fiche compacte (bas, pleine largeur) sur les cartes étroites
+  const [ficheCompacte, setFicheCompacte] = useState(false);
   const tileLayerRef = useRef<any>(null);
 
   // ---- 1. Initialisation Leaflet (une seule fois)
@@ -214,17 +221,21 @@ export function CarteLeaflet({
       if (points.length < 2) continue;
 
       const aDesSous = (troncon.sous_troncons?.length ?? 0) > 0;
-      // Axes avec sous-tronçons : couleur de base de l'axe (pas de congestion propre).
-      // Axes sans sous-tronçons : couleur selon la classe DEESP.
-      const couleur = aDesSous
-        ? (troncon.couleur_etat || "#1F4E79")
-        : couleurClasseCongestion(troncon.classe_congestion ?? "indetermine");
+      // Mode axes seuls : couleur de la classe d'axe (≥ 50 % de distance congestionnée).
+      // Sinon, axes avec sous-tronçons : couleur de base (les tronçons portent la congestion),
+      // axes sans sous-tronçons : couleur selon la classe DEESP.
+      const couleur = ACCUEIL_AXES_SEULS
+        ? couleurClasseCongestion(troncon.classe_axe ?? troncon.classe_congestion ?? "indetermine")
+        : aDesSous
+          ? (troncon.couleur_etat || "#1F4E79")
+          : couleurClasseCongestion(troncon.classe_congestion ?? "indetermine");
 
       const existante = lignesRef.current.get(troncon.id);
       const style = { color: couleur, weight: 6, opacity: 0.95 };
       if (existante) {
         existante.setLatLngs(points);
         existante.setStyle(style);
+        styleBaseRef.current.set(existante, style);
       } else {
         const ligne = L.polyline(points, {
           ...style, lineCap: "round", lineJoin: "round",
@@ -236,15 +247,13 @@ export function CarteLeaflet({
           ligne.bringToFront();
           onSelectionnerRef.current?.(troncon.id);
         });
-        ligne.bindPopup(() => construirePopup(troncon, locale), {
-          maxWidth: 300, className: "paa-popup",
-        });
         ligne.addTo(map);
         lignesRef.current.set(troncon.id, ligne);
+        styleBaseRef.current.set(ligne, style);
       }
 
-      // Sous-tronçons — un polyline coloré par sous-tronçon
-      for (const sous of troncon.sous_troncons ?? []) {
+      // Sous-tronçons — un polyline coloré par sous-tronçon (aucun en mode axes seuls)
+      for (const sous of ACCUEIL_AXES_SEULS ? [] : troncon.sous_troncons ?? []) {
         const ptsSous = pointsSousTroncon(sous);
         if (ptsSous.length < 2) continue;
         const couleurSous = couleurClasseCongestion(sous.classe_congestion);
@@ -254,6 +263,7 @@ export function CarteLeaflet({
         if (existS) {
           existS.setLatLngs(ptsSous);
           existS.setStyle(styleSous);
+          styleBaseRef.current.set(existS, styleSous);
         } else {
           const ligneS = L.polyline(ptsSous, {
             ...styleSous, lineCap: "round", lineJoin: "round",
@@ -263,12 +273,9 @@ export function CarteLeaflet({
             ligneS.bringToFront();
             onSelectionnerSousRef.current?.(sous.id, troncon.id);
           });
-          ligneS.bindPopup(
-            () => construirePopupSousTroncon(troncon.nom, sous, locale),
-            { maxWidth: 300, className: "paa-popup" },
-          );
           ligneS.addTo(map);
           lignesSousRef.current.set(cle, ligneS);
+          styleBaseRef.current.set(ligneS, styleSous);
         }
       }
     }
@@ -284,6 +291,7 @@ export function CarteLeaflet({
       if (!clesActuelles.has(cle)) {
         map.removeLayer(ligne);
         lignesSousRef.current.delete(cle);
+        styleBaseRef.current.delete(ligne);
       }
     }
 
@@ -295,22 +303,24 @@ export function CarteLeaflet({
       heatLayerRef.current = null;
     }
     const pointsHeat: [number, number, number][] = [];
-    for (const troncon of etat.troncons) {
-      if (troncon.classe_congestion !== "congestionne") {
-        // Critère DEESP : on ne signale comme « chaud » que les tronçons
-        // qualifiés de congestionnés par les couleurs Google Maps.
-        continue;
-      }
-      // Poids proportionnel à la part de rouge — un tronçon entièrement
-      // rouge est plus chaud qu'un tronçon avec quelques % de rouge.
-      const pctRouge = troncon.couleur_google?.pourcentage_rouge ?? 0;
+    // Critère DEESP : seuls les tracés qualifiés « congestionné » par les
+    // couleurs Google Maps chauffent. Poids proportionnel à la part de rouge.
+    const ajouterChaleur = (points: [number, number][], pctRouge: number) => {
+      if (points.length < 2) return;
       const poids = Math.min(1.0, 0.55 + pctRouge / 100);
-      const points = pointsTroncon(troncon);
-      if (points.length < 2) continue;
-      // Échantillonnage 1 point sur 5 pour rester léger
       const pas = Math.max(1, Math.floor(points.length / 8));
       for (let i = 0; i < points.length; i += pas) {
         pointsHeat.push([points[i][0], points[i][1], poids]);
+      }
+    };
+    for (const troncon of etat.troncons) {
+      if (troncon.classe_congestion === "congestionne") {
+        ajouterChaleur(pointsTroncon(troncon), troncon.couleur_google?.pourcentage_rouge ?? 0);
+      }
+      for (const sous of troncon.sous_troncons ?? []) {
+        if (sous.classe_congestion === "congestionne") {
+          ajouterChaleur(pointsSousTroncon(sous), sous.couleur_google?.pourcentage_rouge ?? 0);
+        }
       }
     }
     if (pointsHeat.length > 0) {
@@ -396,26 +406,21 @@ export function CarteLeaflet({
       }
     }
 
-    // -- Zoom intelligent : au PREMIER chargement, on centre sur le tronçon
-    //    le plus dégradé (worst classe DEESP puis % de rouge le plus élevé) ;
-    //    si tout est fluide, on cadre sur l'ensemble des tronçons surveillés.
+    // -- Zoom intelligent : au PREMIER chargement, on centre sur l'axe le plus
+    //    chaud (classe d'axe puis part de distance congestionnée) ; si aucun
+    //    axe n'est congestionné, on cadre sur l'ensemble des axes surveillés.
     if (!zoomInitialFaitRef.current && etat.troncons.length > 0) {
+      const classeAxe = (tr: EtatTronconCarte) => tr.classe_axe ?? tr.classe_congestion ?? "indetermine";
       const troncons = etat.troncons.slice();
       troncons.sort((a, b) => {
-        const ga = a.classe_congestion ? (ORDRE_GRAVITE[a.classe_congestion] ?? 0) : 0;
-        const gb = b.classe_congestion ? (ORDRE_GRAVITE[b.classe_congestion] ?? 0) : 0;
+        const ga = ORDRE_GRAVITE[classeAxe(a)] ?? 0;
+        const gb = ORDRE_GRAVITE[classeAxe(b)] ?? 0;
         if (ga !== gb) return gb - ga;
-        const ra = a.couleur_google?.pourcentage_rouge ?? 0;
-        const rb = b.couleur_google?.pourcentage_rouge ?? 0;
-        return rb - ra;
+        return (b.pct_distance_congestionnee ?? 0) - (a.pct_distance_congestionnee ?? 0);
       });
       const cible = troncons[0];
       const points = pointsTroncon(cible);
-      if (
-        cible.classe_congestion !== "fluide"
-        && cible.classe_congestion !== "indetermine"
-        && points.length >= 2
-      ) {
+      if (classeAxe(cible) === "congestionne" && points.length >= 2) {
         const bounds = L.latLngBounds(points);
         map.flyToBounds(bounds, { padding: [40, 40], duration: 1.0, maxZoom: 15 });
       } else {
@@ -443,157 +448,138 @@ export function CarteLeaflet({
   );
   const etatWs = useWsCarteEtat(onMessage);
 
-  // ---- 4. Recentrage animé + marqueurs début/fin sur sélection
+  // ---- 4. Sélection : zoom (place réservée à la fiche), marqueurs début/fin,
+  //         mise en valeur du tracé. Aucun popup : la fiche ne masque rien.
   useEffect(() => {
     const L = LRef.current;
     const map = mapRef.current;
 
-    // Supprimer les marqueurs du tronçon précédemment sélectionné
+    // Nettoyage de la sélection précédente
     markerDebutSelRef.current?.remove();
     markerDebutSelRef.current = null;
     markerFinSelRef.current?.remove();
     markerFinSelRef.current = null;
+    haloRef.current?.remove();
+    haloRef.current = null;
+    for (const [ligne, style] of styleBaseRef.current) ligne.setStyle(style);
 
-    if (!L || !map || !etat) return;
+    if (!L || !map || !etat || tronconSelectionneId === null) return;
 
-    // Cas 1 — sous-tronçon sélectionné : priorité au zoom fin sur sa portion.
-    if (sousTronconSelectionneId !== null) {
-      let sousTrouve: EtatSousTronconCarte | null = null;
-      let parentTrouve: EtatTronconCarte | null = null;
-      // Chercher dans l'axe parent sélectionné en priorité (aller vs retour)
-      const axeCible = tronconSelectionneId !== null
-        ? etat.troncons.find((t) => t.id === tronconSelectionneId)
-        : null;
-      if (axeCible) {
-        const found = (axeCible.sous_troncons ?? []).find(
-          (s) => s.id === sousTronconSelectionneId,
+    const axe = etat.troncons.find((t) => t.id === tronconSelectionneId);
+    if (!axe) return;
+    const sous = sousTronconSelectionneId !== null
+      ? (axe.sous_troncons ?? []).find((s) => s.id === sousTronconSelectionneId) ?? null
+      : null;
+
+    // Réserve la place de la fiche : bas de carte (étroit) ou droite (large)
+    const largeur = conteneurRef.current?.clientWidth ?? 800;
+    const hauteur = conteneurRef.current?.clientHeight ?? 500;
+    const compacte = largeur < 640;
+    setFicheCompacte(compacte);
+    setFicheFermee(false);
+    const optionsZoom = compacte
+      ? { paddingTopLeft: [30, 50] as [number, number], paddingBottomRight: [30, Math.round(hauteur * 0.45) + 20] as [number, number] }
+      : { paddingTopLeft: [50, 50] as [number, number], paddingBottomRight: [320, 40] as [number, number] };
+
+    const pointsSelection = sous ? pointsSousTroncon(sous) : pointsTroncon(axe);
+    if (pointsSelection.length >= 2) {
+      map.flyToBounds(L.latLngBounds(pointsSelection), {
+        ...optionsZoom,
+        duration: 0.8,
+        maxZoom: sous ? 17 : 16,
+      });
+
+      // Mise en valeur : autres axes estompés, halo blanc sous la sélection
+      const estDeLaSelection = (ligne: LeafletPolyline) =>
+        ligne === lignesRef.current.get(axe.id)
+        || [...lignesSousRef.current.entries()].some(
+          ([cle, l]) => l === ligne && cle.startsWith(`p${axe.id}_s`),
         );
-        if (found) {
-          sousTrouve = found;
-          parentTrouve = axeCible;
-        }
+      for (const [ligne, style] of styleBaseRef.current) {
+        if (!estDeLaSelection(ligne)) ligne.setStyle({ ...style, opacity: 0.3 });
       }
-      // Repli : chercher dans tous les axes
-      if (!sousTrouve) {
-        for (const parent of etat.troncons) {
-          const found = (parent.sous_troncons ?? []).find(
-            (s) => s.id === sousTronconSelectionneId,
-          );
-          if (found) {
-            sousTrouve = found;
-            parentTrouve = parent;
-            break;
+      haloRef.current = L.polyline(pointsSelection, {
+        color: "#ffffff",
+        weight: 15,
+        opacity: 0.95,
+        lineCap: "round",
+        lineJoin: "round",
+        interactive: false,
+      }).addTo(map);
+
+      const ligneAxe = lignesRef.current.get(axe.id);
+      if (sous) {
+        ligneAxe?.bringToFront();
+        haloRef.current.bringToFront();
+        const ligneSous = lignesSousRef.current.get(`p${axe.id}_s${sous.id}`);
+        const base = ligneSous ? styleBaseRef.current.get(ligneSous) : undefined;
+        if (ligneSous && base) {
+          ligneSous.setStyle({ ...base, weight: 10, opacity: 1 });
+          ligneSous.bringToFront();
+        }
+      } else {
+        haloRef.current.bringToFront();
+        const base = ligneAxe ? styleBaseRef.current.get(ligneAxe) : undefined;
+        if (ligneAxe && base) {
+          ligneAxe.setStyle({ ...base, weight: 9, opacity: 1 });
+          ligneAxe.bringToFront();
+        }
+        // Les tronçons codifiés de l'axe restent visibles au-dessus de lui
+        for (const s of axe.sous_troncons ?? []) {
+          const l = lignesSousRef.current.get(`p${axe.id}_s${s.id}`);
+          const b = l ? styleBaseRef.current.get(l) : undefined;
+          if (l && b) {
+            l.setStyle({ ...b, weight: 9, opacity: 1 });
+            l.bringToFront();
           }
         }
       }
-      if (!sousTrouve || !parentTrouve) return;
-
-      const latD = sousTrouve.geometrie?.lat_debut;
-      const lonD = sousTrouve.geometrie?.lon_debut;
-      const latF = sousTrouve.geometrie?.lat_fin;
-      const lonF = sousTrouve.geometrie?.lon_fin;
-      if (
-        latD != null && lonD != null && latF != null && lonF != null
-        && Number.isFinite(latD) && Number.isFinite(lonD)
-        && Number.isFinite(latF) && Number.isFinite(lonF)
-      ) {
-        const bounds = L.latLngBounds([
-          [latD, lonD] as [number, number],
-          [latF, lonF] as [number, number],
-        ]);
-        map.flyToBounds(bounds, { padding: [60, 60], duration: 0.8, maxZoom: 17 });
-
-        markerDebutSelRef.current = L.circleMarker([latD, lonD], {
-          radius: 10,
-          color: "#ffffff",
-          fillColor: "#16a34a",
-          fillOpacity: 1,
-          weight: 3,
-          pane: "markerPane",
-        })
-          .bindTooltip(
-            `🟢 Début ${sousTrouve.code} : ${sousTrouve.nom_court}`,
-            { direction: "top", permanent: false },
-          )
-          .addTo(map);
-        markerFinSelRef.current = L.circleMarker([latF, lonF], {
-          radius: 10,
-          color: "#ffffff",
-          fillColor: "#dc2626",
-          fillOpacity: 1,
-          weight: 3,
-          pane: "markerPane",
-        })
-          .bindTooltip(
-            `🔴 Fin ${sousTrouve.code} : ${sousTrouve.nom_court}`,
-            { direction: "top", permanent: false },
-          )
-          .addTo(map);
-      }
-      // Remonter l'axe parent au-dessus des autres axes
-      lignesRef.current.get(parentTrouve.id)?.bringToFront();
-      const cle = `p${parentTrouve.id}_s${sousTronconSelectionneId}`;
-      const ligneSous = lignesSousRef.current.get(cle);
-      ligneSous?.bringToFront();
-      // Ouvrir le popup après la fin de l'animation flyToBounds
-      setTimeout(() => ligneSous?.openPopup(), 850);
-      return;
     }
 
-    // Cas 2 — axe (tronçon parent) sélectionné : comportement historique.
-    if (tronconSelectionneId === null) return;
-
-    const troncon = etat.troncons.find((t) => t.id === tronconSelectionneId);
-    if (!troncon) return;
-
-    const points = pointsTroncon(troncon);
-    if (points.length >= 2) {
-      const bounds = L.latLngBounds(points);
-      map.flyToBounds(bounds, { padding: [40, 40], duration: 0.8, maxZoom: 16 });
-    }
-
-    // Superposition : polyline axe passe au-dessus des sous-tronçons pour
-    // que SA couleur DEESP soit celle affichée quand l'axe est sélectionné.
-    lignesRef.current.get(tronconSelectionneId)?.bringToFront();
-
-    // Marqueur DÉBUT (vert foncé) sur le point d'origine du tronçon
-    const latO = troncon.lat_origine ?? troncon.geometrie?.lat_origine;
-    const lonO = troncon.lon_origine ?? troncon.geometrie?.lon_origine;
-    if (latO != null && lonO != null && Number.isFinite(latO) && Number.isFinite(lonO)) {
-      const nomCourt = troncon.nom.split(" → ")[0]?.trim() ?? troncon.nom;
-      markerDebutSelRef.current = L.circleMarker([latO, lonO], {
+    // Marqueurs DÉBUT (vert) et FIN (rouge) dans le sens de circulation
+    const debut = sous
+      ? (sous.sens === "inverse"
+        ? [sous.geometrie?.lat_fin, sous.geometrie?.lon_fin]
+        : [sous.geometrie?.lat_debut, sous.geometrie?.lon_debut])
+      : [axe.lat_origine ?? axe.geometrie?.lat_origine, axe.lon_origine ?? axe.geometrie?.lon_origine];
+    const fin = sous
+      ? (sous.sens === "inverse"
+        ? [sous.geometrie?.lat_debut, sous.geometrie?.lon_debut]
+        : [sous.geometrie?.lat_fin, sous.geometrie?.lon_fin])
+      : [axe.lat_destination ?? axe.geometrie?.lat_destination, axe.lon_destination ?? axe.geometrie?.lon_destination];
+    const libelleDebut = sous
+      ? `🟢 ${t("carte.fiche.debut")} ${sous.code} : ${sous.nom_court}`
+      : `🟢 ${t("carte.fiche.depart")} : ${axe.origine_libelle ?? axe.nom}`;
+    const libelleFin = sous
+      ? `🔴 ${t("carte.fiche.fin")} ${sous.code} : ${sous.nom_court}`
+      : `🔴 ${t("carte.fiche.arrivee")} : ${axe.destination_libelle ?? axe.nom}`;
+    const poserMarqueur = (coords: (number | null | undefined)[], couleur: string, libelle: string) => {
+      const [lat, lon] = coords;
+      if (lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return L.circleMarker([lat, lon], {
         radius: 11,
         color: "#ffffff",
-        fillColor: "#16a34a",
+        fillColor: couleur,
         fillOpacity: 1,
         weight: 3,
         pane: "markerPane",
       })
-        .bindTooltip(`🟢 Départ : ${nomCourt}`, { direction: "top", permanent: false })
+        .bindTooltip(libelle, { direction: "top", permanent: false })
         .addTo(map);
-    }
-
-    // Marqueur FIN (rouge foncé) sur le point de destination du tronçon
-    const latD = troncon.lat_destination ?? troncon.geometrie?.lat_destination;
-    const lonD = troncon.lon_destination ?? troncon.geometrie?.lon_destination;
-    if (latD != null && lonD != null && Number.isFinite(latD) && Number.isFinite(lonD)) {
-      const nomCourt = troncon.nom.split(" → ")[1]?.trim() ?? troncon.nom;
-      markerFinSelRef.current = L.circleMarker([latD, lonD], {
-        radius: 11,
-        color: "#ffffff",
-        fillColor: "#dc2626",
-        fillOpacity: 1,
-        weight: 3,
-        pane: "markerPane",
-      })
-        .bindTooltip(`🔴 Arrivée : ${nomCourt}`, { direction: "top", permanent: false })
-        .addTo(map);
-    }
-
-    const ligne = lignesRef.current.get(tronconSelectionneId);
-    // Ouvrir le popup après la fin de l'animation flyToBounds
-    setTimeout(() => ligne?.openPopup(), 850);
+    };
+    markerDebutSelRef.current = poserMarqueur(debut, "#16a34a", libelleDebut);
+    markerFinSelRef.current = poserMarqueur(fin, "#dc2626", libelleFin);
+    // t n'est utilisé que pour les infobulles : pas de re-zoom au changement de langue
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tronconSelectionneId, sousTronconSelectionneId, selectionSeq, etat]);
+
+  // Objets affichés dans la fiche de sélection
+  const axeSelectionne = etat && tronconSelectionneId !== null
+    ? etat.troncons.find((tr) => tr.id === tronconSelectionneId) ?? null
+    : null;
+  const sousSelectionne = axeSelectionne && sousTronconSelectionneId !== null
+    ? (axeSelectionne.sous_troncons ?? []).find((s) => s.id === sousTronconSelectionneId) ?? null
+    : null;
 
   // ---- Indicateur d'état WebSocket
   const libelleEtatWs = useMemo(() => {
@@ -649,6 +635,15 @@ export function CarteLeaflet({
         {libelleEtatWs}
       </div>
 
+      {axeSelectionne && !ficheFermee && (
+        <FicheSelection
+          axe={axeSelectionne}
+          sous={sousSelectionne}
+          compacte={ficheCompacte}
+          onFermer={() => setFicheFermee(true)}
+        />
+      )}
+
       {chargement && (
         <div className="absolute inset-0 z-[1050] flex items-center justify-center bg-white/60 backdrop-blur-sm dark:bg-paa-navy-900/60">
           <span className="rounded-md bg-white px-4 py-2 text-fluid-sm font-medium shadow-paa-md dark:bg-paa-navy-800 dark:text-paa-blue-100">
@@ -664,97 +659,6 @@ export function CarteLeaflet({
       )}
     </div>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Construction du contenu HTML d'un popup — Leaflet attend une string ou un
-// HTMLElement, on retourne une string formatée (le rendu reste léger).
-// ---------------------------------------------------------------------------
-function construirePopup(t: EtatTronconCarte, locale: "fr" | "en"): string {
-  const aSousTroncons = (t.sous_troncons ?? []).length > 0;
-  const m = t.derniere_mesure;
-  const dureeTrafic = formaterDuree(m?.duree_trafic_s);
-  const ficheUrl = `/indicateurs?troncon=${t.id}`;
-  const labelFiche = locale === "fr" ? "Voir la fiche détaillée →" : "View details →";
-
-  if (aSousTroncons) {
-    const labelTemps = locale === "fr" ? "Temps total" : "Total time";
-    const labelNote = locale === "fr" ? "Somme des tronçons codifiés" : "Sum of coded segments";
-    const nbSous = t.sous_troncons!.length;
-    const labelNb = locale === "fr"
-      ? `${nbSous} tronçon${nbSous > 1 ? "s" : ""} codifié${nbSous > 1 ? "s" : ""}`
-      : `${nbSous} coded segment${nbSous > 1 ? "s" : ""}`;
-    return `
-      <div style="font-family: Inter, sans-serif; min-width: 220px;">
-        <div style="font-weight: 600; font-size: 14px; color: #0B2545; margin-bottom: 6px;">
-          ${escapeHtml(t.nom)}
-        </div>
-        <table style="width: 100%; font-size: 12px; color: #1F2937;">
-          <tr><td style="padding: 2px 0; color: #6B7280;">${labelTemps}</td><td style="text-align: right; font-weight: 600;">${dureeTrafic}</td></tr>
-          <tr><td style="padding: 2px 0; color: #6B7280;">${locale === "fr" ? "Distance" : "Distance"}</td><td style="text-align: right;">${t.distance_km} km</td></tr>
-        </table>
-        <div style="margin-top: 6px; padding: 4px 8px; background: #F0F9FF;
-                    font-size: 11px; color: #475569; border-radius: 3px;">
-          ${escapeHtml(labelNote)} (${escapeHtml(labelNb)})
-        </div>
-        <a href="${ficheUrl}" style="display: block; margin-top: 8px;
-                  font-size: 12px; font-weight: 600; color: #1F4E79;
-                  text-decoration: none;">${labelFiche}</a>
-      </div>
-    `;
-  }
-
-  const couleur = couleurClasseCongestion(t.classe_congestion ?? "indetermine");
-  const classe = libelleClasseCongestion(t.classe_congestion ?? "indetermine", locale);
-  const heure = formaterHeureAbidjan(
-    m?.horodatage_local ?? m?.horodatage_utc ?? m?.horodatage,
-  );
-  const sourceLib = libelleSource(m?.source);
-
-  const pctR = t.couleur_google?.pourcentage_rouge;
-  const pctO = t.couleur_google?.pourcentage_orange;
-  const pctV = t.couleur_google?.pourcentage_vert;
-  const fmtPct = (v: number | null | undefined): string =>
-    v !== null && v !== undefined ? `${v.toFixed(1)} %` : "—";
-
-  const labelMesure = locale === "fr" ? "Temps actuel" : "Current time";
-  const labelHeure = locale === "fr" ? "Mesurée à" : "Measured at";
-  const labelSource = locale === "fr" ? "Source" : "Source";
-  const labelRouge = locale === "fr" ? "🔴 Rouge" : "🔴 Red";
-  const labelOrange = locale === "fr" ? "🟠 Orange" : "🟠 Orange";
-  const labelVert = locale === "fr" ? "🟢 Vert" : "🟢 Green";
-  const motif = t.motif_congestion
-    ? `<div style="margin-top: 6px; padding: 6px 8px; background: #F8FAFC;
-                  border-left: 3px solid ${couleur}; font-size: 11px;
-                  color: #475569; border-radius: 3px;">
-         ${escapeHtml(t.motif_congestion)}
-       </div>`
-    : "";
-
-  return `
-    <div style="font-family: Inter, sans-serif; min-width: 240px;">
-      <div style="font-weight: 600; font-size: 14px; color: #0B2545; margin-bottom: 6px;">
-        ${escapeHtml(t.nom)}
-      </div>
-      <div style="display: inline-block; padding: 2px 8px; border-radius: 9999px;
-                  background: ${couleur}; color: white; font-size: 12px;
-                  font-weight: 600; margin-bottom: 8px;">
-        ${escapeHtml(classe)}
-      </div>
-      <table style="width: 100%; font-size: 12px; color: #1F2937;">
-        <tr><td style="padding: 2px 0; color: #6B7280;">${labelMesure}</td><td style="text-align: right; font-weight: 600;">${dureeTrafic}</td></tr>
-        <tr><td style="padding: 2px 0; color: #6B7280;">${labelRouge}</td><td style="text-align: right; font-weight: 600; color: #E74C3C;">${fmtPct(pctR)}</td></tr>
-        <tr><td style="padding: 2px 0; color: #6B7280;">${labelOrange}</td><td style="text-align: right; font-weight: 600; color: #F39C12;">${fmtPct(pctO)}</td></tr>
-        <tr><td style="padding: 2px 0; color: #6B7280;">${labelVert}</td><td style="text-align: right; font-weight: 600; color: #16a34a;">${fmtPct(pctV)}</td></tr>
-        <tr><td style="padding: 2px 0; color: #6B7280;">${labelHeure}</td><td style="text-align: right;">${heure}</td></tr>
-        <tr><td style="padding: 2px 0; color: #6B7280;">${labelSource}</td><td style="text-align: right;">${escapeHtml(sourceLib)}</td></tr>
-      </table>
-      ${motif}
-      <a href="${ficheUrl}" style="display: block; margin-top: 8px;
-                font-size: 12px; font-weight: 600; color: #1F4E79;
-                text-decoration: none;">${labelFiche}</a>
-    </div>
-  `;
 }
 
 function escapeHtml(s: string): string {
@@ -885,35 +789,6 @@ function construirePopupIncident(inc: IncidentCarte, locale: "fr" | "en"): strin
         ${escapeHtml(inc.titre)}
       </div>
       <div style="font-size:11px;color:#6B7280;">${ageStr}</div>
-    </div>
-  `;
-}
-
-function construirePopupSousTroncon(
-  nomParent: string,
-  s: EtatSousTronconCarte,
-  locale: "fr" | "en",
-): string {
-  const couleur = s.couleur_etat;
-  const libelle = s.libelle_classe ?? s.classe_congestion;
-  const km = s.distance_km ?? (s.distance_m ? Math.round(s.distance_m / 10) / 100 : null);
-  const tempsRef = formaterDuree(s.temps_reference_50kmh_s);
-  const tempsObs = formaterDuree(s.derniere_mesure?.duree_trafic_s);
-  const motif = s.motif_congestion ? `<div class="text-xs opacity-80 mt-1">${s.motif_congestion}</div>` : "";
-  const labelTempsRef = locale === "fr" ? "Référence 50 km/h" : "Reference 50 km/h";
-  const labelTempsObs = locale === "fr" ? "Temps actuel" : "Current time";
-  const sensSymbole = s.sens_symbole ? ` ${s.sens_symbole}` : "";
-  return `
-    <div class="font-sans">
-      <div class="text-xs opacity-70">${nomParent}</div>
-      <div class="font-bold text-base">${sensSymbole} ${s.code} — ${s.nom_court}</div>
-      <div class="mt-1 inline-block px-2 py-0.5 rounded text-white text-xs" style="background:${couleur}">${libelle}</div>
-      ${motif}
-      <div class="mt-2 text-xs">
-        ${km !== null ? `${km} km · ` : ""}
-        ${tempsRef ? `${labelTempsRef} : ${tempsRef}` : ""}
-      </div>
-      ${tempsObs ? `<div class="text-xs">${labelTempsObs} : <strong>${tempsObs}</strong></div>` : ""}
     </div>
   `;
 }
