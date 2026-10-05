@@ -631,3 +631,60 @@ Hard refresh (`Ctrl+Shift+R`) sur la carte → les tracés suivent les vraies ro
 > Si le coût est un frein pour la démo, utiliser le tunnel Cloudflare ponctuel
 > (procédure dans CLAUDE.md § 8.5.1) pour générer les polylines, puis couper.
 > Les polylines persistées en base Railway restent affichées même sans OSRM.
+
+---
+
+## Deux versions en production — services `*-axes` (2026-10-05)
+
+Depuis le 2026-10-05, le projet Railway héberge **deux piles séparées** :
+
+| Pile | Frontend | Backend | Base / cache | Clé Google |
+|------|----------|---------|--------------|------------|
+| Historique (avec tronçons) | `frontend` — https://frontend-production-599c.up.railway.app | `backend` | `Postgres`, `Redis` | ❌ retirée (la collecte n'enregistre plus que des trous) |
+| Axes seuls | `frontend-axes` — https://frontend-axes-production.up.railway.app | `backend-axes` — https://backend-axes-production.up.railway.app | `Postgres--iB5`, `Redis-bsVY` | ✅ seule à collecter (1 appel Google par axe, 144 req/jour) |
+
+### Variables propres aux services `*-axes`
+
+- `backend-axes` : mêmes variables que `backend`, sauf
+  `DATABASE_URL=${{Postgres--iB5.DATABASE_URL}}`, `REDIS_URL=${{Redis-bsVY.REDIS_URL}}`,
+  `ALLOWED_ORIGINS=https://frontend-axes-production.up.railway.app,http://localhost:3000`.
+- `frontend-axes` : mêmes variables que `frontend`, plus
+  `NEXT_PUBLIC_API_BASE_URL=https://backend-axes-production.up.railway.app`,
+  `NEXT_PUBLIC_ACCUEIL_AXES_SEULS=true` (Accueil sans tronçons codifiés) et
+  **`PORT=3000`** (sans elle, le domaine répond 502 : Next écoute sur 3000).
+
+⚠️ **Copie de variables par `--stdin` sous PowerShell** : le pipe ajoute un saut de
+ligne à la valeur (clé API invalide). Utiliser `railway variable set "CLE=valeur"`.
+
+### Initialisation d'une base vide (Console Railway du backend concerné)
+
+```bash
+alembic upgrade head
+python -m app.seed_troncons
+python -m app.complete_troncons   # nécessite OSRM ; sinon copier coords + polylines depuis l'autre backend
+```
+
+Puis relancer la collecte (le scheduler n'a pas pu démarrer sans tables) :
+`curl -X POST https://backend-axes-production.up.railway.app/collecte/start`.
+
+### Piège : `railway up` échoue sur le service `frontend` (2026-10-05)
+
+Les envois `railway up --service frontend` échouent systématiquement au tout début
+du build (`railpack prepare exited with an error`, builder
+`production-builderv3-us-east4-9s9t`), alors que :
+- le même code se construit sans erreur sur `frontend-axes` (`railway up`) ;
+- un build déclenché **depuis GitHub** réussit sur ce même builder.
+
+Déconnecter puis reconnecter le dépôt GitHub n'y change rien. **Contournement : le
+service `frontend` se déploie depuis GitHub.** Il est relié à la branche
+`fix/carte-fiche-ancien-front` (corrections d'affichage de la carte uniquement) :
+
+```bash
+git push origin fix/carte-fiche-ancien-front   # déclenche le build du service frontend
+```
+
+Pour revenir sur `main` après fusion :
+
+```bash
+railway service source connect --repo jasonemmanue/PAA_Project --branch main --service frontend
+```
