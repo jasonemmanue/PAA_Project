@@ -11,7 +11,7 @@
 
 import Link from "next/link";
 
-import { BadgeSensAxe, nomCourtAxe } from "@/components/carte/PanneauTroncons";
+import { BadgeSensAxe, nomCourtAxe } from "@/components/carte/SensAxe";
 import {
   couleurClasseCongestion,
   formaterDuree,
@@ -88,13 +88,15 @@ export function FicheSelection({ axe, sous, compacte, onFermer }: Props) {
   );
 
   function ContenuAxe({ axe }: { axe: EtatTronconCarte }) {
-    const classe = axe.classe_axe ?? axe.classe_congestion ?? "indetermine";
+    // Un axe découpé n'a de classe propre que si le backend expose `classe_axe`
+    // (§ 39) ; sinon aucune pastille d'état n'est affichée pour l'axe.
+    const classe = axe.classe_axe ?? axe.classe_congestion ?? null;
     const nbSous = axe.sous_troncons?.length ?? 0;
     const duree = axe.derniere_mesure?.duree_trafic_s ?? null;
     const reference = axe.temps_reference_50kmh_s ?? null;
     return (
       <>
-        <BadgeClasse classe={classe} />
+        {classe && <BadgeClasse classe={classe} />}
         <table className="mt-2 w-full text-[12px]">
           <tbody>
             <Ligne
@@ -110,7 +112,10 @@ export function FicheSelection({ axe, sous, compacte, onFermer }: Props) {
             {nbSous > 0 && (
               <Ligne
                 libelle={t("carte.fiche.tronconsCongestionnes")}
-                valeur={`${axe.nb_troncons_congestionnes ?? 0} / ${nbSous}`}
+                valeur={`${
+                  axe.nb_troncons_congestionnes
+                  ?? (axe.sous_troncons ?? []).filter((s) => s.classe_congestion === "congestionne").length
+                } / ${nbSous}`}
               />
             )}
             {nbSous > 0 && axe.pct_distance_congestionnee != null && (
@@ -122,7 +127,7 @@ export function FicheSelection({ axe, sous, compacte, onFermer }: Props) {
           </tbody>
         </table>
         {nbSous === 0 && <CouleursGoogle couleurs={axe.couleur_google} />}
-        {nbSous > 0 && (
+        {nbSous > 0 && axe.classe_axe && (
           <p className="mt-1.5 text-[10px] app-text-muted">
             {t("carte.fiche.regleAxe")}
           </p>

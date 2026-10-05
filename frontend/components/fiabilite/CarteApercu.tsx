@@ -16,6 +16,10 @@
  * la **trace brute** du GPX. Pour avoir la trace recalée, il faudrait soit
  * exposer OSRM en prod, soit renvoyer la polyline recalée depuis le backend
  * dans la réponse `/terrain/import` (extension future).
+ *
+ * Sélection : un clic sur un tronçon ou une trace affiche une fiche dans un
+ * coin de la carte (jamais d'infobulle collée au tracé, qui le masquait),
+ * renforce le tracé (halo blanc) et zoome en réservant la place de la fiche.
  */
 
 import "leaflet/dist/leaflet.css";
@@ -28,6 +32,7 @@ import type {
 } from "leaflet";
 
 import { Card } from "@/components/ui/Card";
+import { formaterDuree } from "@/lib/format";
 import { decoderPolyline } from "@/lib/polyline";
 import type { TraceGpx } from "@/lib/gpxClient";
 import { useI18n } from "@/lib/i18n";
@@ -61,6 +66,28 @@ const PALETTE_TRACES = [
 const COULEUR_MARQUEUR_DEBUT = "#16a34a";
 const COULEUR_MARQUEUR_FIN = "#E74C3C";
 
+/** Contenu de la fiche affichée pour le tracé sélectionné. */
+type FicheApercu = {
+  titre: string;
+  sousTitre?: string;
+  couleur: string;
+  lignes: [string, string][];
+};
+
+/** Distance cumulée (km) d'une suite de points, formule de Haversine. */
+function distanceKm(points: [number, number][]): number {
+  const R = 6371;
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const [la1, lo1] = points[i - 1].map((v) => (v * Math.PI) / 180);
+    const [la2, lo2] = points[i].map((v) => (v * Math.PI) / 180);
+    const h = Math.sin((la2 - la1) / 2) ** 2
+      + Math.cos(la1) * Math.cos(la2) * Math.sin((lo2 - lo1) / 2) ** 2;
+    total += 2 * R * Math.asin(Math.sqrt(h));
+  }
+  return total;
+}
+
 type Props = {
   /** État de la carte (mêmes polylines + couleurs que la page Carte). */
   etatCarte: CarteEtat | null;
@@ -81,6 +108,47 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
   const [pret, setPret] = useState(false);
   const [satellite, setSatellite] = useState(false);
   const tileLayerRef = useRef<any>(null);
+  // Sélection : fiche affichée, halo blanc et style d'origine du tracé choisi
+  const [fiche, setFiche] = useState<FicheApercu | null>(null);
+  const haloRef = useRef<LeafletPolyline | null>(null);
+  const selectionRef = useRef<{ ligne: LeafletPolyline; poids: number } | null>(null);
+
+  /** Met en valeur un tracé, ouvre sa fiche et zoome sans le masquer. */
+  const selectionner = (ligne: LeafletPolyline, coords: [number, number][], contenu: FicheApercu) => {
+    const L = LRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    haloRef.current?.remove();
+    if (selectionRef.current) {
+      selectionRef.current.ligne.setStyle({ weight: selectionRef.current.poids });
+    }
+    const poids = (ligne.options.weight as number | undefined) ?? 4;
+    selectionRef.current = { ligne, poids };
+    haloRef.current = L.polyline(coords, {
+      color: "#ffffff", weight: poids + 10, opacity: 0.95, interactive: false,
+    }).addTo(map);
+    ligne.setStyle({ weight: poids + 3 });
+    ligne.bringToFront();
+    setFiche(contenu);
+    const compacte = (conteneurRef.current?.clientWidth ?? 800) < 640;
+    const hauteur = conteneurRef.current?.clientHeight ?? 400;
+    map.flyToBounds(L.latLngBounds(coords), {
+      paddingTopLeft: [30, 30],
+      paddingBottomRight: compacte ? [30, Math.round(hauteur * 0.45) + 20] : [290, 30],
+      maxZoom: 16,
+      duration: 0.6,
+    });
+  };
+
+  const fermerFiche = () => {
+    haloRef.current?.remove();
+    haloRef.current = null;
+    if (selectionRef.current) {
+      selectionRef.current.ligne.setStyle({ weight: selectionRef.current.poids });
+      selectionRef.current = null;
+    }
+    setFiche(null);
+  };
 
   // 1) Initialisation Leaflet (une seule fois)
   useEffect(() => {
@@ -124,6 +192,7 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
     const map = mapRef.current;
     if (!pret || !L || !map || !etatCarte) return;
 
+    fermerFiche(); // le tracé sélectionné va être redessiné
     polylinesTroncons.current.forEach((p) => p.remove());
     polylinesTroncons.current = [];
 
@@ -174,7 +243,14 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
           dashArray: "6 6",
         });
         ligne.addTo(map);
-        ligne.bindTooltip(tr.nom, { sticky: true });
+        ligne.on("click", () => selectionner(ligne, coordsValides, {
+          titre: tr.nom,
+          couleur: tr.couleur_etat ?? "#888",
+          lignes: [
+            [t("carte.fiche.distance"), tr.distance_km != null ? `${tr.distance_km} km` : "—"],
+            [t("carte.axes.tempsActuel"), formaterDuree(tr.derniere_mesure?.duree_trafic_s)],
+          ],
+        }));
         polylinesTroncons.current.push(ligne);
 
         // Sous-tronçons : lignes pleines, plus épaisses, colorées par classe DEESP.
@@ -214,10 +290,16 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
             opacity: 0.9,
           });
           ligneSous.addTo(map);
-          ligneSous.bindTooltip(
-            `${sous.code} — ${sous.nom_court}`,
-            { sticky: true },
-          );
+          ligneSous.on("click", () => selectionner(ligneSous, coordsSousValides, {
+            titre: `${sous.sens_symbole ? `${sous.sens_symbole} ` : ""}${sous.code} — ${sous.nom_court}`,
+            sousTitre: tr.nom,
+            couleur: sous.couleur_etat ?? "#888",
+            lignes: [
+              [t("carte.fiche.distance"), sous.distance_km != null ? `${sous.distance_km.toFixed(2)} km` : "—"],
+              [t("carte.axes.tempsActuel"), formaterDuree(sous.derniere_mesure?.duree_trafic_s)],
+              [t("carte.fiche.reference"), formaterDuree(sous.temps_reference_50kmh_s)],
+            ],
+          }));
           polylinesTroncons.current.push(ligneSous);
         }
       } catch (err) {
@@ -229,6 +311,7 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
         );
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pret, etatCarte]);
 
   // 3) Affichage des traces GPX uploadées
@@ -237,6 +320,7 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
     const map = mapRef.current;
     if (!pret || !L || !map) return;
 
+    fermerFiche();
     polylinesTraces.current.forEach((p) => p.remove());
     polylinesTraces.current = [];
 
@@ -257,7 +341,19 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
           opacity: 0.75,
         });
         ligne.addTo(map);
-        ligne.bindTooltip(trace.nomFichier, { sticky: true });
+        const debut = trace.points[0]?.horodatage;
+        const fin = trace.points[trace.points.length - 1]?.horodatage;
+        const dureeS = debut && fin ? (Date.parse(fin) - Date.parse(debut)) / 1000 : null;
+        ligne.on("click", () => selectionner(ligne, coords, {
+          titre: trace.nomFichier,
+          sousTitre: t("fiabilite.legendeTrace"),
+          couleur,
+          lignes: [
+            [t("carte.fiche.distance"), `${distanceKm(coords).toFixed(2)} km`],
+            [t("carte.fiche.dureeTrace"), formaterDuree(dureeS)],
+            [t("carte.fiche.nbPoints"), String(coords.length)],
+          ],
+        }));
         polylinesTraces.current.push(ligne);
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -276,6 +372,7 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
         console.warn("[CarteApercu] fitBounds a échoué :", err);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pret, traces]);
 
   // 4) Marqueurs début/fin — premier et dernier point de chaque trace GPX
@@ -362,6 +459,43 @@ export function CarteApercu({ etatCarte, traces, releves }: Props) {
         >
           {satellite ? "🗺 OSM" : "🛰 Satellite"}
         </button>
+        {fiche && (
+          <div className="absolute inset-x-2 bottom-2 z-[1060] max-h-[45%] overflow-y-auto sm:inset-x-auto sm:bottom-auto sm:right-2 sm:top-2 sm:w-[260px] sm:max-h-[calc(100%-1rem)]">
+            <div
+              className="rounded-lg border border-slate-200 bg-white/95 p-3 shadow-paa-md dark:border-paa-navy-600 dark:bg-paa-navy-900/95"
+              style={{ borderLeft: `4px solid ${fiche.couleur}` }}
+            >
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  {fiche.sousTitre && (
+                    <p className="truncate text-[11px] app-text-muted">{fiche.sousTitre}</p>
+                  )}
+                  <p className="break-words text-fluid-sm font-bold text-paa-navy-900 dark:text-paa-blue-50">
+                    {fiche.titre}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fermerFiche}
+                  aria-label={t("carte.fiche.fermer")}
+                  className="-mr-1 -mt-1 rounded p-1 text-lg leading-none app-text-muted hover:bg-slate-100 dark:hover:bg-paa-navy-700"
+                >
+                  ×
+                </button>
+              </div>
+              <table className="mt-2 w-full text-[12px]">
+                <tbody>
+                  {fiche.lignes.map(([libelle, valeur]) => (
+                    <tr key={libelle}>
+                      <td className="py-0.5 pr-2 app-text-muted">{libelle}</td>
+                      <td className="py-0.5 text-right tabular-nums">{valeur}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         {!aDesContenus && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-fluid-sm app-text-muted">
             {t("fiabilite.apercuPlaceholder")}

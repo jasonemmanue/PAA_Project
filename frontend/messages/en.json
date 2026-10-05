@@ -73,7 +73,9 @@
       "debut": "Start",
       "fin": "End",
       "depart": "Departure",
-      "arrivee": "Arrival"
+      "arrivee": "Arrival",
+      "dureeTrace": "Track duration",
+      "nbPoints": "GPS points"
     }
   },
   "indicateurs": {
